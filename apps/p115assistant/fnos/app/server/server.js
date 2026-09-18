@@ -490,6 +490,8 @@ class Server {
       for (const key of PUBLIC_CONFIG_FIELDS) {
         publicConfig[key] = config[key];
       }
+      // fnos 凭据仅通过 fnos_status 告知「是否已配置」，不暴露值
+      publicConfig.fnos_configured = !!(config.fnos_username && config.fnos_password);
       if (publicConfig.feishu_webhook) {
         publicConfig.feishu_webhook = mask(publicConfig.feishu_webhook);
       }
@@ -1387,9 +1389,30 @@ class Server {
 
   async applyUpdate(payload) {
     if (!payload || !payload.file) return error("缺少 FPK 文件路径");
-    const res = await updater.applyUpdate(payload, this._updateDataDir());
-    if (!res.success) return error(res.message);
-    return ok({ output: res.output }, res.message);
+    const cfg = this.store.getConfig();
+    const res = await updater.applyUpdate(payload, this._updateDataDir(), {
+      username: String(cfg.fnos_username || ""),
+      password: String(cfg.fnos_password || ""),
+    });
+    if (!res.success) return error(res.message, { data: { need_login: !!res.need_login, code: res.code, message: res.message } });
+    return ok(res);
+  }
+
+  // fnOS 账号凭据（仅用于自动登录 trim-cli 执行安装预检；密码不进前端/日志）
+  async fnosLogin(payload) {
+    payload = payload || {};
+    const username = String(payload.username || "").trim();
+    const password = String(payload.password || "");
+    if (!username || !password) return error("请填写 fnOS 账号和密码");
+    this.store.updateConfig({ fnos_username: username, fnos_password: password });
+    this.recordLog("已保存 fnOS 凭据（用于自动安装预检）", "INFO", "CONFIG");
+    return ok({ username }, "已保存");
+  }
+
+  async fnosForget() {
+    this.store.updateConfig({ fnos_username: "", fnos_password: "" });
+    this.recordLog("已清除 fnOS 凭据", "INFO", "CONFIG");
+    return ok(undefined, "已清除");
   }
 
   // ── 签到 ──

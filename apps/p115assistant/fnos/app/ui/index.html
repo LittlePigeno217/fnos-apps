@@ -746,6 +746,21 @@
           <button class="btn primary" id="downloadUpdateBtn" style="display:none" onclick="downloadAndUpdate()">下载更新</button>
           <span class="muted" id="updateResult"></span>
         </div>
+        <div id="fnosCredBox" style="display:none;margin-top:10px;padding:10px 12px;border:1px solid #30363d;border-radius:8px">
+          <div class="setting-label" style="color:#58a6ff">需要 fnOS 凭据（自动安装预检）</div>
+          <div class="muted" style="margin:2px 0 6px">填一次即可：应用将用它登录系统 CLI 验证安装包可升级，密码加密保存、可随时清除。</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" id="fnosUsername" placeholder="fnOS 用户名" style="flex:1;min-width:110px">
+            <input type="password" id="fnosPassword" placeholder="fnOS 密码" style="flex:1;min-width:110px" onkeydown="if(event.key==='Enter')saveFnosCreds()">
+            <button class="btn primary" onclick="saveFnosCreds()">保存并继续</button>
+            <button class="btn" onclick="closeFnosCredBox()">取消</button>
+          </div>
+          <div class="muted" id="fnosCredStatus" style="margin-top:4px"></div>
+        </div>
+        <div id="updateGuide" style="display:none;margin-top:10px;border:1px solid #2ea043;border-radius:8px;padding:10px 12px">
+          <div class="setting-label" style="color:#3fb950">✅ 安装包已下载并验证通过，完成最后三步即可升级</div>
+          <div id="updateGuideBody" style="margin-top:6px;line-height:1.8"></div>
+        </div>
       </div>
     </section>
 
@@ -3865,11 +3880,65 @@ async function downloadAndUpdate(){
   if (!r.success){ btn.textContent = r.message || "下载失败"; dlBtn.disabled = false; return; }
   const f = r.data && r.data.file;
   if (!confirm("新版本 FPK 已下载（"+(r.data&&r.data.size||0)+" 字节）\n确认应用更新？应用将重启。")) { dlBtn.disabled=false; btn.textContent="已取消"; return; }
-  btn.textContent = "更新中…";
+  btn.textContent = "验证并提交更新…";
   const a = await call("apply_update","POST",{ file: f });
-  btn.textContent = a.message || (a.success?"更新已提交":"更新失败");
+  // need_login：需要 fnOS 凭据 → 弹出表单，保存后自动续跑同一安装
+  if (a.success === false && (a.data && (a.data.need_login || a.data.code === "NEED_CREDS" || a.data.code === "NEED_LOGIN"))){
+    btn.textContent = a.data.message || "需要 fnOS 凭据";
+    pendingApplyFile = f;
+    showFnosCredBox();
+    return;
+  }
+  btn.textContent = (a.data && a.data.message) || a.message || (a.success?"更新已提交":"更新失败");
+  if (a.success && a.data && a.data.need_ui){
+    renderUpdateGuide(a.data);
+    dlBtn.disabled = false;
+    return;
+  }
   if (a.success){ setTimeout(()=>location.reload(), 2500); }
   else { dlBtn.disabled = false; }
+}
+/* fnOS 凭据：仅用于自动登录 trim-cli 完成安装预检；密码不落前端、可随时清除 */
+let pendingApplyFile = null;
+function showFnosCredBox(){ const box=el("fnosCredBox"); if(box) box.style.display="block"; }
+function closeFnosCredBox(){ const box=el("fnosCredBox"); if(box) box.style.display="none"; pendingApplyFile=null; }
+async function saveFnosCreds(){
+  const u = el("fnosUsername").value.trim();
+  const p = el("fnosPassword").value;
+  const st = el("fnosCredStatus");
+  if(!u||!p){ if(st) st.textContent="请填写用户名和密码"; return; }
+  const r = await call("fnos_login","POST",{ username:u, password:p });
+  if(!r.success){ if(st) st.textContent=r.message||"保存失败"; return; }
+  if(st) st.textContent="已保存 ✓（密码已加密存储）";
+  el("fnosPassword").value="";
+  const box = el("fnosCredBox"); if(box) box.style.display="none";
+  const f = pendingApplyFile; pendingApplyFile = null;
+  if(f){ el("updateResult").textContent="凭据已保存，自动继续安装…"; const a=await call("apply_update","POST",{ file:f }); finishApply(a); }
+  else { el("updateResult").textContent="凭据已保存"; }
+}
+async function clearFnosCreds(){
+  const r = await call("fnos_forget","POST",{});
+  el("fnosCredStatus").textContent = r.success ? "已清除" : (r.message||"清除失败");
+}
+function finishApply(a){
+  const btn = el("updateResult");
+  btn.textContent = (a.data && a.data.message) || a.message || (a.success?"更新已提交":"更新失败");
+  const dlBtn = el("downloadUpdateBtn");
+  if (a.success && a.data && a.data.need_ui){ renderUpdateGuide(a.data); dlBtn.disabled=false; return; }
+  if (a.success){ setTimeout(()=>location.reload(), 2500); }
+  else { dlBtn.disabled = false; }
+}
+function renderUpdateGuide(d){
+  const g = el("updateGuide"); if(!g) return;
+  g.style.display = "block";
+  const steps = Array.isArray(d.steps) ? d.steps : [];
+  const body = el("updateGuideBody");
+  body.innerHTML = steps.map((s,i)=>`<div><b>${i+1}.</b> ${escapeHtml(s)}</div>`).join("") +
+    `<div style="margin-top:6px"><code id="updateFilePath" style="word-break:break-all">${escapeHtml(d.file||"")}</code> <button class="btn" onclick="copyUpdatePath()">复制路径</button></div>`;
+}
+function copyUpdatePath(){
+  const p = el("updateFilePath"); if(!p) return;
+  navigator.clipboard && navigator.clipboard.writeText(p.textContent).then(()=>{ el("updateResult").textContent="路径已复制"; }).catch(()=>{ el("updateResult").textContent="复制失败，请手动选择"; });
 }
 /* ---- 日志 ---- */
 let lastLogOffset=0, lastLogText="";

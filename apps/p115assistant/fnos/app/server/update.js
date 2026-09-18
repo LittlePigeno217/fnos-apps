@@ -17,6 +17,7 @@ const fs = require("fs");
 const path = require("path");
 const https = require("https");
 const http = require("http");
+const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { URL } = require("url");
 
@@ -136,6 +137,17 @@ function parseRawManifest(m) {
   };
 }
 
+/** 流式计算文件 SHA-256（避免大文件同步读盘阻塞事件循环）。 */
+function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
 /** 1. 检查更新（只读 GitHub/raw，无副作用）。 */
 async function checkUpdate(dataDir, currentVersionOverride) {
   const current = currentVersionOverride || CURRENT_VERSION;
@@ -219,7 +231,7 @@ function downloadUpdate(payload, dataDir) {
           resolve({ success: false, message: "下载重定向缺少 Location" });
           return;
         }
-        downloadFollow(tmpPath, filePath, loc, name, Number(payload.size) || 0, resolve);
+        downloadFollow(tmpPath, filePath, loc, name, Number(payload.size) || 0, String(payload.sha256 || ""), resolve);
         return;
       }
       if (res.statusCode && res.statusCode >= 400) {
@@ -230,7 +242,7 @@ function downloadUpdate(payload, dataDir) {
       const out = fs.createWriteStream(tmpPath);
       res.pipe(out);
       out.on("finish", () => {
-        out.close(() => {
+        out.close(async () => {
           const st = fs.statSync(tmpPath);
           const expected = Number(payload.size) || 0;
           if (expected && st.size !== expected) {
@@ -238,8 +250,25 @@ function downloadUpdate(payload, dataDir) {
             resolve({ success: false, message: `文件大小不符（期望 ${expected}，实际 ${st.size}）` });
             return;
           }
+          // 下载完整性校验：sha256（latest.json 已提供；缺失时退回仅 size）
+          const expectedSha = String(payload.sha256 || "").toLowerCase();
+          if (expectedSha) {
+            let actual = "";
+            try {
+              actual = await sha256File(tmpPath);
+            } catch (err) {
+              fs.unlink(tmpPath, () => {});
+              resolve({ success: false, message: `校验失败: ${err.message}` });
+              return;
+            }
+            if (actual !== expectedSha) {
+              fs.unlink(tmpPath, () => {});
+              resolve({ success: false, message: `SHA-256 校验失败（期望 ${expectedSha.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…）` });
+              return;
+            }
+          }
           fs.renameSync(tmpPath, filePath);
-          resolve({ success: true, message: `已下载 ${name}`, file: filePath, size: st.size });
+          resolve({ success: true, message: `已下载 ${name}`, file: filePath, size: st.size, sha256: expectedSha });
         });
       });
       out.on("error", (err) => {
@@ -256,7 +285,7 @@ function downloadUpdate(payload, dataDir) {
 }
 
 /** 跟随一次重定向下载（避免递归过深）。 */
-function downloadFollow(tmpPath, filePath, targetUrl, name, expected, resolve) {
+function downloadFollow(tmpPath, filePath, targetUrl, name, expected, expectedSha, resolve) {
   const u = new URL(targetUrl);
   const mod = u.protocol === "http:" ? http : https;
   const req = mod.get(u, { headers: { "User-Agent": "p115assistant-updater/1.0" }, timeout: 60000 }, (res) => {
@@ -268,15 +297,31 @@ function downloadFollow(tmpPath, filePath, targetUrl, name, expected, resolve) {
     const out = fs.createWriteStream(tmpPath);
     res.pipe(out);
     out.on("finish", () => {
-      out.close(() => {
+      out.close(async () => {
         const st = fs.statSync(tmpPath);
         if (expected && st.size !== expected) {
           fs.unlink(tmpPath, () => {});
           resolve({ success: false, message: `文件大小不符（期望 ${expected}，实际 ${st.size}）` });
           return;
         }
+        const expectedShaNorm = String(expectedSha || "").toLowerCase();
+        if (expectedShaNorm) {
+          let actual = "";
+          try {
+            actual = await sha256File(tmpPath);
+          } catch (err) {
+            fs.unlink(tmpPath, () => {});
+            resolve({ success: false, message: `校验失败: ${err.message}` });
+            return;
+          }
+          if (actual !== expectedShaNorm) {
+            fs.unlink(tmpPath, () => {});
+            resolve({ success: false, message: `SHA-256 校验失败（期望 ${expectedShaNorm.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…）` });
+            return;
+          }
+        }
         fs.renameSync(tmpPath, filePath);
-        resolve({ success: true, message: `已下载 ${name}`, file: filePath, size: st.size });
+        resolve({ success: true, message: `已下载 ${name}`, file: filePath, size: st.size, sha256: expectedShaNorm });
       });
     });
     out.on("error", (err) => {
@@ -291,11 +336,78 @@ function downloadFollow(tmpPath, filePath, targetUrl, name, expected, resolve) {
   });
 }
 
-/** 3. 执行更新：trim-cli install-fpk <本地文件>（白名单校验）。 */
-function applyUpdate(payload, dataDir) {
+/** 3. 执行更新：会话自适配 → 预检 → 安装（10236 硬限制时转一步引导）。 */
+
+/** trim-cli 执行环境：会话隔离到应用数据目录（升级保留，勿写全局 HOME）。 */
+function trimEnv(dataDir) {
+  const sessionDir = path.join(dataDir, "trimclip");
+  try {
+    fs.mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(sessionDir, 0o700);
+  } catch (e) {
+    /* ignore */
+  }
+  return {
+    ...process.env,
+    HOME: process.env.HOME || "/vol1/@apphome/p115assistant",
+    TRIM_CLI_CONFIG_DIR: sessionDir,
+    TRIM_CLI_SESSION_STORAGE: "file",
+  };
+}
+
+function trimArgs(...rest) {
+  return ["--host", "127.0.0.1", "--port", "53892", "--scheme", "ws", "--allow-insecure-ws", "--profile", "app", ...rest];
+}
+
+function runTrimCli(args, env) {
   return new Promise((resolve) => {
+    const cli = trimCliPath();
+    if (!cli) {
+      resolve({ code: -1, out: "", err: "未找到 trim-cli，请在 NAS 安装后重试" });
+      return;
+    }
+    const child = spawn(cli, args, { stdio: ["ignore", "pipe", "pipe"], env });
+    let out = "";
+    let errOut = "";
+    child.stdout.on("data", (d) => (out += String(d)));
+    child.stderr.on("data", (d) => (errOut += String(d)));
+    child.on("error", (err) => resolve({ code: -2, out, err: err.message }));
+    child.on("close", (code) => resolve({ code: code == null ? -3 : code, out, err: errOut }));
+  });
+}
+
+/** 探测是否已有可用会话（app list 无 session 时报 saved session is required）。 */
+async function trimHasSession(dataDir) {
+  const env = trimEnv(dataDir);
+  const r = await runTrimCli(trimArgs("app", "list"), env);
+  if (r.code === 0 && r.out && r.err.indexOf("saved session is required") < 0 && r.out.indexOf("list") >= 0) {
+    return true;
+  }
+  return false;
+}
+
+/** 用内置凭据登录 trim-cli（会话写应用数据目录）。 */
+async function trimCliLogin(dataDir, username, password) {
+  if (!username || !password) return { code: -1, err: "缺少凭据" };
+  const env = trimEnv(dataDir);
+  return runTrimCli(trimArgs("login", "-u", username, "-p", password), env);
+}
+
+/** 错误分类：fnOS 升级硬限制 → 引导 UI；缺会话 → 登录。 */
+function classifyCliError(text) {
+  const t = String(text || "");
+  if (/10236/.test(t)) return { need_ui: true, code: "UI_ONLY", message: "fnOS 限制：已安装应用升级只能在应用中心手动安装" };
+  if (/saved session is required/.test(t)) return { code: "NEED_SESSION", message: "trim-cli 会话已失效，请重新登录" };
+  if (/10030/.test(t)) return { code: "ALREADY_INSTALLED", message: "目标版本已安装或无法从当前源安装" };
+  if (/not found|No such file/i.test(t)) return { code: "FILE_ERROR", message: "安装文件不可用或路径无效" };
+  return { code: "UNKNOWN", message: t.slice(0, 300) || "未知错误" };
+}
+
+/** 执行更新：路径白名单 → 会话（自动登录）→ dry-run 预检 → 正式安装/引导。 */
+function applyUpdate(payload, dataDir, creds) {
+  return new Promise(async (resolve) => {
     const dir = updateDir(dataDir);
-    const raw = String(payload && payload.file || payload && payload.name || "");
+    const raw = String((payload && payload.file) || (payload && payload.name) || "");
     if (!raw) {
       resolve({ success: false, message: "缺少 FPK 文件" });
       return;
@@ -306,52 +418,69 @@ function applyUpdate(payload, dataDir) {
       return;
     }
     const resolved = path.resolve(raw);
-    // 路径安全检查：必须位于应用 updates/ 目录内，防目录穿越
     const dirResolved = path.resolve(dir);
     if (resolved !== path.join(dirResolved, name) || !resolved.startsWith(dirResolved + path.sep)) {
       resolve({ success: false, message: "FPK 必须位于应用更新目录" });
       return;
     }
-    const filePath = resolved;
-    if (!fs.existsSync(filePath)) {
-      resolve({ success: false, message: `FPK 不存在: ${filePath}` });
+    if (!fs.existsSync(resolved)) {
+      resolve({ success: false, message: `FPK 不存在: ${resolved}` });
       return;
     }
-    const cli = trimCliPath();
-    if (!cli) {
-      resolve({ success: false, message: "未找到 trim-cli，请在 NAS 安装后重试" });
+    if (!trimCliPath()) {
+      resolve({ success: false, message: "未找到 trim-cli，请确认 NAS 已安装 fnOS CLI" });
       return;
     }
-    // 更新执行依赖 NAS 上已配置的 trim-cli session（一次登录，加密存储，免密调用）
-    // 连接参数与本机部署约定一致；HOME 指向应用 home 以加载 profile
-    const args = [
-      "--host", "127.0.0.1",
-      "--port", "53892",
-      "--scheme", "ws",
-      "--allow-insecure-ws",
-      "--profile", "app",
-      "app", "install-fpk",
-      filePath,
-      "--custom-parameters", "[]",
-      "--volume-id", "1",
-      "--data-volume-id", "1",
-      "--yes",
-    ];
-    const env = { ...process.env, HOME: process.env.HOME || "/vol1/@apphome/p115assistant" };
-    const child = spawn(cli, args, { stdio: ["ignore", "pipe", "pipe"], env });
-    let out = "";
-    let errOut = "";
-    child.stdout.on("data", (d) => (out += String(d)));
-    child.stderr.on("data", (d) => (errOut += String(d)));
-    child.on("error", (err) => resolve({ success: false, message: `执行失败: ${err.message}` }));
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ success: true, message: "更新已提交，应用即将重启", output: out.trim().slice(0, 300) });
+    // 1) 会话：无 → 有凭据自动登录；无凭据 → 交前端收集
+    let sessionOk = await trimHasSession(dataDir);
+    if (!sessionOk) {
+      const u = creds && creds.username;
+      const p = creds && creds.password;
+      if (u && p) {
+        const lg = await trimCliLogin(dataDir, u, p);
+        if (lg.code === 0) {
+          sessionOk = true;
+        } else {
+          resolve({ success: false, need_login: true, code: "NEED_LOGIN", message: `自动登录失败: ${lg.err.trim().slice(0, 200) || "请检查账号密码"}` });
+          return;
+        }
       } else {
-        resolve({ success: false, message: `trim-cli 退出码 ${code}: ${errOut.trim().slice(0, 300)}` });
+        resolve({ success: false, need_login: true, code: "NEED_CREDS", message: "需要 fnOS 账号密码用于自动安装，请先配置" });
+        return;
       }
-    });
+    }
+    const env = trimEnv(dataDir);
+    // 2) a. dry-run 预检（确认 fpk 有效、可升级）
+    const dryArgs = trimArgs("app", "install-fpk", resolved, "--custom-parameters", "[]", "--volume-id", "1", "--data-volume-id", "1", "--yes", "--dry-run");
+    const dry = await runTrimCli(dryArgs, env);
+    if (dry.code !== 0) {
+      const cls = classifyCliError(dry.err + dry.out);
+      resolve({ success: false, code: cls.code, message: cls.message, need_ui: cls.need_ui || false });
+      return;
+    }
+    const dryJson = dry.out.trim();
+    // 2) b. 正式安装；fnOS 10236 硬限制 → 返回一步引导（文件就绪 + 路径 + 指引）
+    const instArgs = trimArgs("app", "install-fpk", resolved, "--custom-parameters", "[]", "--volume-id", "1", "--data-volume-id", "1", "--yes");
+    const inst = await runTrimCli(instArgs, env);
+    if (inst.code === 0) {
+      resolve({ success: true, message: "更新已提交，应用即将重启", output: inst.out.trim().slice(0, 300) });
+      return;
+    }
+    const cls = classifyCliError(inst.err + inst.out);
+    if (cls.need_ui) {
+      resolve({
+        success: true,
+        need_ui: true,
+        code: "UI_ONLY",
+        file: resolved,
+        sha256: (payload && payload.sha256) || "",
+        message: "安装包已验证，fnOS 需在应用中心完成最后一步",
+        steps: ["打开「应用中心」→「已安装」→ 115网盘助手", "点击「手动安装」，选择上一步下载的安装包", "同意并确认，应用自动升级"],
+      });
+      return;
+    }
+    resolve({ success: false, code: cls.code, message: cls.message });
   });
 }
 
-module.exports = { checkUpdate, downloadUpdate, applyUpdate, updateDir, trimCliPath, CURRENT_VERSION };
+module.exports = { checkUpdate, downloadUpdate, applyUpdate, updateDir, trimCliPath, trimHasSession, trimCliLogin, classifyCliError, CURRENT_VERSION };

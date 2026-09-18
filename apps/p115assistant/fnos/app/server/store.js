@@ -25,6 +25,8 @@ const DEFAULT_CONFIG = {
   cookie: "",
   tokens: {},
   login_client_type: "",
+  fnos_username: "",
+  fnos_password: "",
   link_redirect_mode: "cookie",
   upload_mappings: [],
   upload_include_sidecars: true,
@@ -54,7 +56,7 @@ const DEFAULT_CONFIG = {
 };
 
 const ENCRYPTION_SALT = "p115liteassistant_v1";
-const ENCRYPTED_FIELDS = ["cookie", "tokens"];
+const ENCRYPTED_FIELDS = ["cookie", "tokens", "fnos_password"];
 const REDIRECT_SECRET_KEY = "p115liteassistant_redirect_secret";
 const CONFIG_KEY = "p115assistant_config";
 const HISTORY_KEY = "p115assistant_history";

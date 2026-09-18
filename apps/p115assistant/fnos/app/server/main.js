@@ -79,6 +79,8 @@ const ACTIONS = new Map([
   ["check_update", ["GET", "checkUpdate"]],
   ["download_update", ["POST", "downloadUpdate"]],
   ["apply_update", ["POST", "applyUpdate"]],
+  ["fnos_login", ["POST", "fnosLogin"]],
+  ["fnos_forget", ["POST", "fnosForget"]],
   ["link", ["GET", "link"]],
   ["history", ["GET", "history"]],
   ["browse_local", ["GET", "browseLocal"]],
@@ -87,7 +89,7 @@ const ACTIONS = new Map([
 ]);
 
 function maskValue(key, value) {
-  if (["cookie", "tokens", "feishu_webhook"].includes(String(key).toLowerCase())) {
+  if (["cookie", "tokens", "feishu_webhook", "fnos_password"].includes(String(key).toLowerCase())) {
     return "***";
   }
   return value;
