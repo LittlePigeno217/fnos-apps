@@ -644,7 +644,10 @@
           <span class="muted" id="strmOutboundHint" style="font-size:12px;color:var(--muted)"></span>
         </div>
         <div class="field-row" style="margin-bottom:10px;align-items:center;gap:8px">
-          <span class="muted" id="strmIncrementalHint" style="font-size:13px"></span>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="strmIncremental" onchange="toggleStrmIncremental()">
+            <span class="muted" style="font-size:13px">增量生成（仅生成新增/更新的 STRM）</span>
+          </label>
         </div>
         <div class="toolbar">
           <button class="btn" onclick="addStrmCard()">
@@ -3708,14 +3711,23 @@ async function loadStrmMappings(){
   renderStrmCards();
   await saveStrmBase();
   bindStrmBaseEdit();
-  // 增量生成状态（运行设置唯一写入口；前端只读提示，避免语义重叠困惑）
-  const rc = await call("strm_status");
-  if (rc.success && rc.data) {
-    const inc = rc.data.incremental !== false;
-    el("strmIncrementalHint").textContent = `增量生成：${inc ? "开" : "关"}（在应用设置 → 运行设置调整）`;
+    // 增量生成开关状态（strm_incremental 由本页直接读写，不再重复出现在应用配置）
+    const rc = await call("strm_status");
+    if (rc.success && rc.data) {
+      const d = rc.data;
+      const inc = d.incremental !== false;
+      el("strmIncremental").checked = inc;
+    }
+    return r;
   }
-  return r;
-}
+  // 增量生成开关：即时保存到配置（save_config 白名单含 strm_incremental）
+  async function toggleStrmIncremental() {
+    const checked = el("strmIncremental").checked === true;
+    const r = await call("save_config", "POST", { strm_incremental: checked });
+    if (!r.success) {
+      el("strmIncremental").checked = !checked;
+    }
+  }
 function renderStrmCards(){
   const box = el("strmList");
   box.innerHTML = "";

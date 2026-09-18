@@ -103,13 +103,6 @@
     "stepTitle": "STRM",
     "items": [
       {
-        "type": "switch",
-        "field": "strm_incremental",
-        "label": "增量生成",
-        "default": true,
-        "tips": "只生成新增文件的 STRM，不重复扫描。"
-      },
-      {
         "type": "text",
         "field": "relay_port",
         "label": "播放中转端口",
@@ -121,13 +114,6 @@
           }
         ],
         "tips": "302 播放中转端口：STRM 文件中的直连端口，播放器通过该端口匿名取链（默认 3667）。"
-      },
-      {
-        "type": "text",
-        "field": "strm_base_url",
-        "label": "STRM 基础地址",
-        "default": "",
-        "tips": "手动填写时自动补充播放中转端口（如 http://192.168.1.100 或 192.168.1.100）；留空自动检测宿主机 IP。"
       }
     ]
   },
