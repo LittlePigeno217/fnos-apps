@@ -2,6 +2,8 @@ name: Release p115assistant
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'p115assistant/v*'
   workflow_dispatch:
@@ -37,12 +39,15 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
             VERSION="${{ inputs.version }}"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # 推送 main：版本号取自 manifest（仅 manifest 变更时继续，见 gate 步骤）
             VERSION="$(grep '^version' apps/p115assistant/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')"
-          else
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
             # tag 格式 p115assistant/v1.0.1 → 1.0.1
             TAG="${GITHUB_REF#refs/tags/p115assistant/}"
             VERSION="${TAG#v}"
+          else
+            VERSION="$(grep '^version' apps/p115assistant/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')"
           fi
           if [[ -z "$VERSION" || ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "ERROR: 无法解析版本号: '${VERSION}'"
@@ -50,13 +55,60 @@ jobs:
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: 发布门槛检查（版本变更才发布 / 幂等防重复）
+        id: gate
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          REPO="${{ github.repository }}"
+          SKIP=0
+          # 1) main push：仅当本次提交实际修改了 manifest 版本才继续
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            if ! git diff --name-only HEAD^ HEAD 2>/dev/null | grep -q 'apps/p115assistant/fnos/manifest'; then
+              echo "main push 未修改 manifest，跳过发布"
+              SKIP=1
+            fi
+          fi
+          # 2) release 已存在 → 跳过（防 tag/main 重复触发）
+          if [[ "$SKIP" == "0" ]] && gh release view "p115assistant/v${VERSION}" --repo "$REPO" >/dev/null 2>&1; then
+            echo "release p115assistant/v${VERSION} 已存在，跳过发布"
+            SKIP=1
+          fi
+          # 3) main push：manifest 版本必须高于线上最新 release（防回退）
+          if [[ "$SKIP" == "0" ]] && [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            LATEST_V=$(curl -s --max-time 20 "https://api.github.com/repos/${REPO}/releases?per_page=100" | python3 - <<'EOF'
+          import sys, json
+          try:
+              releases = json.load(sys.stdin)
+              vs = [r["tag_name"][len("p115assistant/v"):] for r in releases if r["tag_name"].startswith("p115assistant/v")]
+              def key(v): return tuple(int(x) for x in v.split("."))
+              print(max(vs, key=key) if vs else "0.0.0")
+          except Exception:
+              print("0.0.0")
+          EOF
+            )
+            echo "manifest version=${VERSION}, 线上最新=${LATEST_V}"
+            if ! python3 - "$VERSION" "$LATEST_V" <<'EOF'
+          import sys
+          a = tuple(int(x) for x in sys.argv[1].split("."))
+          b = tuple(int(x) for x in sys.argv[2].split("."))
+          sys.exit(0 if a > b else 1)
+          EOF
+            then
+              echo "无新版本（manifest ${VERSION} ≤ 线上 ${LATEST_V}），跳过发布"
+              SKIP=1
+            fi
+          fi
+          echo "skip=${SKIP}" >> "$GITHUB_OUTPUT"
+
       - name: 构建 fpk
+        if: steps.gate.outputs.skip != '1'
         run: |
           VERSION=${{ steps.ver.outputs.version }} ./apps/p115assistant/update_p115assistant.sh
           FPK="dist/p115assistant_${{ steps.ver.outputs.version }}_all.fpk"
           ls -la "${FPK}"
 
       - name: 计算校验值并生成 Release Body
+        if: steps.gate.outputs.skip != '1'
         id: chk
         run: |
           FPK="dist/p115assistant_${{ steps.ver.outputs.version }}_all.fpk"
@@ -74,6 +126,7 @@ jobs:
           cat dist/checksum.txt
 
       - name: 生成版本清单并提交构建产物（raw 加速源）
+        if: steps.gate.outputs.skip != '1'
         run: |
           VERSION=${{ steps.ver.outputs.version }}
           FPK="dist/p115assistant_${VERSION}_all.fpk"
@@ -98,8 +151,7 @@ jobs:
           cat dist/latest.json
           git config user.name "LittlePigeno"
           git config user.email "LittlePigeno217@users.noreply.github.com"
-          # 基于最新 main 重建发布分支（checkout 默认在 tag SHA 上、无 main 引用，
-          # pull --rebase 会失败；未跟踪的 dist/ 产物在切换分支时保留）
+          # 基于最新 main 重建发布分支（checkout 默认在触发 SHA 上；未跟踪的 dist/ 产物在切换分支时保留）
           git fetch origin main
           git checkout -B publish origin/main
           git add -f dist/latest.json "dist/p115assistant_${VERSION}_all.fpk"
@@ -107,6 +159,7 @@ jobs:
           git push origin publish:main || true
 
       - name: 发布 Release
+        if: steps.gate.outputs.skip != '1'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: p115assistant/v${{ steps.ver.outputs.version }}
