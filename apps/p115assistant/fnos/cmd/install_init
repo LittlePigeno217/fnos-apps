@@ -1,0 +1,22 @@
+#!/bin/sh
+# 115网盘助手 安装初始化：安装应用文件前执行。
+set -u
+
+# 依赖 nodejs_v24 运行时；install_dep_apps 会在本阶段之前准备好。
+# 这里只做占位校验，真正的解释器解析发生在 start 阶段。
+if ! command -v node >/dev/null 2>&1; then
+  # 兜底：fnOS 的 nodejs_v24 可能不并入 PATH，探测常见运行时目录
+  for cand in \
+    "$TRIM_APPDEST/.runtime/nodejs_v24/bin/node" \
+    /vol*/@appcenter/nodejs_v24/bin/node \
+    /opt/nodejs_v24/bin/node \
+    /usr/lib/nodejs_v24/bin/node \
+    /usr/local/lib/nodejs_v24/bin/node; do
+    if [ -x "$cand" ]; then
+      exit 0
+    fi
+  done
+  echo "未检测到 node（依赖 nodejs_v24），115网盘助手无法运行。" > "${TRIM_TEMP_LOGFILE:-/tmp/p115assistant-install.err}"
+  exit 1
+fi
+exit 0

@@ -1,0 +1,60 @@
+name: Update apps.json
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Only one instance runs at a time. When multiple builds trigger this
+# workflow concurrently, queued runs are cancelled — the last one wins
+# and captures the final state of all releases.
+concurrency:
+  group: update-apps-json
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  update-apps-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Generate apps.json
+        run: bash scripts/ci/generate-apps-json.sh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          for attempt in 1 2 3; do
+            git add apps.json
+            if git diff --cached --quiet; then
+              echo "No changes to apps.json"
+              exit 0
+            fi
+
+            git commit -m "chore: update apps.json [skip ci]"
+            if git push; then
+              echo "Push succeeded on attempt $attempt"
+              exit 0
+            fi
+
+            echo "[WARN] Push failed (attempt $attempt), pulling and regenerating..."
+            git reset HEAD~1
+            git checkout -- apps.json
+            git pull --rebase origin main
+            bash scripts/ci/generate-apps-json.sh
+          done
+
+          echo "[ERROR] Failed to push apps.json after 3 attempts" >&2
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

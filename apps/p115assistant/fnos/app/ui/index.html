@@ -1,0 +1,4151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>115网盘助手</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  :root {
+    color-scheme: light;
+    --font-ui: system-ui, -apple-system, "Segoe UI", "PingFang SC", "HarmonyOS Sans SC",
+               "Source Han Sans SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+    --bg: #EDF0F4;      /* 冷石板底 */
+    --card: #FFFFFF;
+    --sidebar: #F6F8FA;
+    --ink: #1E2A32;
+    --muted: #66757F;
+    --border: #D9E0E7;
+    --hover: rgba(30,42,50,.045);
+
+    --accent: #E8451C;        /* 115 品牌朱红 */
+    --accent-strong: #C93A16;
+    --accent-soft: #FBE9E2;
+    --ok: #178A52;   --ok-glow: rgba(23,138,82,.16);  --ok-border: rgba(23,138,82,.35);
+    --err: #C93A3A;
+
+    --term-bg: #0C1219;  --term-ink: #A9BBC8;  --term-muted: #5E7282;
+    --term-accent: #FF7A50;  --term-border: rgba(12,18,25,.35);
+    --shadow: 0 1px 2px rgba(16,26,36,.05), 0 10px 28px rgba(16,26,36,.06);
+    --radius: 12px;
+    --focus: 0 0 0 3px rgba(232,69,28,.28);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #0E141B; --card: #151E27; --sidebar: #111B24;
+      --ink: #E7EDF2; --muted: #8B98A4; --border: #263140;
+      --hover: rgba(231,237,242,.055);
+      --accent: #FF6A3D; --accent-strong: #FF7A50;
+      --accent-soft: rgba(255,106,61,.13);
+      --ok: #34C07B; --ok-glow: rgba(52,192,123,.2); --ok-border: rgba(52,192,123,.45);
+      --err: #F06558;
+      --term-border: rgba(255,255,255,.07);
+      --shadow: 0 1px 2px rgba(0,0,0,.28), 0 12px 32px rgba(0,0,0,.38);
+      --focus: 0 0 0 3px rgba(255,106,61,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.55 var(--font-ui); -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }   /* 标签页与弹窗依赖 hidden 切显隐 */
+  button { font: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: none; box-shadow: var(--focus); border-radius: 8px; }
+  ::selection { background: var(--accent-soft); }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .ok { color: var(--ok); }
+  .err { color: var(--err); font-size: 12.5px; margin: 10px 0 0; }
+
+  /* ---------- 骨架 ---------- */
+  .app { display: grid; grid-template-columns: 208px 1fr; min-height: 100vh; }
+  .main { min-width: 0; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 20px 28px 0; }
+  .page-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .2px; }
+  .content { padding: 16px 28px 44px; min-width: 0; }
+
+  /* ---------- 侧栏 ---------- */
+  .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
+             padding: 18px 12px 14px; background: var(--sidebar); border-right: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 18px; }
+  .brand-mark { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+                flex: none; color: #fff; font-weight: 800; font-size: 13px; letter-spacing: .5px;
+                background: linear-gradient(135deg, var(--accent), #B8330E);
+                box-shadow: 0 3px 10px rgba(232,69,28,.35); }
+  .brand-name { font-weight: 700; font-size: 14.5px; letter-spacing: .2px; }
+  .brand-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .nav button { position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
+                padding: 9px 10px; border: 0; background: transparent; color: var(--ink);
+                border-radius: 9px; font-size: 13.5px; text-align: left; cursor: pointer;
+                transition: background .12s ease, color .12s ease; }
+  .nav button svg { width: 17px; height: 17px; flex: none; color: var(--muted);
+                    transition: color .12s ease; }
+  .nav button:hover { background: var(--hover); }
+  .nav button:hover svg { color: var(--ink); }
+  .nav button.active { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+  .nav button.active svg { color: var(--accent); }
+  .nav button.active::before { content: ""; position: absolute; left: -12px; top: 8px; bottom: 8px;
+                               width: 3px; border-radius: 2px; background: var(--accent); }
+  .sidebar-foot { display: flex; justify-content: space-between; align-items: center;
+                  padding: 12px 8px 0; border-top: 1px solid var(--border);
+                  color: var(--muted); font-size: 11px; }
+  .ver { font-family: var(--font-mono); }
+
+  /* ---------- 登录状态芯片 ---------- */
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px;
+          font-size: 12px; color: var(--muted); background: var(--card);
+          border: 1px solid var(--border); border-radius: 999px; white-space: nowrap;
+          font-variant-numeric: tabular-nums; transition: color .15s ease, border-color .15s ease; }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .chip.on { color: var(--ok); border-color: var(--ok-border); }
+  .chip.on::before { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-glow); }
+
+  /* ---------- 卡片与工具条 ---------- */
+  .pane { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+          padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .field-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .field-row .input { flex: 1; min-width: 200px; }
+  .settings-row { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+  .grow { flex: 1; min-width: 160px; }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+         border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+         color: var(--ink); font-size: 13px; cursor: pointer;
+         transition: border-color .12s ease, color .12s ease, background .12s ease, transform .05s ease; }
+  .btn svg { width: 15px; height: 15px; flex: none; }
+  .btn:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .btn:disabled:hover { border-color: var(--border); color: var(--ink); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+  .btn.ghost { background: transparent; }
+  .btn.btn-mini { padding: 3px 8px; font-size: 12px; gap: 4px; }
+  select.input { width: auto; max-width: 180px; }
+
+  /* ---------- 终端路径行（签名） ---------- */
+  .termline { display: flex; align-items: center; gap: 9px; min-height: 40px; margin-bottom: 12px;
+              padding: 10px 14px; border-radius: 9px; overflow: hidden;
+              background: var(--term-bg); border: 1px solid var(--term-border);
+              color: var(--term-ink); font-family: var(--font-mono); font-size: 13px; }
+  .term-prompt { color: var(--term-accent); font-weight: 700; }
+  .term-path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .term-cursor { width: 7px; height: 15px; flex: none; border-radius: 1px;
+                 background: var(--term-accent); animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+
+  /* ---------- 表格 ---------- */
+  .table-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border);
+           white-space: nowrap; vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: .4px; }
+  tbody tr { transition: background .1s ease; }
+  tbody tr:hover { background: var(--hover); }
+  tbody tr.row-dir { cursor: pointer; }
+  tbody tr.row-dir:hover .name { color: var(--accent-strong); }
+  .name { font-weight: 500; }
+  .size { color: var(--muted); font-family: var(--font-mono); font-size: 12.5px; }
+  .glyph { display: inline-flex; vertical-align: -2px; margin-right: 7px; color: var(--muted); }
+  .glyph svg { width: 15px; height: 15px; }
+  .row-dir .glyph { color: var(--accent); }
+  .ops { text-align: right; }
+
+  /* ---------- 空状态 ---------- */
+  .empty { padding: 34px 12px 28px; text-align: center; color: var(--muted); font-size: 13px; }
+  .empty:empty { display: none; }
+  .empty::before { content: "▦"; display: block; margin-bottom: 8px; font-size: 26px;
+                   color: var(--accent); opacity: .5; }
+
+  /* ---------- 表单 ---------- */
+  .input { width: 100%; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px;
+           background: var(--card); color: var(--ink); font-size: 13px;
+           transition: border-color .12s ease; }
+  .input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
+  .input.mono, .mono { font-family: var(--font-mono); font-size: 12.5px; }
+
+  /* ---------- 签到摘要 ---------- */
+  .summary { display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+             padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px;
+             background: var(--bg); }
+  .summary-ic { width: 40px; height: 40px; flex: none; display: grid; place-items: center;
+                border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+  .summary-ic svg { width: 20px; height: 20px; }
+  .summary-info { flex: 1; min-width: 0; }
+  .summary-title { font-weight: 600; font-size: 13.5px; }
+  .summary-sub { margin-top: 2px; color: var(--muted); font-size: 12.5px; }
+  .summary-range { padding: 2px 9px; border-radius: 6px; background: var(--accent-soft);
+                   color: var(--accent-strong); font-family: var(--font-mono); font-size: 12.5px; }
+
+  /* ---------- 设置分组与开关 ---------- */
+  .settings-group { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .settings-group > header { padding: 9px 14px; background: var(--bg); border-bottom: 1px solid var(--border);
+                             color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .6px; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                 padding: 12px 14px; }
+  .setting-row + .setting-row { border-top: 1px solid var(--border); }
+  .setting-label { font-size: 13.5px; font-weight: 500; }
+  .setting-desc { margin-top: 1px; color: var(--muted); font-size: 12px; }
+  .setting-row .input.mono { flex: 1; max-width: 200px; }
+  .switch { position: relative; display: inline-flex; flex: none; }
+  .switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+                  opacity: 0; cursor: pointer; }
+  .switch .track { position: relative; width: 38px; height: 22px; border-radius: 999px;
+                   background: var(--border); transition: background .15s ease; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+                          border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+                          transition: transform .15s ease; }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { transform: translateX(16px); }
+  .switch input:focus-visible + .track { box-shadow: var(--focus); }
+
+  /* ---------- 取链代码块 ---------- */
+  .code { margin-top: 12px; padding: 12px 14px; border-radius: 9px;
+          background: var(--term-bg); color: var(--term-ink);
+          font-family: var(--font-mono); font-size: 12.5px; word-break: break-all;
+          white-space: pre-wrap; }
+  .code:empty { display: none; }
+
+  /* ---------- 日志终端面板 ---------- */
+  .term { border: 1px solid var(--term-border); border-radius: 11px; overflow: hidden; }
+  .term-head { display: flex; align-items: center; gap: 7px; padding: 9px 12px;
+               background: var(--term-bg); border-bottom: 1px solid var(--term-border); }
+  .term-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .term-dot:nth-child(1) { background: #E54D3C; }
+  .term-dot:nth-child(2) { background: #E0A72E; }
+  .term-dot:nth-child(3) { background: #3EAF57; }
+  .term-title { margin-left: 6px; color: var(--term-muted); font-size: 11.5px; font-family: var(--font-mono); }
+  .term-body { margin: 0; padding: 12px 14px; max-height: 340px; overflow: auto;
+               background: var(--term-bg); color: var(--term-ink);
+               font-family: var(--font-mono); font-size: 12px; line-height: 1.65;
+               white-space: pre-wrap; }
+
+  /* ---------- 扫码登录弹窗 ---------- */
+  .qr-overlay { position: fixed; inset: 0; z-index: 99; display: flex; align-items: center;
+                justify-content: center; padding: 14px; background: rgba(8,12,18,.6);
+                backdrop-filter: blur(2px); }
+  /* hidden 属性必须覆盖 display:flex，否则弹窗永远显示且关不掉 */
+  .qr-overlay[hidden] { display: none !important; }
+  .qr-card { position: relative; width: 100%; max-width: 340px; min-width: 300px; padding: 22px 22px 18px;
+             text-align: center; background: var(--card); border: 1px solid var(--border);
+             border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .qr-card h3 { margin: 0 0 14px; font-size: 16px; font-weight: 700; }
+  .qr-close { position: absolute; top: 10px; right: 10px; padding: 4px 8px; border: 0;
+              border-radius: 6px; background: transparent; color: var(--muted); font-size: 15px;
+              cursor: pointer; }
+  .qr-close:hover { color: var(--ink); background: var(--hover); }
+  .qr-methods { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 16px; }
+  .qr-methods button { padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
+                       background: var(--card); color: var(--ink); font-size: 12.5px; cursor: pointer;
+                       transition: border-color .12s ease, color .12s ease, background .12s ease; }
+  .qr-methods button:hover { border-color: var(--accent); color: var(--accent-strong); }
+  .qr-methods button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .qr-box { display: grid; place-items: center; min-height: 220px; padding: 12px;
+            background: #fff; border: 1px solid var(--border); border-radius: 12px; }
+  .qr-box canvas { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+  .qr-loading { padding: 60px 0; color: var(--muted); font-size: 13px; }
+  .qr-hint { margin: 14px 0 0; font-size: 12.5px; }
+  .qr-foot { margin-top: 16px; display: flex; gap: 8px; justify-content: center; }
+
+  /* ---------- 响应式 ---------- */
+  /* ≤860：侧栏横向化为顶部导航；安全区 env() 兼容刘海屏/手势条（桌面窗口 env=0 无副作用） */
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; padding: 12px 12px 8px;
+               padding-top: max(12px, env(safe-area-inset-top));
+               padding-bottom: calc(8px + env(safe-area-inset-bottom));
+               padding-left: calc(12px + env(safe-area-inset-left));
+               padding-right: calc(12px + env(safe-area-inset-right));
+               border-right: 0; border-bottom: 1px solid var(--border); }
+    .brand { padding: 0 4px 10px; }
+    .nav { flex-direction: row; gap: 4px; overflow-x: auto;
+           -webkit-overflow-scrolling: touch; }
+    .nav button { width: auto; flex: none; padding: 10px 13px; }
+    .nav button.active::before { display: none; }
+    .topbar { padding: 14px 16px 0;
+              padding-left: calc(16px + env(safe-area-inset-left));
+              padding-right: calc(16px + env(safe-area-inset-right)); }
+    .content { padding: 12px 16px 32px;
+               padding-left: calc(16px + env(safe-area-inset-left));
+               padding-right: calc(16px + env(safe-area-inset-right));
+               padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+  }
+
+  /* ≤560：手机档——触控目标 ≥44px、导航横滚、表单纵向堆叠、二维码弹窗防溢出 */
+  @media (max-width: 560px) {
+    .tag { display: none; }
+    .page-title { font-size: 16px; }
+    .sidebar { padding: 8px 10px 6px;
+               padding-top: max(8px, env(safe-area-inset-top));
+               padding-bottom: calc(6px + env(safe-area-inset-bottom));
+               padding-left: calc(10px + env(safe-area-inset-left));
+               padding-right: calc(10px + env(safe-area-inset-right)); }
+    .brand { padding: 0 2px 8px; }
+    .nav { gap: 3px; scrollbar-width: none; }
+    .nav::-webkit-scrollbar { display: none; }
+    .nav button { min-height: 44px; gap: 8px; padding: 10px 12px; font-size: 13px; }
+    .nav button svg { width: 18px; height: 18px; }
+    .sidebar-foot { padding: 10px 6px 2px; }
+
+    .topbar { padding: 12px 14px 0;
+              padding-left: calc(14px + env(safe-area-inset-left));
+              padding-right: calc(14px + env(safe-area-inset-right)); }
+    .content { padding: 10px 14px 28px;
+               padding-left: calc(14px + env(safe-area-inset-left));
+               padding-right: calc(14px + env(safe-area-inset-right));
+               padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+    .pane { padding: 14px; }
+    .toolbar .grow { display: none; }
+    .grow { min-width: 0; }
+
+    /* 触控目标高度 */
+    .btn { min-height: 40px; padding: 8px 13px; }
+    .btn.btn-mini { min-height: 28px; padding: 4px 9px; }
+    .qr-close { padding: 8px 10px; }
+    .table-wrap { -webkit-overflow-scrolling: touch; }
+
+    /* 表单与设置行纵向堆叠：label 上、控件下 */
+    .field-row { flex-direction: column; align-items: stretch; gap: 10px; }
+    .field-row .input { flex: none; min-width: 0; width: 100%; }
+    .field-row .btn { justify-content: center; }
+    .setting-row { flex-direction: column; align-items: stretch; gap: 8px; }
+    .setting-row .input.mono { flex: none; max-width: none; width: 100%; }
+    .setting-row .switch { align-self: flex-end; }
+    select.input { width: 100%; max-width: none; }
+
+    /* 输入框 16px，避免 iOS 聚焦自动放大 */
+    .input { font-size: 16px; padding: 10px 12px; }
+    .input.mono { font-size: 16px; }
+
+    /* 终端元素与摘要 */
+    .termline { padding: 10px 12px; font-size: 12.5px; }
+    .code { padding: 12px; }
+    .summary { flex-wrap: wrap; gap: 10px; padding: 14px 12px; }
+    .summary-range { max-width: 100%; }
+
+    /* 二维码弹窗：320px 屏不溢出，渠道按钮触控友好 */
+    .qr-overlay { padding: 10px; }
+    .qr-card { min-width: 0; padding: 20px 16px 16px; }
+    .qr-methods { gap: 8px 6px; }
+    .qr-methods button { min-height: 38px; padding: 6px 12px; font-size: 12.5px; }
+    .qr-foot .btn { min-height: 40px; }
+  }
+
+  /* ≤380px 极端档：最小屏进一步收紧 */
+  @media (max-width: 380px) {
+    .page-title { font-size: 15px; }
+    .brand-name { font-size: 13.5px; }
+    .brand-sub { display: none; }
+    .brand-mark { width: 34px; height: 34px; font-size: 12px; }
+    .topbar { padding: 10px 10px 0;
+              padding-left: calc(10px + env(safe-area-inset-left));
+              padding-right: calc(10px + env(safe-area-inset-right)); }
+    .content { padding: 9px 10px 24px;
+               padding-left: calc(10px + env(safe-area-inset-left));
+               padding-right: calc(10px + env(safe-area-inset-right));
+               padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+    .pane { padding: 12px; }
+    .qr-card { padding: 18px 14px 14px; }
+    .qr-methods button { padding: 6px 10px; }
+    .termline { padding: 9px 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  /* ---------- 媒体账本 ---------- */
+  /* 账本行要放下媒体名与「源 → 输出」路径，允许换行；其余列保持单行右对齐 */
+  #ledgerTable td { white-space: normal; overflow-wrap: anywhere; }
+  #ledgerTable td.ops, #ledgerTable th { white-space: nowrap; }
+  #ledgerTable th.pick, #ledgerTable td.pick { width: 34px; padding-right: 0; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px;
+          border: 1px solid var(--border); color: var(--muted); }
+  .pill.ok { color: var(--ok); border-color: var(--ok-border); }
+  .pill.bad { color: var(--err); border-color: var(--err); }
+  .pill.warn { color: var(--ink); }
+  .btn.danger { color: var(--err); border-color: var(--err); }
+  .btn.danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
+  .btn.danger:disabled:hover { background: transparent; color: var(--err); }
+
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">115</div>
+      <div>
+        <div class="brand-name">115网盘助手</div>
+        <div class="brand-sub">fnOS · 云盘工具</div>
+      </div>
+    </div>
+    <nav class="nav" id="tabs" aria-label="主导航">
+      <button data-tab="drive" class="active" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        网盘
+      </button>
+      <button data-tab="upload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m6 9 6-5 6 5"/><path d="M4 20h16"/></svg>
+        上传
+      </button>
+      <button data-tab="signin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M17 8H9.5a3.5 3.5 0 0 0 0 7H12a3.5 3.5 0 0 1 0 7H6"/></svg>
+        签到
+      </button>
+      <button data-tab="link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="8" height="8" rx="4"/><path d="M10.8 13.2a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7.1-7.1l-.9.9"/></svg>
+        STRM
+      </button>
+      <button data-tab="ledger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z"/><path d="M8 7h7"/></svg>
+        媒体库
+      </button>
+      <button data-tab="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.5a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.5a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+        设置
+      </button>
+      <button data-tab="log">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h6"/><circle cx="19" cy="18" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="17" cy="6" r="2"/></svg>
+        日志
+      </button>
+      <button data-tab="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>
+        历史
+      </button>
+    </nav>
+    <div class="sidebar-foot">
+      <span class="ver" id="appVersion">v1.0.1</span>
+      <span>115</span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <h1 class="page-title" id="pageTitle">网盘</h1>
+      <span class="chip" id="authLine">未登录</span>
+    </header>
+    <div class="content">
+
+      <!-- 扫码登录弹窗 -->
+      <div id="qrOverlay" class="qr-overlay" hidden>
+        <div class="qr-card" role="dialog" aria-modal="true" aria-label="115 扫码登录">
+          <button class="qr-close" onclick="closeQr()" aria-label="关闭">✕</button>
+          <h3>115 扫码登录</h3>
+          <div class="qr-methods" id="qrMethods" role="group" aria-label="登录方式">
+            <button data-ct="alipaymini" class="on">支付宝</button>
+            <button data-ct="wechatmini">微信</button>
+            <button data-ct="115android">安卓</button>
+            <button data-ct="115ios">iOS</button>
+            <button data-ct="web">网页</button>
+            <button data-ct="115ipad">PAD</button>
+            <button data-ct="tv">TV</button>
+          </div>
+          <div class="qr-box">
+            <canvas id="qrCanvas" width="248" height="248"></canvas>
+            <div class="qr-loading" id="qrLoading">获取二维码…</div>
+          </div>
+          <p class="err" id="qrErr" hidden></p>
+          <p class="qr-hint muted" id="qrHint"></p>
+          <div class="qr-foot">
+            <button class="btn" onclick="closeQr()">取消</button>
+            <button class="btn" onclick="fetchQr()" id="qrRefresh">刷新二维码</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 115 网盘目标目录选择弹窗 -->
+      <div id="targetOverlay" class="qr-overlay" hidden>
+        <div class="qr-card" role="dialog" aria-modal="true" aria-label="选择 115 目标目录" style="text-align:left">
+          <button class="qr-close" onclick="closeTargetPicker()" aria-label="关闭">✕</button>
+          <h3 style="text-align:center">选择 115 目标目录</h3>
+          <div class="termline" style="margin:0 0 10px">
+            <span class="term-prompt">❯</span>
+            <span class="term-path" id="targetCrumb">/</span>
+            <span class="grow" style="flex:1"></span>
+            <button class="btn btn-mini" onclick="targetGoUp()" id="targetUpBtn">上级</button>
+          </div>
+          <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+            <table id="targetTable" hidden>
+              <thead><tr><th>目录</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="empty" id="targetEmpty">加载中…</p>
+          <div class="qr-foot" style="justify-content:space-between">
+            <span class="muted" id="targetSel">未选择目录</span>
+            <span style="display:flex;gap:8px">
+              <button class="btn" onclick="closeTargetPicker()">取消</button>
+              <button class="btn primary" onclick="targetConfirm()" id="targetConfirmBtn" disabled>确认选择</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 本地源目录可视化选择弹窗 -->
+      <div id="srcOverlay" class="qr-overlay" hidden>
+        <div class="qr-card" role="dialog" aria-modal="true" aria-label="选择本地源目录" style="text-align:left">
+          <button class="qr-close" onclick="closeSrcPicker()" aria-label="关闭">✕</button>
+          <h3 style="text-align:center">选择本地源目录</h3>
+          <div class="termline" style="margin:0 0 10px">
+            <span class="term-prompt">❯</span>
+            <span class="term-path" id="srcCrumb">/</span>
+            <span class="grow" style="flex:1"></span>
+            <button class="btn btn-mini" onclick="srcGoUp()" id="srcUpBtn" disabled>上级</button>
+          </div>
+          <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+            <table id="srcTable" hidden>
+              <thead><tr><th>目录</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="empty" id="srcEmpty">加载中…</p>
+          <div class="qr-foot" style="justify-content:space-between">
+            <span class="muted" id="srcSel">未选择目录</span>
+            <span style="display:flex;gap:8px">
+              <button class="btn" onclick="closeSrcPicker()">取消</button>
+              <button class="btn primary" onclick="srcConfirm()" id="srcConfirmBtn" disabled>确认选择</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 网盘 -->
+      <section id="tab-drive" class="pane">
+        <div class="termline" aria-label="当前目录">
+          <span class="term-prompt">❯</span>
+          <span class="term-path" id="crumb">/</span>
+          <span class="term-cursor" aria-hidden="true"></span>
+        </div>
+        <div class="toolbar">
+          <button class="btn" onclick="goUp()" id="upBtn" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 12 4l8 5"/><path d="M6 8v9a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8"/></svg>
+            上级
+          </button>
+          <span class="grow"></span>
+          <button class="btn" onclick="openQr()" id="qrBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM20 14v.01M20 20h.01M14 20v.01M17 17h3"/></svg>
+            扫码登录
+          </button>
+          <button class="btn" onclick="refreshDrive()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+            刷新
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table id="driveTable" hidden>
+            <thead><tr><th>名称</th><th class="tag">大小</th><th class="tag">类型</th><th class="ops"></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="driveEmpty"></p>
+      </section>
+
+      <!-- 上传 -->
+      <section id="tab-upload" class="pane" hidden>
+        <div class="toolbar">
+          <button class="btn" onclick="addMappingCard()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            添加映射
+          </button>
+          <span class="grow"></span>
+          <span class="muted" id="sweepState"></span>
+          <button class="btn" id="watchToggle" onclick="toggleWatcher()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg>
+            开始监听
+          </button>
+          <span class="muted" id="watchStatus" hidden></span>
+          <button class="btn" onclick="toggleOnceCard('uploadOnceCard')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            指定目录上传一次
+          </button>
+          <button class="btn primary" onclick="sweep()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m6 9 6-5 6 5"/><path d="M4 20h16"/></svg>
+            立即上传全部
+          </button>
+        </div>
+        <div class="pane" id="uploadOnceCard" hidden style="padding:14px 16px;margin-bottom:12px">
+          <div class="field-row" style="align-items:center;gap:8px">
+            <span class="muted" style="width:76px;flex:none">本地源目录</span>
+            <button class="btn" onclick="pickOnce('upload','srclocal')">选择本地目录</button>
+            <div style="flex:1;min-width:0" id="uploadOnceSource"><span class="muted">未选择</span></div>
+          </div>
+          <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
+            <span class="muted" style="width:76px;flex:none">115 目标目录</span>
+            <button class="btn" onclick="pickOnce('upload','tgt115')">选择 115 目录</button>
+            <div style="flex:1;min-width:0" id="uploadOnceTarget"><span class="muted">未选择</span></div>
+          </div>
+          <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+            <span class="muted" id="uploadOnceResult"></span>
+            <button class="btn" onclick="toggleOnceCard('uploadOnceCard')">关闭</button>
+            <button class="btn primary" id="uploadOnceRunBtn" onclick="runUploadOnce()" disabled>上传一次</button>
+          </div>
+        </div>
+        <div id="mappingList"></div>
+        <p class="empty" id="uploadEmpty">暂无上传映射，点击「添加映射」创建源目录 → 目标目录配对</p>
+        <div class="risk-bar" id="riskBar" hidden style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 12px;border-radius:6px;background:var(--surface);"></div>
+        <details class="adv-block" id="advUploadExt" style="margin-top:10px;font-size:13px">
+          <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">高级：上传扩展名 <span class="muted">（可选）</span></summary>
+          <div class="pane" style="padding:12px 16px;margin-top:6px">
+            <div class="field-row" style="align-items:center;gap:8px">
+              <span class="muted" style="width:96px;flex:none">媒体扩展名</span>
+              <input class="input mono grow" type="text" id="mediaExtensions" placeholder=".mp4,.mkv,.ts,.iso,…">
+            </div>
+            <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
+              <span class="muted" style="width:96px;flex:none">附属文件扩展名</span>
+              <input class="input mono grow" type="text" id="sidecarExtensions" placeholder=".nfo,.jpg,.jpeg,.png,.srt,.ass,…">
+            </div>
+            <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+              <span class="muted" id="advExtResult"></span>
+              <button class="btn" onclick="restoreDefaultExtensions()">恢复默认</button>
+              <button class="btn primary" onclick="saveExtensions()">保存</button>
+            </div>
+            <p class="muted" style="margin-top:6px;font-size:12px">上传与 STRM 生成都会按媒体扩展名判定文件；附属文件扩展名在「上传附属文件」开启时生效。</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- 签到 -->
+      <section id="tab-signin" class="pane" hidden>
+        <div class="summary">
+          <div class="summary-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M17 8H9.5a3.5 3.5 0 0 0 0 7H12a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <div class="summary-info">
+            <div class="summary-title">每日自动签到</div>
+            <div class="summary-sub">在设定时段内自动执行，也可随时手动签到一次</div>
+          </div>
+          <span class="summary-range" id="signinRange">06:00-09:00</span>
+        </div>
+        <div class="field-row" style="margin-top:6px">
+          <span class="muted" id="signinAutoHint" style="font-size:13px"></span>
+        </div>
+        <div class="field-row">
+          <button class="btn primary" onclick="checkinNow()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+            立即签到
+          </button>
+          <span class="muted" id="signinResult"></span>
+        </div>
+      </section>
+
+      <!-- STRM -->
+      <section id="tab-link" class="pane" hidden>
+        <div class="field-row" style="margin-bottom:6px">
+          <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测，或手动填写基础地址（如 http://192.168.1.100）" title="STRM 基础地址：手动填写后自动补充播放中转端口；留空自动检测宿主机 IP">
+        </div>
+        <div class="field-row" style="margin-bottom:10px">
+          <span class="muted" id="strmRelayHint" style="font-size:13px"></span>
+        </div>
+        <div class="field-row" style="margin-bottom:6px">
+          <span class="muted" id="strmOutboundHint" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+        <div class="field-row" style="margin-bottom:10px;align-items:center;gap:8px">
+          <span class="muted" id="strmIncrementalHint" style="font-size:13px"></span>
+        </div>
+        <div class="toolbar">
+          <button class="btn" onclick="addStrmCard()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            添加映射
+          </button>
+          <span class="muted" id="strmHelp"></span>
+          <span class="grow"></span>
+          <span class="muted" id="strmResult"></span>
+          <button class="btn" onclick="toggleOnceCard('strmOnceCard')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            对指定目录生成一次
+          </button>
+          <button class="btn primary" onclick="runStrmSync()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
+            立即同步
+          </button>
+        </div>
+        <div class="pane" id="strmOnceCard" hidden style="padding:14px 16px;margin-bottom:12px">
+          <div class="field-row" style="align-items:center;gap:8px">
+            <span class="muted" style="width:76px;flex:none">115 源目录</span>
+            <button class="btn" onclick="pickOnce('strm','src115')">选择 115 目录</button>
+            <div style="flex:1;min-width:0" id="strmOnceSource"><span class="muted">未选择</span></div>
+          </div>
+          <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
+            <span class="muted" style="width:76px;flex:none">输出目录</span>
+            <button class="btn" onclick="pickOnce('strm','tgtlocal')">选择本地目录</button>
+            <div style="flex:1;min-width:0" id="strmOnceTarget"><span class="muted">未选择</span></div>
+          </div>
+          <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+            <span class="muted" id="strmOnceResult"></span>
+            <button class="btn" onclick="toggleOnceCard('strmOnceCard')">关闭</button>
+            <button class="btn primary" id="strmOnceRunBtn" onclick="runStrmOnce()" disabled>生成一次</button>
+          </div>
+        </div>
+        <div id="strmList"></div>
+        <p class="empty" id="strmEmpty">暂无 STRM 映射，点击「添加映射」创建</p>
+      </section>
+
+      <!-- 媒体库：一部电影一行、一季剧一行 -->
+      <section id="tab-ledger" class="pane" hidden>
+        <div class="toolbar">
+          <button class="btn" onclick="loadLedger()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+            刷新账本
+          </button>
+          <span class="grow"></span>
+          <span class="muted" id="ledgerResult"></span>
+          <button class="btn" id="ledgerVerifyBtn" onclick="verifyLedger()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="m9 12 2.5 2.5L20 6"/></svg>
+            云端核对
+          </button>
+          <button class="btn danger" id="ledgerDropBtn" onclick="dropStaleLedger()" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/></svg>
+            清理失效 STRM
+          </button>
+        </div>
+        <p class="muted" id="ledgerSummary">加载中…</p>
+        <div class="table-wrap" style="margin-top:10px">
+          <table id="ledgerTable" hidden>
+            <thead><tr>
+              <th class="pick"><input type="checkbox" id="ledgerAll" onclick="toggleAllLedger(this)" aria-label="全选"></th>
+              <th>媒体</th><th>类型</th><th>所属 STRM 映射</th>
+              <th class="ops">STRM</th><th class="ops">总大小</th><th>最近同步</th><th>状态</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="ledgerEmpty">加载中…</p>
+      </section>
+
+      <!-- 设置：配置项已迁移至「应用中心 → 应用设置 → 运行设置」，此处仅保留更新与版本信息 -->
+      <section id="tab-settings" class="pane" hidden>
+      <div class="settings-group">
+        <header>更新</header>
+        <div class="setting-row">
+          <div style="flex:1;min-width:0">
+            <div class="setting-label">当前版本</div>
+            <div class="setting-desc" id="currentVersion">未知</div>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div style="flex:1;min-width:0">
+            <div class="setting-label">最新版本</div>
+            <div class="setting-desc" id="latestVersionInfo">点击「检查更新」获取</div>
+          </div>
+        </div>
+        <div class="settings-row">
+          <button class="btn" onclick="checkUpdate()">检查更新</button>
+          <button class="btn primary" id="downloadUpdateBtn" style="display:none" onclick="downloadAndUpdate()">下载更新</button>
+          <span class="muted" id="updateResult"></span>
+        </div>
+      </div>
+    </section>
+
+      <!-- 日志 -->
+      <section id="tab-log" class="pane" hidden>
+        <div class="field-row" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
+          <span class="muted" style="font-size:12px">等级</span>
+          <button class="btn btn-mini logf" data-level="ALL" style="padding:2px 10px">全部</button>
+          <button class="btn btn-mini logf" data-level="INFO" style="padding:2px 10px">INFO</button>
+          <button class="btn btn-mini logf" data-level="WARN" style="padding:2px 10px">WARN</button>
+          <button class="btn btn-mini logf" data-level="ERROR" style="padding:2px 10px">ERROR</button>
+          <span class="muted" style="font-size:12px;margin-left:12px">类型</span>
+          <button class="btn btn-mini logf" data-type="ALL" style="padding:2px 10px">全部</button>
+          <button class="btn btn-mini logf" data-type="UPLOAD" style="padding:2px 10px">上传</button>
+          <button class="btn btn-mini logf" data-type="STRM" style="padding:2px 10px">STRM</button>
+          <button class="btn btn-mini logf" data-type="WATCH" style="padding:2px 10px">监听</button>
+          <button class="btn btn-mini logf" data-type="CHECKIN" style="padding:2px 10px">签到</button>
+          <button class="btn btn-mini logf" data-type="RISK" style="padding:2px 10px">风控</button>
+          <button class="btn btn-mini logf" data-type="CONFIG" style="padding:2px 10px">配置</button>
+          <button class="btn btn-mini logf" data-type="LINK" style="padding:2px 10px">取链</button>
+          <button class="btn btn-mini logf" data-type="SYSTEM" style="padding:2px 10px">系统</button>
+          <span class="grow"></span>
+          <span class="muted" id="logCount" style="font-size:12px"></span>
+        </div>
+        <div class="term">
+          <div class="term-head" aria-hidden="true">
+            <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+            <span class="term-title">p115assistant — 运行日志</span>
+          </div>
+          <pre class="term-body" id="logBox"></pre>
+        </div>
+      </section>
+
+      <!-- 历史 -->
+      <section id="tab-history" class="pane" hidden>
+        <div class="toolbar">
+          <span class="muted">最近 50 条执行记录</span>
+          <span class="grow"></span>
+          <button class="btn" onclick="refreshHistory()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+            刷新
+          </button>
+        </div>
+        <div class="termline" aria-label="上传身份冲突" id="conflictBlock" hidden>
+          <span class="term-prompt">❯</span>
+          <span class="term-path">上传身份冲突</span>
+          <span class="grow"></span>
+          <button class="btn btn-mini" onclick="refreshConflicts()">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table id="conflictTable" hidden>
+            <thead><tr><th>本地路径</th><th>目标</th><th>记录 Pickcode</th><th>远端 Pickcode</th><th class="ops">处理</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="conflictEmpty" hidden></p>
+        <div class="table-wrap" style="margin-top:14px">
+          <table id="historyTable" hidden>
+            <thead><tr><th>时间</th><th>类型</th><th>操作</th><th class="ops">结果</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="historyEmpty">暂无执行记录</p>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- QR 码编码库（绝对路径确保任何入口都能加载） -->
+<script>//---------------------------------------------------------------------
+//
+// QR Code Generator for JavaScript
+//
+// Copyright (c) 2009 Kazuhiko Arase
+//
+// URL: http://www.d-project.com/
+//
+// Licensed under the MIT license:
+//  http://www.opensource.org/licenses/mit-license.php
+//
+// The word 'QR Code' is registered trademark of
+// DENSO WAVE INCORPORATED
+//  http://www.denso-wave.com/qrcode/faqpatent-e.html
+//
+//---------------------------------------------------------------------
+
+var qrcode = function() {
+
+  //---------------------------------------------------------------------
+  // qrcode
+  //---------------------------------------------------------------------
+
+  /**
+   * qrcode
+   * @param typeNumber 1 to 40
+   * @param errorCorrectionLevel 'L','M','Q','H'
+   */
+  var qrcode = function(typeNumber, errorCorrectionLevel) {
+
+    var PAD0 = 0xEC;
+    var PAD1 = 0x11;
+
+    var _typeNumber = typeNumber;
+    var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+    var _modules = null;
+    var _moduleCount = 0;
+    var _dataCache = null;
+    var _dataList = [];
+
+    var _this = {};
+
+    var makeImpl = function(test, maskPattern) {
+
+      _moduleCount = _typeNumber * 4 + 17;
+      _modules = function(moduleCount) {
+        var modules = new Array(moduleCount);
+        for (var row = 0; row < moduleCount; row += 1) {
+          modules[row] = new Array(moduleCount);
+          for (var col = 0; col < moduleCount; col += 1) {
+            modules[row][col] = null;
+          }
+        }
+        return modules;
+      }(_moduleCount);
+
+      setupPositionProbePattern(0, 0);
+      setupPositionProbePattern(_moduleCount - 7, 0);
+      setupPositionProbePattern(0, _moduleCount - 7);
+      setupPositionAdjustPattern();
+      setupTimingPattern();
+      setupTypeInfo(test, maskPattern);
+
+      if (_typeNumber >= 7) {
+        setupTypeNumber(test);
+      }
+
+      if (_dataCache == null) {
+        _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+      }
+
+      mapData(_dataCache, maskPattern);
+    };
+
+    var setupPositionProbePattern = function(row, col) {
+
+      for (var r = -1; r <= 7; r += 1) {
+
+        if (row + r <= -1 || _moduleCount <= row + r) continue;
+
+        for (var c = -1; c <= 7; c += 1) {
+
+          if (col + c <= -1 || _moduleCount <= col + c) continue;
+
+          if ( (0 <= r && r <= 6 && (c == 0 || c == 6) )
+              || (0 <= c && c <= 6 && (r == 0 || r == 6) )
+              || (2 <= r && r <= 4 && 2 <= c && c <= 4) ) {
+            _modules[row + r][col + c] = true;
+          } else {
+            _modules[row + r][col + c] = false;
+          }
+        }
+      }
+    };
+
+    var getBestMaskPattern = function() {
+
+      var minLostPoint = 0;
+      var pattern = 0;
+
+      for (var i = 0; i < 8; i += 1) {
+
+        makeImpl(true, i);
+
+        var lostPoint = QRUtil.getLostPoint(_this);
+
+        if (i == 0 || minLostPoint > lostPoint) {
+          minLostPoint = lostPoint;
+          pattern = i;
+        }
+      }
+
+      return pattern;
+    };
+
+    var setupTimingPattern = function() {
+
+      for (var r = 8; r < _moduleCount - 8; r += 1) {
+        if (_modules[r][6] != null) {
+          continue;
+        }
+        _modules[r][6] = (r % 2 == 0);
+      }
+
+      for (var c = 8; c < _moduleCount - 8; c += 1) {
+        if (_modules[6][c] != null) {
+          continue;
+        }
+        _modules[6][c] = (c % 2 == 0);
+      }
+    };
+
+    var setupPositionAdjustPattern = function() {
+
+      var pos = QRUtil.getPatternPosition(_typeNumber);
+
+      for (var i = 0; i < pos.length; i += 1) {
+
+        for (var j = 0; j < pos.length; j += 1) {
+
+          var row = pos[i];
+          var col = pos[j];
+
+          if (_modules[row][col] != null) {
+            continue;
+          }
+
+          for (var r = -2; r <= 2; r += 1) {
+
+            for (var c = -2; c <= 2; c += 1) {
+
+              if (r == -2 || r == 2 || c == -2 || c == 2
+                  || (r == 0 && c == 0) ) {
+                _modules[row + r][col + c] = true;
+              } else {
+                _modules[row + r][col + c] = false;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    var setupTypeNumber = function(test) {
+
+      var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+      }
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+      }
+    };
+
+    var setupTypeInfo = function(test, maskPattern) {
+
+      var data = (_errorCorrectionLevel << 3) | maskPattern;
+      var bits = QRUtil.getBCHTypeInfo(data);
+
+      // vertical
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 6) {
+          _modules[i][8] = mod;
+        } else if (i < 8) {
+          _modules[i + 1][8] = mod;
+        } else {
+          _modules[_moduleCount - 15 + i][8] = mod;
+        }
+      }
+
+      // horizontal
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 8) {
+          _modules[8][_moduleCount - i - 1] = mod;
+        } else if (i < 9) {
+          _modules[8][15 - i - 1 + 1] = mod;
+        } else {
+          _modules[8][15 - i - 1] = mod;
+        }
+      }
+
+      // fixed module
+      _modules[_moduleCount - 8][8] = (!test);
+    };
+
+    var mapData = function(data, maskPattern) {
+
+      var inc = -1;
+      var row = _moduleCount - 1;
+      var bitIndex = 7;
+      var byteIndex = 0;
+      var maskFunc = QRUtil.getMaskFunction(maskPattern);
+
+      for (var col = _moduleCount - 1; col > 0; col -= 2) {
+
+        if (col == 6) col -= 1;
+
+        while (true) {
+
+          for (var c = 0; c < 2; c += 1) {
+
+            if (_modules[row][col - c] == null) {
+
+              var dark = false;
+
+              if (byteIndex < data.length) {
+                dark = ( ( (data[byteIndex] >>> bitIndex) & 1) == 1);
+              }
+
+              var mask = maskFunc(row, col - c);
+
+              if (mask) {
+                dark = !dark;
+              }
+
+              _modules[row][col - c] = dark;
+              bitIndex -= 1;
+
+              if (bitIndex == -1) {
+                byteIndex += 1;
+                bitIndex = 7;
+              }
+            }
+          }
+
+          row += inc;
+
+          if (row < 0 || _moduleCount <= row) {
+            row -= inc;
+            inc = -inc;
+            break;
+          }
+        }
+      }
+    };
+
+    var createBytes = function(buffer, rsBlocks) {
+
+      var offset = 0;
+
+      var maxDcCount = 0;
+      var maxEcCount = 0;
+
+      var dcdata = new Array(rsBlocks.length);
+      var ecdata = new Array(rsBlocks.length);
+
+      for (var r = 0; r < rsBlocks.length; r += 1) {
+
+        var dcCount = rsBlocks[r].dataCount;
+        var ecCount = rsBlocks[r].totalCount - dcCount;
+
+        maxDcCount = Math.max(maxDcCount, dcCount);
+        maxEcCount = Math.max(maxEcCount, ecCount);
+
+        dcdata[r] = new Array(dcCount);
+
+        for (var i = 0; i < dcdata[r].length; i += 1) {
+          dcdata[r][i] = 0xff & buffer.getBuffer()[i + offset];
+        }
+        offset += dcCount;
+
+        var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+        var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+
+        var modPoly = rawPoly.mod(rsPoly);
+        ecdata[r] = new Array(rsPoly.getLength() - 1);
+        for (var i = 0; i < ecdata[r].length; i += 1) {
+          var modIndex = i + modPoly.getLength() - ecdata[r].length;
+          ecdata[r][i] = (modIndex >= 0)? modPoly.getAt(modIndex) : 0;
+        }
+      }
+
+      var totalCodeCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalCodeCount += rsBlocks[i].totalCount;
+      }
+
+      var data = new Array(totalCodeCount);
+      var index = 0;
+
+      for (var i = 0; i < maxDcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < dcdata[r].length) {
+            data[index] = dcdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      for (var i = 0; i < maxEcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < ecdata[r].length) {
+            data[index] = ecdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      return data;
+    };
+
+    var createData = function(typeNumber, errorCorrectionLevel, dataList) {
+
+      var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectionLevel);
+
+      var buffer = qrBitBuffer();
+
+      for (var i = 0; i < dataList.length; i += 1) {
+        var data = dataList[i];
+        buffer.put(data.getMode(), 4);
+        buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+        data.write(buffer);
+      }
+
+      // calc num max data.
+      var totalDataCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalDataCount += rsBlocks[i].dataCount;
+      }
+
+      if (buffer.getLengthInBits() > totalDataCount * 8) {
+        throw 'code length overflow. ('
+          + buffer.getLengthInBits()
+          + '>'
+          + totalDataCount * 8
+          + ')';
+      }
+
+      // end code
+      if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+        buffer.put(0, 4);
+      }
+
+      // padding
+      while (buffer.getLengthInBits() % 8 != 0) {
+        buffer.putBit(false);
+      }
+
+      // padding
+      while (true) {
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD0, 8);
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD1, 8);
+      }
+
+      return createBytes(buffer, rsBlocks);
+    };
+
+    _this.addData = function(data, mode) {
+
+      mode = mode || 'Byte';
+
+      var newData = null;
+
+      switch(mode) {
+      case 'Numeric' :
+        newData = qrNumber(data);
+        break;
+      case 'Alphanumeric' :
+        newData = qrAlphaNum(data);
+        break;
+      case 'Byte' :
+        newData = qr8BitByte(data);
+        break;
+      case 'Kanji' :
+        newData = qrKanji(data);
+        break;
+      default :
+        throw 'mode:' + mode;
+      }
+
+      _dataList.push(newData);
+      _dataCache = null;
+    };
+
+    _this.isDark = function(row, col) {
+      if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+        throw row + ',' + col;
+      }
+      return _modules[row][col];
+    };
+
+    _this.getModuleCount = function() {
+      return _moduleCount;
+    };
+
+    _this.make = function() {
+      if (_typeNumber < 1) {
+        var typeNumber = 1;
+
+        for (; typeNumber < 40; typeNumber++) {
+          var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, _errorCorrectionLevel);
+          var buffer = qrBitBuffer();
+
+          for (var i = 0; i < _dataList.length; i++) {
+            var data = _dataList[i];
+            buffer.put(data.getMode(), 4);
+            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+            data.write(buffer);
+          }
+
+          var totalDataCount = 0;
+          for (var i = 0; i < rsBlocks.length; i++) {
+            totalDataCount += rsBlocks[i].dataCount;
+          }
+
+          if (buffer.getLengthInBits() <= totalDataCount * 8) {
+            break;
+          }
+        }
+
+        _typeNumber = typeNumber;
+      }
+
+      makeImpl(false, getBestMaskPattern() );
+    };
+
+    _this.createTableTag = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var qrHtml = '';
+
+      qrHtml += '<table style="';
+      qrHtml += ' border-width: 0px; border-style: none;';
+      qrHtml += ' border-collapse: collapse;';
+      qrHtml += ' padding: 0px; margin: ' + margin + 'px;';
+      qrHtml += '">';
+      qrHtml += '<tbody>';
+
+      for (var r = 0; r < _this.getModuleCount(); r += 1) {
+
+        qrHtml += '<tr>';
+
+        for (var c = 0; c < _this.getModuleCount(); c += 1) {
+          qrHtml += '<td style="';
+          qrHtml += ' border-width: 0px; border-style: none;';
+          qrHtml += ' border-collapse: collapse;';
+          qrHtml += ' padding: 0px; margin: 0px;';
+          qrHtml += ' width: ' + cellSize + 'px;';
+          qrHtml += ' height: ' + cellSize + 'px;';
+          qrHtml += ' background-color: ';
+          qrHtml += _this.isDark(r, c)? '#000000' : '#ffffff';
+          qrHtml += ';';
+          qrHtml += '"/>';
+        }
+
+        qrHtml += '</tr>';
+      }
+
+      qrHtml += '</tbody>';
+      qrHtml += '</table>';
+
+      return qrHtml;
+    };
+
+    _this.createSvgTag = function(cellSize, margin, alt, title) {
+
+      var opts = {};
+      if (typeof arguments[0] == 'object') {
+        // Called by options.
+        opts = arguments[0];
+        // overwrite cellSize and margin.
+        cellSize = opts.cellSize;
+        margin = opts.margin;
+        alt = opts.alt;
+        title = opts.title;
+      }
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      // Compose alt property surrogate
+      alt = (typeof alt === 'string') ? {text: alt} : alt || {};
+      alt.text = alt.text || null;
+      alt.id = (alt.text) ? alt.id || 'qrcode-description' : null;
+
+      // Compose title property surrogate
+      title = (typeof title === 'string') ? {text: title} : title || {};
+      title.text = title.text || null;
+      title.id = (title.text) ? title.id || 'qrcode-title' : null;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var c, mc, r, mr, qrSvg='', rect;
+
+      rect = 'l' + cellSize + ',0 0,' + cellSize +
+        ' -' + cellSize + ',0 0,-' + cellSize + 'z ';
+
+      qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+      qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : '';
+      qrSvg += ' viewBox="0 0 ' + size + ' ' + size + '" ';
+      qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+      qrSvg += (title.text || alt.text) ? ' role="img" aria-labelledby="' +
+          escapeXml([title.id, alt.id].join(' ').trim() ) + '"' : '';
+      qrSvg += '>';
+      qrSvg += (title.text) ? '<title id="' + escapeXml(title.id) + '">' +
+          escapeXml(title.text) + '</title>' : '';
+      qrSvg += (alt.text) ? '<description id="' + escapeXml(alt.id) + '">' +
+          escapeXml(alt.text) + '</description>' : '';
+      qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+      qrSvg += '<path d="';
+
+      for (r = 0; r < _this.getModuleCount(); r += 1) {
+        mr = r * cellSize + margin;
+        for (c = 0; c < _this.getModuleCount(); c += 1) {
+          if (_this.isDark(r, c) ) {
+            mc = c*cellSize+margin;
+            qrSvg += 'M' + mc + ',' + mr + rect;
+          }
+        }
+      }
+
+      qrSvg += '" stroke="transparent" fill="black"/>';
+      qrSvg += '</svg>';
+
+      return qrSvg;
+    };
+
+    _this.createDataURL = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      return createDataURL(size, size, function(x, y) {
+        if (min <= x && x < max && min <= y && y < max) {
+          var c = Math.floor( (x - min) / cellSize);
+          var r = Math.floor( (y - min) / cellSize);
+          return _this.isDark(r, c)? 0 : 1;
+        } else {
+          return 1;
+        }
+      } );
+    };
+
+    _this.createImgTag = function(cellSize, margin, alt) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+
+      var img = '';
+      img += '<img';
+      img += '\u0020src="';
+      img += _this.createDataURL(cellSize, margin);
+      img += '"';
+      img += '\u0020width="';
+      img += size;
+      img += '"';
+      img += '\u0020height="';
+      img += size;
+      img += '"';
+      if (alt) {
+        img += '\u0020alt="';
+        img += escapeXml(alt);
+        img += '"';
+      }
+      img += '/>';
+
+      return img;
+    };
+
+    var escapeXml = function(s) {
+      var escaped = '';
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charAt(i);
+        switch(c) {
+        case '<': escaped += '&lt;'; break;
+        case '>': escaped += '&gt;'; break;
+        case '&': escaped += '&amp;'; break;
+        case '"': escaped += '&quot;'; break;
+        default : escaped += c; break;
+        }
+      }
+      return escaped;
+    };
+
+    var _createHalfASCII = function(margin) {
+      var cellSize = 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r1, r2, p;
+
+      var blocks = {
+        '██': '█',
+        '█ ': '▀',
+        ' █': '▄',
+        '  ': ' '
+      };
+
+      var blocksLastLineNoMargin = {
+        '██': '▀',
+        '█ ': '▀',
+        ' █': ' ',
+        '  ': ' '
+      };
+
+      var ascii = '';
+      for (y = 0; y < size; y += 2) {
+        r1 = Math.floor((y - min) / cellSize);
+        r2 = Math.floor((y + 1 - min) / cellSize);
+        for (x = 0; x < size; x += 1) {
+          p = '█';
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r1, Math.floor((x - min) / cellSize))) {
+            p = ' ';
+          }
+
+          if (min <= x && x < max && min <= y+1 && y+1 < max && _this.isDark(r2, Math.floor((x - min) / cellSize))) {
+            p += ' ';
+          }
+          else {
+            p += '█';
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          ascii += (margin < 1 && y+1 >= max) ? blocksLastLineNoMargin[p] : blocks[p];
+        }
+
+        ascii += '\n';
+      }
+
+      if (size % 2 && margin > 0) {
+        return ascii.substring(0, ascii.length - size - 1) + Array(size+1).join('▀');
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.createASCII = function(cellSize, margin) {
+      cellSize = cellSize || 1;
+
+      if (cellSize < 2) {
+        return _createHalfASCII(margin);
+      }
+
+      cellSize -= 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r, p;
+
+      var white = Array(cellSize+1).join('██');
+      var black = Array(cellSize+1).join('  ');
+
+      var ascii = '';
+      var line = '';
+      for (y = 0; y < size; y += 1) {
+        r = Math.floor( (y - min) / cellSize);
+        line = '';
+        for (x = 0; x < size; x += 1) {
+          p = 1;
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r, Math.floor((x - min) / cellSize))) {
+            p = 0;
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          line += p ? white : black;
+        }
+
+        for (r = 0; r < cellSize; r += 1) {
+          ascii += line + '\n';
+        }
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.renderTo2dContext = function(context, cellSize) {
+      cellSize = cellSize || 2;
+      var length = _this.getModuleCount();
+      for (var row = 0; row < length; row++) {
+        for (var col = 0; col < length; col++) {
+          context.fillStyle = _this.isDark(row, col) ? 'black' : 'white';
+          context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrcode.stringToBytes
+  //---------------------------------------------------------------------
+
+  qrcode.stringToBytesFuncs = {
+    'default' : function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        bytes.push(c & 0xff);
+      }
+      return bytes;
+    }
+  };
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['default'];
+
+  //---------------------------------------------------------------------
+  // qrcode.createStringToBytes
+  //---------------------------------------------------------------------
+
+  /**
+   * @param unicodeData base64 string of byte array.
+   * [16bit Unicode],[16bit Bytes], ...
+   * @param numChars
+   */
+  qrcode.createStringToBytes = function(unicodeData, numChars) {
+
+    // create conversion map.
+
+    var unicodeMap = function() {
+
+      var bin = base64DecodeInputStream(unicodeData);
+      var read = function() {
+        var b = bin.read();
+        if (b == -1) throw 'eof';
+        return b;
+      };
+
+      var count = 0;
+      var unicodeMap = {};
+      while (true) {
+        var b0 = bin.read();
+        if (b0 == -1) break;
+        var b1 = read();
+        var b2 = read();
+        var b3 = read();
+        var k = String.fromCharCode( (b0 << 8) | b1);
+        var v = (b2 << 8) | b3;
+        unicodeMap[k] = v;
+        count += 1;
+      }
+      if (count != numChars) {
+        throw count + ' != ' + numChars;
+      }
+
+      return unicodeMap;
+    }();
+
+    var unknownChar = '?'.charCodeAt(0);
+
+    return function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        if (c < 128) {
+          bytes.push(c);
+        } else {
+          var b = unicodeMap[s.charAt(i)];
+          if (typeof b == 'number') {
+            if ( (b & 0xff) == b) {
+              // 1byte
+              bytes.push(b);
+            } else {
+              // 2bytes
+              bytes.push(b >>> 8);
+              bytes.push(b & 0xff);
+            }
+          } else {
+            bytes.push(unknownChar);
+          }
+        }
+      }
+      return bytes;
+    };
+  };
+
+  //---------------------------------------------------------------------
+  // QRMode
+  //---------------------------------------------------------------------
+
+  var QRMode = {
+    MODE_NUMBER :    1 << 0,
+    MODE_ALPHA_NUM : 1 << 1,
+    MODE_8BIT_BYTE : 1 << 2,
+    MODE_KANJI :     1 << 3
+  };
+
+  //---------------------------------------------------------------------
+  // QRErrorCorrectionLevel
+  //---------------------------------------------------------------------
+
+  var QRErrorCorrectionLevel = {
+    L : 1,
+    M : 0,
+    Q : 3,
+    H : 2
+  };
+
+  //---------------------------------------------------------------------
+  // QRMaskPattern
+  //---------------------------------------------------------------------
+
+  var QRMaskPattern = {
+    PATTERN000 : 0,
+    PATTERN001 : 1,
+    PATTERN010 : 2,
+    PATTERN011 : 3,
+    PATTERN100 : 4,
+    PATTERN101 : 5,
+    PATTERN110 : 6,
+    PATTERN111 : 7
+  };
+
+  //---------------------------------------------------------------------
+  // QRUtil
+  //---------------------------------------------------------------------
+
+  var QRUtil = function() {
+
+    var PATTERN_POSITION_TABLE = [
+      [],
+      [6, 18],
+      [6, 22],
+      [6, 26],
+      [6, 30],
+      [6, 34],
+      [6, 22, 38],
+      [6, 24, 42],
+      [6, 26, 46],
+      [6, 28, 50],
+      [6, 30, 54],
+      [6, 32, 58],
+      [6, 34, 62],
+      [6, 26, 46, 66],
+      [6, 26, 48, 70],
+      [6, 26, 50, 74],
+      [6, 30, 54, 78],
+      [6, 30, 56, 82],
+      [6, 30, 58, 86],
+      [6, 34, 62, 90],
+      [6, 28, 50, 72, 94],
+      [6, 26, 50, 74, 98],
+      [6, 30, 54, 78, 102],
+      [6, 28, 54, 80, 106],
+      [6, 32, 58, 84, 110],
+      [6, 30, 58, 86, 114],
+      [6, 34, 62, 90, 118],
+      [6, 26, 50, 74, 98, 122],
+      [6, 30, 54, 78, 102, 126],
+      [6, 26, 52, 78, 104, 130],
+      [6, 30, 56, 82, 108, 134],
+      [6, 34, 60, 86, 112, 138],
+      [6, 30, 58, 86, 114, 142],
+      [6, 34, 62, 90, 118, 146],
+      [6, 30, 54, 78, 102, 126, 150],
+      [6, 24, 50, 76, 102, 128, 154],
+      [6, 28, 54, 80, 106, 132, 158],
+      [6, 32, 58, 84, 110, 136, 162],
+      [6, 26, 54, 82, 110, 138, 166],
+      [6, 30, 58, 86, 114, 142, 170]
+    ];
+    var G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
+    var G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0);
+    var G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
+
+    var _this = {};
+
+    var getBCHDigit = function(data) {
+      var digit = 0;
+      while (data != 0) {
+        digit += 1;
+        data >>>= 1;
+      }
+      return digit;
+    };
+
+    _this.getBCHTypeInfo = function(data) {
+      var d = data << 10;
+      while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+        d ^= (G15 << (getBCHDigit(d) - getBCHDigit(G15) ) );
+      }
+      return ( (data << 10) | d) ^ G15_MASK;
+    };
+
+    _this.getBCHTypeNumber = function(data) {
+      var d = data << 12;
+      while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+        d ^= (G18 << (getBCHDigit(d) - getBCHDigit(G18) ) );
+      }
+      return (data << 12) | d;
+    };
+
+    _this.getPatternPosition = function(typeNumber) {
+      return PATTERN_POSITION_TABLE[typeNumber - 1];
+    };
+
+    _this.getMaskFunction = function(maskPattern) {
+
+      switch (maskPattern) {
+
+      case QRMaskPattern.PATTERN000 :
+        return function(i, j) { return (i + j) % 2 == 0; };
+      case QRMaskPattern.PATTERN001 :
+        return function(i, j) { return i % 2 == 0; };
+      case QRMaskPattern.PATTERN010 :
+        return function(i, j) { return j % 3 == 0; };
+      case QRMaskPattern.PATTERN011 :
+        return function(i, j) { return (i + j) % 3 == 0; };
+      case QRMaskPattern.PATTERN100 :
+        return function(i, j) { return (Math.floor(i / 2) + Math.floor(j / 3) ) % 2 == 0; };
+      case QRMaskPattern.PATTERN101 :
+        return function(i, j) { return (i * j) % 2 + (i * j) % 3 == 0; };
+      case QRMaskPattern.PATTERN110 :
+        return function(i, j) { return ( (i * j) % 2 + (i * j) % 3) % 2 == 0; };
+      case QRMaskPattern.PATTERN111 :
+        return function(i, j) { return ( (i * j) % 3 + (i + j) % 2) % 2 == 0; };
+
+      default :
+        throw 'bad maskPattern:' + maskPattern;
+      }
+    };
+
+    _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+      var a = qrPolynomial([1], 0);
+      for (var i = 0; i < errorCorrectLength; i += 1) {
+        a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0) );
+      }
+      return a;
+    };
+
+    _this.getLengthInBits = function(mode, type) {
+
+      if (1 <= type && type < 10) {
+
+        // 1 - 9
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 10;
+        case QRMode.MODE_ALPHA_NUM : return 9;
+        case QRMode.MODE_8BIT_BYTE : return 8;
+        case QRMode.MODE_KANJI     : return 8;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 27) {
+
+        // 10 - 26
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 12;
+        case QRMode.MODE_ALPHA_NUM : return 11;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 10;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 41) {
+
+        // 27 - 40
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 14;
+        case QRMode.MODE_ALPHA_NUM : return 13;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 12;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else {
+        throw 'type:' + type;
+      }
+    };
+
+    _this.getLostPoint = function(qrcode) {
+
+      var moduleCount = qrcode.getModuleCount();
+
+      var lostPoint = 0;
+
+      // LEVEL1
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount; col += 1) {
+
+          var sameCount = 0;
+          var dark = qrcode.isDark(row, col);
+
+          for (var r = -1; r <= 1; r += 1) {
+
+            if (row + r < 0 || moduleCount <= row + r) {
+              continue;
+            }
+
+            for (var c = -1; c <= 1; c += 1) {
+
+              if (col + c < 0 || moduleCount <= col + c) {
+                continue;
+              }
+
+              if (r == 0 && c == 0) {
+                continue;
+              }
+
+              if (dark == qrcode.isDark(row + r, col + c) ) {
+                sameCount += 1;
+              }
+            }
+          }
+
+          if (sameCount > 5) {
+            lostPoint += (3 + sameCount - 5);
+          }
+        }
+      };
+
+      // LEVEL2
+
+      for (var row = 0; row < moduleCount - 1; row += 1) {
+        for (var col = 0; col < moduleCount - 1; col += 1) {
+          var count = 0;
+          if (qrcode.isDark(row, col) ) count += 1;
+          if (qrcode.isDark(row + 1, col) ) count += 1;
+          if (qrcode.isDark(row, col + 1) ) count += 1;
+          if (qrcode.isDark(row + 1, col + 1) ) count += 1;
+          if (count == 0 || count == 4) {
+            lostPoint += 3;
+          }
+        }
+      }
+
+      // LEVEL3
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount - 6; col += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row, col + 1)
+              &&  qrcode.isDark(row, col + 2)
+              &&  qrcode.isDark(row, col + 3)
+              &&  qrcode.isDark(row, col + 4)
+              && !qrcode.isDark(row, col + 5)
+              &&  qrcode.isDark(row, col + 6) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount - 6; row += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row + 1, col)
+              &&  qrcode.isDark(row + 2, col)
+              &&  qrcode.isDark(row + 3, col)
+              &&  qrcode.isDark(row + 4, col)
+              && !qrcode.isDark(row + 5, col)
+              &&  qrcode.isDark(row + 6, col) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      // LEVEL4
+
+      var darkCount = 0;
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount; row += 1) {
+          if (qrcode.isDark(row, col) ) {
+            darkCount += 1;
+          }
+        }
+      }
+
+      var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+      lostPoint += ratio * 10;
+
+      return lostPoint;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // QRMath
+  //---------------------------------------------------------------------
+
+  var QRMath = function() {
+
+    var EXP_TABLE = new Array(256);
+    var LOG_TABLE = new Array(256);
+
+    // initialize tables
+    for (var i = 0; i < 8; i += 1) {
+      EXP_TABLE[i] = 1 << i;
+    }
+    for (var i = 8; i < 256; i += 1) {
+      EXP_TABLE[i] = EXP_TABLE[i - 4]
+        ^ EXP_TABLE[i - 5]
+        ^ EXP_TABLE[i - 6]
+        ^ EXP_TABLE[i - 8];
+    }
+    for (var i = 0; i < 255; i += 1) {
+      LOG_TABLE[EXP_TABLE[i] ] = i;
+    }
+
+    var _this = {};
+
+    _this.glog = function(n) {
+
+      if (n < 1) {
+        throw 'glog(' + n + ')';
+      }
+
+      return LOG_TABLE[n];
+    };
+
+    _this.gexp = function(n) {
+
+      while (n < 0) {
+        n += 255;
+      }
+
+      while (n >= 256) {
+        n -= 255;
+      }
+
+      return EXP_TABLE[n];
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrPolynomial
+  //---------------------------------------------------------------------
+
+  function qrPolynomial(num, shift) {
+
+    if (typeof num.length == 'undefined') {
+      throw num.length + '/' + shift;
+    }
+
+    var _num = function() {
+      var offset = 0;
+      while (offset < num.length && num[offset] == 0) {
+        offset += 1;
+      }
+      var _num = new Array(num.length - offset + shift);
+      for (var i = 0; i < num.length - offset; i += 1) {
+        _num[i] = num[i + offset];
+      }
+      return _num;
+    }();
+
+    var _this = {};
+
+    _this.getAt = function(index) {
+      return _num[index];
+    };
+
+    _this.getLength = function() {
+      return _num.length;
+    };
+
+    _this.multiply = function(e) {
+
+      var num = new Array(_this.getLength() + e.getLength() - 1);
+
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        for (var j = 0; j < e.getLength(); j += 1) {
+          num[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i) ) + QRMath.glog(e.getAt(j) ) );
+        }
+      }
+
+      return qrPolynomial(num, 0);
+    };
+
+    _this.mod = function(e) {
+
+      if (_this.getLength() - e.getLength() < 0) {
+        return _this;
+      }
+
+      var ratio = QRMath.glog(_this.getAt(0) ) - QRMath.glog(e.getAt(0) );
+
+      var num = new Array(_this.getLength() );
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        num[i] = _this.getAt(i);
+      }
+
+      for (var i = 0; i < e.getLength(); i += 1) {
+        num[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i) ) + ratio);
+      }
+
+      // recursive call
+      return qrPolynomial(num, 0).mod(e);
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // QRRSBlock
+  //---------------------------------------------------------------------
+
+  var QRRSBlock = function() {
+
+    var RS_BLOCK_TABLE = [
+
+      // L
+      // M
+      // Q
+      // H
+
+      // 1
+      [1, 26, 19],
+      [1, 26, 16],
+      [1, 26, 13],
+      [1, 26, 9],
+
+      // 2
+      [1, 44, 34],
+      [1, 44, 28],
+      [1, 44, 22],
+      [1, 44, 16],
+
+      // 3
+      [1, 70, 55],
+      [1, 70, 44],
+      [2, 35, 17],
+      [2, 35, 13],
+
+      // 4
+      [1, 100, 80],
+      [2, 50, 32],
+      [2, 50, 24],
+      [4, 25, 9],
+
+      // 5
+      [1, 134, 108],
+      [2, 67, 43],
+      [2, 33, 15, 2, 34, 16],
+      [2, 33, 11, 2, 34, 12],
+
+      // 6
+      [2, 86, 68],
+      [4, 43, 27],
+      [4, 43, 19],
+      [4, 43, 15],
+
+      // 7
+      [2, 98, 78],
+      [4, 49, 31],
+      [2, 32, 14, 4, 33, 15],
+      [4, 39, 13, 1, 40, 14],
+
+      // 8
+      [2, 121, 97],
+      [2, 60, 38, 2, 61, 39],
+      [4, 40, 18, 2, 41, 19],
+      [4, 40, 14, 2, 41, 15],
+
+      // 9
+      [2, 146, 116],
+      [3, 58, 36, 2, 59, 37],
+      [4, 36, 16, 4, 37, 17],
+      [4, 36, 12, 4, 37, 13],
+
+      // 10
+      [2, 86, 68, 2, 87, 69],
+      [4, 69, 43, 1, 70, 44],
+      [6, 43, 19, 2, 44, 20],
+      [6, 43, 15, 2, 44, 16],
+
+      // 11
+      [4, 101, 81],
+      [1, 80, 50, 4, 81, 51],
+      [4, 50, 22, 4, 51, 23],
+      [3, 36, 12, 8, 37, 13],
+
+      // 12
+      [2, 116, 92, 2, 117, 93],
+      [6, 58, 36, 2, 59, 37],
+      [4, 46, 20, 6, 47, 21],
+      [7, 42, 14, 4, 43, 15],
+
+      // 13
+      [4, 133, 107],
+      [8, 59, 37, 1, 60, 38],
+      [8, 44, 20, 4, 45, 21],
+      [12, 33, 11, 4, 34, 12],
+
+      // 14
+      [3, 145, 115, 1, 146, 116],
+      [4, 64, 40, 5, 65, 41],
+      [11, 36, 16, 5, 37, 17],
+      [11, 36, 12, 5, 37, 13],
+
+      // 15
+      [5, 109, 87, 1, 110, 88],
+      [5, 65, 41, 5, 66, 42],
+      [5, 54, 24, 7, 55, 25],
+      [11, 36, 12, 7, 37, 13],
+
+      // 16
+      [5, 122, 98, 1, 123, 99],
+      [7, 73, 45, 3, 74, 46],
+      [15, 43, 19, 2, 44, 20],
+      [3, 45, 15, 13, 46, 16],
+
+      // 17
+      [1, 135, 107, 5, 136, 108],
+      [10, 74, 46, 1, 75, 47],
+      [1, 50, 22, 15, 51, 23],
+      [2, 42, 14, 17, 43, 15],
+
+      // 18
+      [5, 150, 120, 1, 151, 121],
+      [9, 69, 43, 4, 70, 44],
+      [17, 50, 22, 1, 51, 23],
+      [2, 42, 14, 19, 43, 15],
+
+      // 19
+      [3, 141, 113, 4, 142, 114],
+      [3, 70, 44, 11, 71, 45],
+      [17, 47, 21, 4, 48, 22],
+      [9, 39, 13, 16, 40, 14],
+
+      // 20
+      [3, 135, 107, 5, 136, 108],
+      [3, 67, 41, 13, 68, 42],
+      [15, 54, 24, 5, 55, 25],
+      [15, 43, 15, 10, 44, 16],
+
+      // 21
+      [4, 144, 116, 4, 145, 117],
+      [17, 68, 42],
+      [17, 50, 22, 6, 51, 23],
+      [19, 46, 16, 6, 47, 17],
+
+      // 22
+      [2, 139, 111, 7, 140, 112],
+      [17, 74, 46],
+      [7, 54, 24, 16, 55, 25],
+      [34, 37, 13],
+
+      // 23
+      [4, 151, 121, 5, 152, 122],
+      [4, 75, 47, 14, 76, 48],
+      [11, 54, 24, 14, 55, 25],
+      [16, 45, 15, 14, 46, 16],
+
+      // 24
+      [6, 147, 117, 4, 148, 118],
+      [6, 73, 45, 14, 74, 46],
+      [11, 54, 24, 16, 55, 25],
+      [30, 46, 16, 2, 47, 17],
+
+      // 25
+      [8, 132, 106, 4, 133, 107],
+      [8, 75, 47, 13, 76, 48],
+      [7, 54, 24, 22, 55, 25],
+      [22, 45, 15, 13, 46, 16],
+
+      // 26
+      [10, 142, 114, 2, 143, 115],
+      [19, 74, 46, 4, 75, 47],
+      [28, 50, 22, 6, 51, 23],
+      [33, 46, 16, 4, 47, 17],
+
+      // 27
+      [8, 152, 122, 4, 153, 123],
+      [22, 73, 45, 3, 74, 46],
+      [8, 53, 23, 26, 54, 24],
+      [12, 45, 15, 28, 46, 16],
+
+      // 28
+      [3, 147, 117, 10, 148, 118],
+      [3, 73, 45, 23, 74, 46],
+      [4, 54, 24, 31, 55, 25],
+      [11, 45, 15, 31, 46, 16],
+
+      // 29
+      [7, 146, 116, 7, 147, 117],
+      [21, 73, 45, 7, 74, 46],
+      [1, 53, 23, 37, 54, 24],
+      [19, 45, 15, 26, 46, 16],
+
+      // 30
+      [5, 145, 115, 10, 146, 116],
+      [19, 75, 47, 10, 76, 48],
+      [15, 54, 24, 25, 55, 25],
+      [23, 45, 15, 25, 46, 16],
+
+      // 31
+      [13, 145, 115, 3, 146, 116],
+      [2, 74, 46, 29, 75, 47],
+      [42, 54, 24, 1, 55, 25],
+      [23, 45, 15, 28, 46, 16],
+
+      // 32
+      [17, 145, 115],
+      [10, 74, 46, 23, 75, 47],
+      [10, 54, 24, 35, 55, 25],
+      [19, 45, 15, 35, 46, 16],
+
+      // 33
+      [17, 145, 115, 1, 146, 116],
+      [14, 74, 46, 21, 75, 47],
+      [29, 54, 24, 19, 55, 25],
+      [11, 45, 15, 46, 46, 16],
+
+      // 34
+      [13, 145, 115, 6, 146, 116],
+      [14, 74, 46, 23, 75, 47],
+      [44, 54, 24, 7, 55, 25],
+      [59, 46, 16, 1, 47, 17],
+
+      // 35
+      [12, 151, 121, 7, 152, 122],
+      [12, 75, 47, 26, 76, 48],
+      [39, 54, 24, 14, 55, 25],
+      [22, 45, 15, 41, 46, 16],
+
+      // 36
+      [6, 151, 121, 14, 152, 122],
+      [6, 75, 47, 34, 76, 48],
+      [46, 54, 24, 10, 55, 25],
+      [2, 45, 15, 64, 46, 16],
+
+      // 37
+      [17, 152, 122, 4, 153, 123],
+      [29, 74, 46, 14, 75, 47],
+      [49, 54, 24, 10, 55, 25],
+      [24, 45, 15, 46, 46, 16],
+
+      // 38
+      [4, 152, 122, 18, 153, 123],
+      [13, 74, 46, 32, 75, 47],
+      [48, 54, 24, 14, 55, 25],
+      [42, 45, 15, 32, 46, 16],
+
+      // 39
+      [20, 147, 117, 4, 148, 118],
+      [40, 75, 47, 7, 76, 48],
+      [43, 54, 24, 22, 55, 25],
+      [10, 45, 15, 67, 46, 16],
+
+      // 40
+      [19, 148, 118, 6, 149, 119],
+      [18, 75, 47, 31, 76, 48],
+      [34, 54, 24, 34, 55, 25],
+      [20, 45, 15, 61, 46, 16]
+    ];
+
+    var qrRSBlock = function(totalCount, dataCount) {
+      var _this = {};
+      _this.totalCount = totalCount;
+      _this.dataCount = dataCount;
+      return _this;
+    };
+
+    var _this = {};
+
+    var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+
+      switch(errorCorrectionLevel) {
+      case QRErrorCorrectionLevel.L :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+      case QRErrorCorrectionLevel.M :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+      case QRErrorCorrectionLevel.Q :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+      case QRErrorCorrectionLevel.H :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+      default :
+        return undefined;
+      }
+    };
+
+    _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+
+      var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+
+      if (typeof rsBlock == 'undefined') {
+        throw 'bad rs block @ typeNumber:' + typeNumber +
+            '/errorCorrectionLevel:' + errorCorrectionLevel;
+      }
+
+      var length = rsBlock.length / 3;
+
+      var list = [];
+
+      for (var i = 0; i < length; i += 1) {
+
+        var count = rsBlock[i * 3 + 0];
+        var totalCount = rsBlock[i * 3 + 1];
+        var dataCount = rsBlock[i * 3 + 2];
+
+        for (var j = 0; j < count; j += 1) {
+          list.push(qrRSBlock(totalCount, dataCount) );
+        }
+      }
+
+      return list;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrBitBuffer
+  //---------------------------------------------------------------------
+
+  var qrBitBuffer = function() {
+
+    var _buffer = [];
+    var _length = 0;
+
+    var _this = {};
+
+    _this.getBuffer = function() {
+      return _buffer;
+    };
+
+    _this.getAt = function(index) {
+      var bufIndex = Math.floor(index / 8);
+      return ( (_buffer[bufIndex] >>> (7 - index % 8) ) & 1) == 1;
+    };
+
+    _this.put = function(num, length) {
+      for (var i = 0; i < length; i += 1) {
+        _this.putBit( ( (num >>> (length - i - 1) ) & 1) == 1);
+      }
+    };
+
+    _this.getLengthInBits = function() {
+      return _length;
+    };
+
+    _this.putBit = function(bit) {
+
+      var bufIndex = Math.floor(_length / 8);
+      if (_buffer.length <= bufIndex) {
+        _buffer.push(0);
+      }
+
+      if (bit) {
+        _buffer[bufIndex] |= (0x80 >>> (_length % 8) );
+      }
+
+      _length += 1;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrNumber
+  //---------------------------------------------------------------------
+
+  var qrNumber = function(data) {
+
+    var _mode = QRMode.MODE_NUMBER;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _data;
+
+      var i = 0;
+
+      while (i + 2 < data.length) {
+        buffer.put(strToNum(data.substring(i, i + 3) ), 10);
+        i += 3;
+      }
+
+      if (i < data.length) {
+        if (data.length - i == 1) {
+          buffer.put(strToNum(data.substring(i, i + 1) ), 4);
+        } else if (data.length - i == 2) {
+          buffer.put(strToNum(data.substring(i, i + 2) ), 7);
+        }
+      }
+    };
+
+    var strToNum = function(s) {
+      var num = 0;
+      for (var i = 0; i < s.length; i += 1) {
+        num = num * 10 + chatToNum(s.charAt(i) );
+      }
+      return num;
+    };
+
+    var chatToNum = function(c) {
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      }
+      throw 'illegal char :' + c;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrAlphaNum
+  //---------------------------------------------------------------------
+
+  var qrAlphaNum = function(data) {
+
+    var _mode = QRMode.MODE_ALPHA_NUM;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var s = _data;
+
+      var i = 0;
+
+      while (i + 1 < s.length) {
+        buffer.put(
+          getCode(s.charAt(i) ) * 45 +
+          getCode(s.charAt(i + 1) ), 11);
+        i += 2;
+      }
+
+      if (i < s.length) {
+        buffer.put(getCode(s.charAt(i) ), 6);
+      }
+    };
+
+    var getCode = function(c) {
+
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      } else if ('A' <= c && c <= 'Z') {
+        return c.charCodeAt(0) - 'A'.charCodeAt(0) + 10;
+      } else {
+        switch (c) {
+        case ' ' : return 36;
+        case '$' : return 37;
+        case '%' : return 38;
+        case '*' : return 39;
+        case '+' : return 40;
+        case '-' : return 41;
+        case '.' : return 42;
+        case '/' : return 43;
+        case ':' : return 44;
+        default :
+          throw 'illegal char :' + c;
+        }
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qr8BitByte
+  //---------------------------------------------------------------------
+
+  var qr8BitByte = function(data) {
+
+    var _mode = QRMode.MODE_8BIT_BYTE;
+    var _data = data;
+    var _bytes = qrcode.stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _bytes.length;
+    };
+
+    _this.write = function(buffer) {
+      for (var i = 0; i < _bytes.length; i += 1) {
+        buffer.put(_bytes[i], 8);
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrKanji
+  //---------------------------------------------------------------------
+
+  var qrKanji = function(data) {
+
+    var _mode = QRMode.MODE_KANJI;
+    var _data = data;
+
+    var stringToBytes = qrcode.stringToBytesFuncs['SJIS'];
+    if (!stringToBytes) {
+      throw 'sjis not supported.';
+    }
+    !function(c, code) {
+      // self test for sjis support.
+      var test = stringToBytes(c);
+      if (test.length != 2 || ( (test[0] << 8) | test[1]) != code) {
+        throw 'sjis not supported.';
+      }
+    }('\u53cb', 0x9746);
+
+    var _bytes = stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return ~~(_bytes.length / 2);
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _bytes;
+
+      var i = 0;
+
+      while (i + 1 < data.length) {
+
+        var c = ( (0xff & data[i]) << 8) | (0xff & data[i + 1]);
+
+        if (0x8140 <= c && c <= 0x9FFC) {
+          c -= 0x8140;
+        } else if (0xE040 <= c && c <= 0xEBBF) {
+          c -= 0xC140;
+        } else {
+          throw 'illegal char at ' + (i + 1) + '/' + c;
+        }
+
+        c = ( (c >>> 8) & 0xff) * 0xC0 + (c & 0xff);
+
+        buffer.put(c, 13);
+
+        i += 2;
+      }
+
+      if (i < data.length) {
+        throw 'illegal char at ' + (i + 1);
+      }
+    };
+
+    return _this;
+  };
+
+  //=====================================================================
+  // GIF Support etc.
+  //
+
+  //---------------------------------------------------------------------
+  // byteArrayOutputStream
+  //---------------------------------------------------------------------
+
+  var byteArrayOutputStream = function() {
+
+    var _bytes = [];
+
+    var _this = {};
+
+    _this.writeByte = function(b) {
+      _bytes.push(b & 0xff);
+    };
+
+    _this.writeShort = function(i) {
+      _this.writeByte(i);
+      _this.writeByte(i >>> 8);
+    };
+
+    _this.writeBytes = function(b, off, len) {
+      off = off || 0;
+      len = len || b.length;
+      for (var i = 0; i < len; i += 1) {
+        _this.writeByte(b[i + off]);
+      }
+    };
+
+    _this.writeString = function(s) {
+      for (var i = 0; i < s.length; i += 1) {
+        _this.writeByte(s.charCodeAt(i) );
+      }
+    };
+
+    _this.toByteArray = function() {
+      return _bytes;
+    };
+
+    _this.toString = function() {
+      var s = '';
+      s += '[';
+      for (var i = 0; i < _bytes.length; i += 1) {
+        if (i > 0) {
+          s += ',';
+        }
+        s += _bytes[i];
+      }
+      s += ']';
+      return s;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64EncodeOutputStream
+  //---------------------------------------------------------------------
+
+  var base64EncodeOutputStream = function() {
+
+    var _buffer = 0;
+    var _buflen = 0;
+    var _length = 0;
+    var _base64 = '';
+
+    var _this = {};
+
+    var writeEncoded = function(b) {
+      _base64 += String.fromCharCode(encode(b & 0x3f) );
+    };
+
+    var encode = function(n) {
+      if (n < 0) {
+        // error.
+      } else if (n < 26) {
+        return 0x41 + n;
+      } else if (n < 52) {
+        return 0x61 + (n - 26);
+      } else if (n < 62) {
+        return 0x30 + (n - 52);
+      } else if (n == 62) {
+        return 0x2b;
+      } else if (n == 63) {
+        return 0x2f;
+      }
+      throw 'n:' + n;
+    };
+
+    _this.writeByte = function(n) {
+
+      _buffer = (_buffer << 8) | (n & 0xff);
+      _buflen += 8;
+      _length += 1;
+
+      while (_buflen >= 6) {
+        writeEncoded(_buffer >>> (_buflen - 6) );
+        _buflen -= 6;
+      }
+    };
+
+    _this.flush = function() {
+
+      if (_buflen > 0) {
+        writeEncoded(_buffer << (6 - _buflen) );
+        _buffer = 0;
+        _buflen = 0;
+      }
+
+      if (_length % 3 != 0) {
+        // padding
+        var padlen = 3 - _length % 3;
+        for (var i = 0; i < padlen; i += 1) {
+          _base64 += '=';
+        }
+      }
+    };
+
+    _this.toString = function() {
+      return _base64;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64DecodeInputStream
+  //---------------------------------------------------------------------
+
+  var base64DecodeInputStream = function(str) {
+
+    var _str = str;
+    var _pos = 0;
+    var _buffer = 0;
+    var _buflen = 0;
+
+    var _this = {};
+
+    _this.read = function() {
+
+      while (_buflen < 8) {
+
+        if (_pos >= _str.length) {
+          if (_buflen == 0) {
+            return -1;
+          }
+          throw 'unexpected end of file./' + _buflen;
+        }
+
+        var c = _str.charAt(_pos);
+        _pos += 1;
+
+        if (c == '=') {
+          _buflen = 0;
+          return -1;
+        } else if (c.match(/^\s$/) ) {
+          // ignore if whitespace.
+          continue;
+        }
+
+        _buffer = (_buffer << 6) | decode(c.charCodeAt(0) );
+        _buflen += 6;
+      }
+
+      var n = (_buffer >>> (_buflen - 8) ) & 0xff;
+      _buflen -= 8;
+      return n;
+    };
+
+    var decode = function(c) {
+      if (0x41 <= c && c <= 0x5a) {
+        return c - 0x41;
+      } else if (0x61 <= c && c <= 0x7a) {
+        return c - 0x61 + 26;
+      } else if (0x30 <= c && c <= 0x39) {
+        return c - 0x30 + 52;
+      } else if (c == 0x2b) {
+        return 62;
+      } else if (c == 0x2f) {
+        return 63;
+      } else {
+        throw 'c:' + c;
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // gifImage (B/W)
+  //---------------------------------------------------------------------
+
+  var gifImage = function(width, height) {
+
+    var _width = width;
+    var _height = height;
+    var _data = new Array(width * height);
+
+    var _this = {};
+
+    _this.setPixel = function(x, y, pixel) {
+      _data[y * _width + x] = pixel;
+    };
+
+    _this.write = function(out) {
+
+      //---------------------------------
+      // GIF Signature
+
+      out.writeString('GIF87a');
+
+      //---------------------------------
+      // Screen Descriptor
+
+      out.writeShort(_width);
+      out.writeShort(_height);
+
+      out.writeByte(0x80); // 2bit
+      out.writeByte(0);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Global Color Map
+
+      // black
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+
+      // white
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+
+      //---------------------------------
+      // Image Descriptor
+
+      out.writeString(',');
+      out.writeShort(0);
+      out.writeShort(0);
+      out.writeShort(_width);
+      out.writeShort(_height);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Local Color Map
+
+      //---------------------------------
+      // Raster Data
+
+      var lzwMinCodeSize = 2;
+      var raster = getLZWRaster(lzwMinCodeSize);
+
+      out.writeByte(lzwMinCodeSize);
+
+      var offset = 0;
+
+      while (raster.length - offset > 255) {
+        out.writeByte(255);
+        out.writeBytes(raster, offset, 255);
+        offset += 255;
+      }
+
+      out.writeByte(raster.length - offset);
+      out.writeBytes(raster, offset, raster.length - offset);
+      out.writeByte(0x00);
+
+      //---------------------------------
+      // GIF Terminator
+      out.writeString(';');
+    };
+
+    var bitOutputStream = function(out) {
+
+      var _out = out;
+      var _bitLength = 0;
+      var _bitBuffer = 0;
+
+      var _this = {};
+
+      _this.write = function(data, length) {
+
+        if ( (data >>> length) != 0) {
+          throw 'length over';
+        }
+
+        while (_bitLength + length >= 8) {
+          _out.writeByte(0xff & ( (data << _bitLength) | _bitBuffer) );
+          length -= (8 - _bitLength);
+          data >>>= (8 - _bitLength);
+          _bitBuffer = 0;
+          _bitLength = 0;
+        }
+
+        _bitBuffer = (data << _bitLength) | _bitBuffer;
+        _bitLength = _bitLength + length;
+      };
+
+      _this.flush = function() {
+        if (_bitLength > 0) {
+          _out.writeByte(_bitBuffer);
+        }
+      };
+
+      return _this;
+    };
+
+    var getLZWRaster = function(lzwMinCodeSize) {
+
+      var clearCode = 1 << lzwMinCodeSize;
+      var endCode = (1 << lzwMinCodeSize) + 1;
+      var bitLength = lzwMinCodeSize + 1;
+
+      // Setup LZWTable
+      var table = lzwTable();
+
+      for (var i = 0; i < clearCode; i += 1) {
+        table.add(String.fromCharCode(i) );
+      }
+      table.add(String.fromCharCode(clearCode) );
+      table.add(String.fromCharCode(endCode) );
+
+      var byteOut = byteArrayOutputStream();
+      var bitOut = bitOutputStream(byteOut);
+
+      // clear code
+      bitOut.write(clearCode, bitLength);
+
+      var dataIndex = 0;
+
+      var s = String.fromCharCode(_data[dataIndex]);
+      dataIndex += 1;
+
+      while (dataIndex < _data.length) {
+
+        var c = String.fromCharCode(_data[dataIndex]);
+        dataIndex += 1;
+
+        if (table.contains(s + c) ) {
+
+          s = s + c;
+
+        } else {
+
+          bitOut.write(table.indexOf(s), bitLength);
+
+          if (table.size() < 0xfff) {
+
+            if (table.size() == (1 << bitLength) ) {
+              bitLength += 1;
+            }
+
+            table.add(s + c);
+          }
+
+          s = c;
+        }
+      }
+
+      bitOut.write(table.indexOf(s), bitLength);
+
+      // end code
+      bitOut.write(endCode, bitLength);
+
+      bitOut.flush();
+
+      return byteOut.toByteArray();
+    };
+
+    var lzwTable = function() {
+
+      var _map = {};
+      var _size = 0;
+
+      var _this = {};
+
+      _this.add = function(key) {
+        if (_this.contains(key) ) {
+          throw 'dup key:' + key;
+        }
+        _map[key] = _size;
+        _size += 1;
+      };
+
+      _this.size = function() {
+        return _size;
+      };
+
+      _this.indexOf = function(key) {
+        return _map[key];
+      };
+
+      _this.contains = function(key) {
+        return typeof _map[key] != 'undefined';
+      };
+
+      return _this;
+    };
+
+    return _this;
+  };
+
+  var createDataURL = function(width, height, getPixel) {
+    var gif = gifImage(width, height);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        gif.setPixel(x, y, getPixel(x, y) );
+      }
+    }
+
+    var b = byteArrayOutputStream();
+    gif.write(b);
+
+    var base64 = base64EncodeOutputStream();
+    var bytes = b.toByteArray();
+    for (var i = 0; i < bytes.length; i += 1) {
+      base64.writeByte(bytes[i]);
+    }
+    base64.flush();
+
+    return 'data:image/gif;base64,' + base64;
+  };
+
+  //---------------------------------------------------------------------
+  // returns qrcode function.
+
+  return qrcode;
+}();
+
+// multibyte support
+!function() {
+
+  qrcode.stringToBytesFuncs['UTF-8'] = function(s) {
+    // http://stackoverflow.com/questions/18729405/how-to-convert-utf8-string-to-byte-array
+    function toUTF8Array(str) {
+      var utf8 = [];
+      for (var i=0; i < str.length; i++) {
+        var charcode = str.charCodeAt(i);
+        if (charcode < 0x80) utf8.push(charcode);
+        else if (charcode < 0x800) {
+          utf8.push(0xc0 | (charcode >> 6),
+              0x80 | (charcode & 0x3f));
+        }
+        else if (charcode < 0xd800 || charcode >= 0xe000) {
+          utf8.push(0xe0 | (charcode >> 12),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+        // surrogate pair
+        else {
+          i++;
+          // UTF-16 encodes 0x10000-0x10FFFF by
+          // subtracting 0x10000 and splitting the
+          // 20 bits of 0x0-0xFFFFF into two halves
+          charcode = 0x10000 + (((charcode & 0x3ff)<<10)
+            | (str.charCodeAt(i) & 0x3ff));
+          utf8.push(0xf0 | (charcode >>18),
+              0x80 | ((charcode>>12) & 0x3f),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+      }
+      return utf8;
+    }
+    return toUTF8Array(s);
+  };
+
+}();
+
+(function (factory) {
+  if (typeof define === 'function' && define.amd) {
+      define([], factory);
+  } else if (typeof exports === 'object') {
+      module.exports = factory();
+  }
+}(function () {
+    return qrcode;
+}));
+</script>
+<script>
+const API = "/app/p115assistant/action/";
+
+async function call(name, method="GET", body=null){
+  const opt = { method, headers:{ "Accept":"application/json" } };
+  if (body){ opt.headers["Content-Type"]="application/json"; opt.body=JSON.stringify(body); }
+  const r = await fetch(API+name, opt);
+  let json = { success:false };
+  try { json = await r.json(); } catch(_e){}
+  if (!json.success && r.status===401){ await refreshAuth(); }
+  return json;
+}
+function el(id){ return document.getElementById(id); }
+function refreshAuth(){ /* 授权刷新由宿主选择器提供；独立页面忽略 */ }
+
+/* ---- 通用 ---- */
+const TITLES = { drive:"网盘", upload:"上传", signin:"签到", link:"STRM", ledger:"媒体库", settings:"设置", log:"日志", history:"历史" };
+function setAuth(text, on){
+  const c = el("authLine");
+  c.textContent = text;
+  c.classList.toggle("on", !!on);
+}
+async function boot(){
+  await refreshDrive();
+  const s = await call("status");
+  if (s.success && s.data){
+    if (s.data.auth_mode==="none"){ setAuth("未登录", false); }
+    else { setAuth(s.data.user_id ? "已登录（用户 "+s.data.user_id+"）" : "已登录", true); }
+  }
+  await loadSettings();
+  pollLog();
+  setInterval(pollLog, 4000);
+}
+document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#tabs button").forEach(x=>{
+    x.classList.remove("active");
+    if (x.hasAttribute("aria-current")) x.removeAttribute("aria-current");
+  });
+  b.classList.add("active");
+  b.setAttribute("aria-current", "page");
+  el("pageTitle").textContent = TITLES[b.dataset.tab] || "";
+  document.querySelectorAll("section").forEach(s=>s.hidden=true);
+  el("tab-"+b.dataset.tab).hidden=false;
+  if (b.dataset.tab === "history"){ refreshHistory(); refreshConflicts(); }
+  if (b.dataset.tab === "upload"){ loadMappings(); loadExtensions(); startWatchPolling(); }
+  if (b.dataset.tab === "link"){ loadStrmMappings(); }
+  if (b.dataset.tab === "ledger"){ loadLedger(); }
+  if (b.dataset.tab === "signin"){ refreshSigninRange(); }
+});
+
+/* ---- 网盘 ---- */
+// stack 记录从根到当前目录的 id 链（不含根 0）；nameStack 同步记录目录名用于路径显示；cid 是当前目录 id。
+let cid="0", stack=[], nameStack=[];
+const ICON_DIR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const ICON_FILE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>';
+async function refreshDrive(){
+  const r = await call("disk_list?cid="+encodeURIComponent(cid));
+  const tb = el("driveTable").querySelector("tbody");
+  tb.innerHTML="";
+  if (!r.success){ el("driveEmpty").textContent=r.message||"加载失败"; el("driveTable").hidden=true; return; }
+  el("driveTable").hidden=false;
+  el("driveEmpty").textContent = r.data.items && r.data.items.length ? "" : "空目录";
+  el("upBtn").disabled = (stack.length===0);
+  el("crumb").textContent = nameStack.length ? ("/" + nameStack.join("/")) : "/";
+  for (const it of r.data.items){
+    const tr=document.createElement("tr");
+    if (it.is_dir) tr.className="row-dir";
+    const glyph = it.is_dir ? ICON_DIR : ICON_FILE;
+    const name=it.name;
+    const size=it.is_dir?"":fmtSize(it.size);
+    let action;
+    if (it.is_dir){
+      action=`<button class="btn btn-mini" data-enter="${escjs(it.id)}">打开</button>`;
+    } else {
+      action=`<button class="btn btn-mini danger" data-del="${escjs(it.id)}">删除</button>`;
+    }
+    tr.innerHTML=`<td><span class="glyph">${glyph}</span><span class="name">${esc(name)}</span></td>`+
+                 `<td class="tag"><span class="size">${size}</span></td>`+
+                 `<td class="tag">${it.is_dir?"目录":"文件"}</td>`+
+                 `<td class="ops">${action}</td>`;
+    tr.addEventListener("click", (ev)=>{
+      const del=ev.target.closest("button[data-del]");
+      if (del){ ev.stopPropagation(); deleteItem(del.dataset.del); return; }
+      const ent=ev.target.closest("button[data-enter]");
+      if (ent){ ev.stopPropagation(); enterDir(ent.dataset.enter, it.name); return; }
+      if (it.is_dir) enterDir(it.id, it.name);
+    });
+    tb.appendChild(tr);
+  }
+}
+function enterDir(id, name){ stack.push(cid); if(name!==undefined) nameStack.push(name); cid=id; refreshDrive(); }
+function goUp(){ if(stack.length){ cid=stack.pop(); nameStack.pop(); refreshDrive(); } }
+async function deleteItem(id){ if(!confirm("删除到 115 回收站？"))return; const r=await call("disk_delete","POST",{file_ids:[id]}); alert(r.message||(r.success?"已删除":"失败")); refreshDrive(); }
+
+/* ---- 二维码 ---- */
+let qrPolling=false, qrTimer=null;
+let qrClientType = "alipaymini";
+function showQrErr(msg){ el("qrErr").textContent=msg; el("qrErr").hidden=false; }
+function hideQrErr(){ el("qrErr").hidden=true; }
+function renderQrCanvas(content){
+  const cv = el("qrCanvas");
+  const loading = el("qrLoading");
+  if (typeof qrcode !== "function"){ loading.style.display="none"; showQrErr("QR 库加载失败，请刷新页面"); return; }
+  if (!content){ loading.style.display="none"; showQrErr("二维码内容为空"); return; }
+  try {
+    const qr = qrcode(0, "M");
+    qr.addData(content);
+    qr.make();
+    const n = qr.getModuleCount();
+    const scale = Math.floor(240 / n);
+    const size = n * scale;
+    cv.width = size; cv.height = size;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = "#000000";
+    for (let r = 0; r < n; r++)
+      for (let c = 0; c < n; c++)
+        if (qr.isDark(r, c)) ctx.fillRect(c * scale, r * scale, scale, scale);
+    cv.style.display = (n*scale > 0) ? "block" : "none";
+    loading.style.display = "none";
+    hideQrErr();
+  } catch (e) {
+    console.error("QR 渲染失败:", e);
+    loading.style.display = "none";
+    showQrErr("二维码渲染失败：" + (e.message || e));
+  }
+}
+function openQr(){
+  el("qrOverlay").hidden=false;
+  hideQrErr();
+  // 先展示方式选择，canvas 隐藏
+  el("qrCanvas").style.display="none";
+  el("qrLoading").style.display="block";
+  el("qrLoading").textContent="获取二维码…";
+  el("qrHint").textContent="请选择登录方式";
+  qrPolling=false;
+  if (qrTimer){ clearTimeout(qrTimer); qrTimer=null; }
+  fetchQr();
+}
+async function fetchQr(){
+  const loading = el("qrLoading");
+  loading.style.display="block"; loading.textContent="获取二维码…";
+  el("qrCanvas").style.display="none";
+  hideQrErr();
+  if (qrTimer){ clearTimeout(qrTimer); qrTimer=null; }
+  let lastErr = "";
+  for (let retry = 0; retry < 2; retry++){
+    if (retry > 0) await new Promise(r => setTimeout(r, 1500));
+    const r = await call("qrcode?client_type=" + encodeURIComponent(qrClientType));
+    if (r.success && r.data && r.data.content){
+      el("qrHint").textContent = "请使用对应的 115 客户端扫描二维码";
+      renderQrCanvas(r.data.content);
+      qrPolling = true;
+      pollLogin(3000);
+      return;
+    }
+    lastErr = r.message || "获取二维码失败";
+  }
+  // 两次都失败才显示错误
+  loading.style.display="none";
+  showQrErr(lastErr);
+}
+async function pollLogin(ms){
+  if (!qrPolling) return;
+  try {
+    const r = await call("check_login");
+    // 后端 ok() 包装：{success:true, data:{status, tip}}；error() 包装：{success:false, message}
+    const st = r && r.success && r.data ? r.data.status : null;
+    if (st === 2){
+      qrPolling=false;
+      if (qrTimer){ clearTimeout(qrTimer); qrTimer=null; }
+      el("qrOverlay").hidden=true;
+      setAuth("已登录", true);
+      refreshDrive();
+      return;
+    }
+    if (st === -2){
+      qrPolling=false;
+      showQrErr("二维码已过期，请点击刷新二维码");
+      return;
+    }
+    if (st === 1){
+      el("qrHint").textContent = "已扫码，请在手机上确认…";
+    } else if (st === 0){
+      el("qrHint").textContent = "等待扫码…";
+    } else if (r && !r.success){
+      // 状态查询失败（超时/网络），静默继续轮询，不误导用户
+      el("qrHint").textContent = "正在检查登录状态…";
+    }
+  } catch (e) { /* check_login 网络异常忽略，继续轮询 */ }
+  if (qrPolling && ms) qrTimer = setTimeout(()=>pollLogin(ms), ms);
+}
+function closeQr(){
+  qrPolling=false;
+  if (qrTimer){ clearTimeout(qrTimer); qrTimer=null; }
+  el("qrOverlay").hidden=true;
+}
+// 登录方式选择
+document.querySelectorAll("#qrMethods button").forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll("#qrMethods button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    qrClientType = b.dataset.ct;
+    fetchQr();
+  };
+});
+
+/* ---- 上传 ---- */
+// ---- 上传映射卡片管理器 ----
+let mappingCards = [];          // 本地缓存 [{id,name,source,target_cid,target_path,enabled}]
+let activeEditRef = null;       // 当前正在编辑的卡片对象引用（选择器回填目标）
+// 不用 id 匹配：新卡片 id 为空串，保存后 id 更新+重渲染会使 id 匹配失效，
+// 导致「确认后不生效」。直接用对象引用，保存/重渲染均不受影响。
+function activeEditMapping(){ return activeEditRef; }
+function escAttr(s){ return esc(String(s ?? "")); }
+async function loadMappings(){
+  const r = await call("upload_mappings");
+  mappingCards = (r.success && r.data && Array.isArray(r.data.mappings)) ? r.data.mappings : [];
+  renderMappingCards();
+  return r;
+}
+/* ---- 高级：上传扩展名（upload_media_extensions / upload_sidecar_extensions） ---- */
+async function loadExtensions(){
+  const r = await call("get_config");
+  if(!r.success || !r.data) return;
+  const d = r.data;
+  el("mediaExtensions").value = d.upload_media_extensions || "";
+  el("sidecarExtensions").value = d.upload_sidecar_extensions || "";
+}
+async function saveExtensions(){
+  const media = el("mediaExtensions").value.trim();
+  const sidecar = el("sidecarExtensions").value.trim();
+  const r = await call("save_config","POST",{ upload_media_extensions: media, upload_sidecar_extensions: sidecar });
+  el("advExtResult").textContent = r.success ? "已保存" : (r.message || "保存失败");
+  el("advExtResult").style.color = r.success ? "var(--ok,#3fb950)" : "var(--danger,#f85149)";
+}
+async function restoreDefaultExtensions(){
+  const defaults = {
+    upload_media_extensions: ".mp4,.mkv,.ts,.iso,.rmvb,.avi,.mov,.mpeg,.mpg,.wmv,.3gp,.asf,.m4v,.flv,.m2ts,.tp,.f4v",
+    upload_sidecar_extensions: ".nfo,.jpg,.jpeg,.png,.webp,.srt,.ass,.ssa,.sup"
+  };
+  const r = await call("save_config","POST", defaults);
+  if(r.success){
+    el("mediaExtensions").value = defaults.upload_media_extensions;
+    el("sidecarExtensions").value = defaults.upload_sidecar_extensions;
+    el("advExtResult").textContent = "已恢复默认";
+    el("advExtResult").style.color = "var(--ok,#3fb950)";
+  } else {
+    el("advExtResult").textContent = r.message || "恢复失败";
+    el("advExtResult").style.color = "var(--danger,#f85149)";
+  }
+}
+function renderMappingCards(){
+  const box = el("mappingList");
+  box.innerHTML = "";
+  el("uploadEmpty").hidden = mappingCards.length > 0;
+  for (const m of mappingCards) box.appendChild(mappingCardEl(m));
+}
+function mappingCardEl(m){
+  const wrap = document.createElement("div");
+  wrap.className = "pane";
+  wrap.style.marginBottom = "12px";
+  wrap.style.padding = "14px 16px";
+  const srcShow = m.source ? `<span class="mono">${esc(m.source)}</span>` : `<span class="muted">未选择本地目录</span>`;
+  const tgtShow = m.target_path ? `<span class="mono">${esc(m.target_path)} <span class="muted">(${esc(m.target_cid || "0")})</span></span>` : `<span class="muted">未选择目标目录（默认根目录）</span>`;
+  wrap.innerHTML = `
+    <div class="field-row" style="justify-content:space-between;gap:8px">
+      <input class="input mono" style="flex:1;min-width:140px;max-width:260px" value="${escAttr(m.name)}" data-field="name" placeholder="映射名称">
+      <label class="switch" title="启用/停用">
+        <input type="checkbox" data-field="enabled" ${m.enabled !== false ? "checked" : ""}>
+        <span class="track"></span>
+      </label>
+      <button class="btn btn-mini danger" data-act="del">删除</button>
+    </div>
+    <div class="field-row" style="margin-top:10px;align-items:center;gap:8px">
+      <span class="muted" style="width:62px;flex:none">源目录</span>
+      <button class="btn" data-act="pick-src">选择本地</button>
+      <div style="flex:1;min-width:0" data-role="src-show">${srcShow}</div>
+    </div>
+    <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
+      <span class="muted" style="width:62px;flex:none">目标目录</span>
+      <button class="btn" data-act="pick-tgt">选择 115 目录</button>
+      <div style="flex:1;min-width:0" data-role="tgt-show">${tgtShow}</div>
+    </div>
+    <div class="field-row" style="margin-top:8px;justify-content:flex-end;gap:8px">
+      <span class="muted" data-role="save-state">${m._saved === false ? "未保存" : "已保存"}</span>
+    </div>`;
+  // 事件绑定（stateEl 用闭包引用当前卡片，不依赖全局查询）
+  const stateEl = wrap.querySelector('[data-role="save-state"]');
+  m._stateEl = stateEl;   // 保存成功/失败时由 saveMappingCard 通过 DOM 更新状态，避免整体重渲染
+  m._srcShowEl = wrap.querySelector('[data-role="src-show"]');
+  m._tgtShowEl = wrap.querySelector('[data-role="tgt-show"]');
+  const setState = (t, cls) => { stateEl.textContent = t; stateEl.className = cls ? "muted "+cls : "muted"; };
+  const nameInput = wrap.querySelector('input[data-field="name"]');
+  nameInput.addEventListener("input", ()=>{ m.name = nameInput.value.trim() || "未命名映射"; setState("保存中…",""); saveMappingCard(m); });
+  const ena = wrap.querySelector('input[data-field="enabled"]');
+  ena.addEventListener("change", ()=>{ m.enabled = ena.checked; setState("保存中…",""); saveMappingCard(m); });
+  wrap.querySelector('[data-act="del"]').addEventListener("click", async ()=>{
+    if(!confirm(`删除映射「${m.name || ""}」？`)) return;
+    if(m.id) await call("delete_upload_mapping", "POST", { id: m.id });
+    mappingCards = mappingCards.filter(x => String(x.id) !== String(m.id));
+    renderMappingCards();
+  });
+  wrap.querySelector('[data-act="pick-src"]').addEventListener("click", ()=>{ activeStrmRef = null; activeEditRef = m; onceMode = null; openSrcPicker(); });
+  wrap.querySelector('[data-act="pick-tgt"]').addEventListener("click", ()=>{ activeStrmRef = null; activeEditRef = m; onceMode = null; openTargetPicker(); });
+  return wrap;
+}
+
+async function saveMappingCard(m){
+  const r = await call("save_upload_mapping", "POST", {
+    id: m.id || "",
+    name: m.name || "未命名映射",
+    source: m.source || "",
+    target_cid: m.target_cid || "0",
+    target_path: m.target_path || "/",
+    enabled: m.enabled !== false,
+  });
+  if (r.success) {
+    m._saved = true;
+    const se = m._stateEl;
+    if (se) { se.textContent = "已保存"; se.className = "muted"; }
+    if (!m.id && r.data && r.data.id) {
+      m.id = r.data.id;   // 新卡片拿到正式 id → 重渲染以绑定后续编辑
+      renderMappingCards();
+    }
+  } else {
+    m._saved = false;
+    const se = m._stateEl;
+    if (se) { se.textContent = "保存失败：" + (r.message || "未知错误"); se.className = "muted err"; }
+  }
+}
+
+// 局部刷新卡片上显示的源目录/目标目录（确认选择后立即可见，不整卡重渲染）
+function refreshMappingCard(m){
+  if (m._srcShowEl){
+    m._srcShowEl.innerHTML = m.source
+      ? `<span class="mono">${esc(m.source)}</span>`
+      : `<span class="muted">未选择本地目录</span>`;
+  }
+  if (m._tgtShowEl){
+    m._tgtShowEl.innerHTML = m.target_path
+      ? `<span class="mono">${esc(m.target_path)} <span class="muted">(${esc(m.target_cid || "0")})</span></span>`
+      : `<span class="muted">未选择目标目录（默认根目录）</span>`;
+  }
+}
+async function addMappingCard(){
+  const m = { id: "", name: "新映射 " + (mappingCards.length + 1), source: "", target_cid: "0", target_path: "/", enabled: true, _saved: false };
+  mappingCards.push(m);
+  renderMappingCards();
+  const first = el("mappingList").querySelector('input[data-field="name"]');
+  if (first) first.focus();
+}
+async function sweep(){ el("sweepState").textContent="已入队…"; const r=await call("upload_sweep","POST",{}); el("sweepState").textContent=r.message||"开始上传"; refreshWatchStatus(); }
+async function uploadStatus(){ const r=await call("upload_status"); if(r.success) el("sweepState").textContent=`上传中:${r.data.active}, 待处理:${r.data.pending}`; }
+
+// ---- 实时文件监听 + 风控状态 ----
+let watchPollTimer = null;
+async function toggleWatcher(){
+  const btn=el("watchToggle");
+  if(btn.dataset.on==="1"){
+    const r=await call("watcher_stop","POST",{});
+    el("sweepState").textContent=r.message||"监听已停止";
+  }else{
+    const r=await call("watcher_start","POST",{});
+    el("sweepState").textContent=r.message||(r.success?"监听已启动":"启动失败");
+  }
+  refreshWatchStatus();
+}
+async function refreshWatchStatus(){
+  const r=await call("watcher_status");
+  if(!r.success) return;
+  const d=r.data||{};
+  const btn=el("watchToggle"), st=el("watchStatus"), risk=el("riskBar");
+  btn.hidden=false;
+  if(d.running){
+    btn.dataset.on="1"; btn.classList.add("primary");
+    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg>停止监听';
+    st.hidden=false;
+    const w=d.watch||{};
+    const pending = w.mappings&&w.mappings.length ? `${w.mappings.reduce((a,m)=>a+(m.pending||0),0)} 个待稳定` : "";
+    st.textContent=`监听中${pending?" · "+pending:""}`;
+  }else{
+    btn.dataset.on="0"; btn.classList.remove("primary");
+    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg>开始监听';
+    st.hidden=true;
+  }
+  // 风控条
+  const rk=d.risk||{};
+  if(rk.limited){
+    const min=Math.ceil((rk.remaining_ms||0)/60000);
+    risk.hidden=false;
+    risk.style.color="var(--danger,#e5484d)";
+    risk.textContent=`🛡️ 风控暂停：${rk.message||"115 访问上限"}，剩余约 ${min} 分钟恢复（${rk.profile_name} 档）`;
+  }else if(rk.profile_name && rk.profile_name!=="conservative"){
+    risk.hidden=false; risk.style.color="var(--muted,#8a919c)";
+    risk.textContent=`风控策略：${rk.profile_name}（每文件 ${Math.round((rk.profile&&rk.profile.fileIntervalMs||6000)/1000)}s / 每批 ${rk.profile&&rk.profile.batchSize||5} 个）`;
+  }else{
+    risk.hidden=true;
+  }
+}
+function startWatchPolling(){
+  if(watchPollTimer) return;
+  refreshWatchStatus();
+  watchPollTimer=setInterval(refreshWatchStatus, 10000);
+}
+let srcBase = "";               // browse_local 返回的 base
+let srcRelPath = "";            // 当前相对路径
+let srcStack = [];              // 导航栈（相对路径）
+let srcNameStack = [];          // 目录名栈（显示用）
+async function openSrcPicker(){
+  srcBase = ""; srcRelPath = ""; srcStack = []; srcNameStack = [];
+  el("srcOverlay").hidden = false;
+  el("srcSel").textContent = "加载中…";
+  el("srcCrumb").textContent = "/";
+  await loadSrcDirs("");
+}
+function closeSrcPicker(){ el("srcOverlay").hidden = true; }
+async function loadSrcDirs(rel){
+  el("srcEmpty").textContent = "加载中…"; el("srcEmpty").hidden = false;
+  el("srcTable").hidden = true;
+  const tb = el("srcTable").querySelector("tbody"); tb.innerHTML="";
+  const url = rel ? "browse_local?path="+encodeURIComponent(rel) : "browse_local";
+  const r = await call(url);
+  el("srcEmpty").hidden = true;
+  if(!r.success){ el("srcEmpty").textContent = r.message || "加载失败"; el("srcEmpty").hidden=false; return; }
+  if(!srcBase) srcBase = r.data.base;
+  srcRelPath = r.data.current || "";
+  el("srcUpBtn").disabled = !srcStack.length;
+  const items = r.data.items || [];
+  if(!items.length && srcStack.length){
+    // 空子目录：保留当前路径可选
+    el("srcEmpty").textContent = "此目录下没有子目录（可确认选择）";
+    el("srcEmpty").hidden = false;
+    el("srcSel").textContent = "已选：" + (srcNameStack.length ? "/" + srcNameStack.join("/") : "/");
+    el("srcConfirmBtn").disabled = false;
+    return;
+  }
+  if(!items.length){ el("srcEmpty").textContent = "无可用目录"; el("srcEmpty").hidden=false; return; }
+  el("srcTable").hidden = false;
+  for(const it of items){
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.innerHTML = `<td><span class="glyph">${ICON_DIR}</span><span class="name">${esc(it.name)}</span></td>`;
+    tr.addEventListener("click", ()=>srcClick(it));
+    tb.appendChild(tr);
+  }
+  // 自动选中当前路径（导航中）
+  if(srcStack.length){
+    el("srcSel").textContent = "已选：" + (srcNameStack.length ? "/" + srcNameStack.join("/") : "/");
+    el("srcConfirmBtn").disabled = false;
+  }
+}
+function srcClick(it){
+  srcStack.push(srcRelPath);
+  srcNameStack.push(it.name);
+  el("srcCrumb").textContent = "/" + srcNameStack.join("/");
+  el("srcSel").textContent = "已选：" + el("srcCrumb").textContent;
+  el("srcConfirmBtn").disabled = false;
+  loadSrcDirs(it.path);
+}
+function srcGoUp(){
+  if(!srcStack.length) return;
+  srcRelPath = srcStack.pop();
+  srcNameStack.pop();
+  el("srcCrumb").textContent = srcNameStack.length ? "/" + srcNameStack.join("/") : "/";
+  el("srcSel").textContent = "已选：" + el("srcCrumb").textContent;
+  el("srcConfirmBtn").disabled = false;
+  loadSrcDirs(srcRelPath);
+}
+function srcConfirm(){
+  const fullPath = srcBase + (srcRelPath ? "/" + srcRelPath.replace(/\\/g, "/") : "");
+  if (onceMode){
+    if (onceMode.kind === "strm") onceSel.strm.target_dir = fullPath;
+    else onceSel.upload.source = fullPath;
+    onceMode = null; closeSrcPicker(); renderOnceCards(); return;
+  }
+  const sm = activeStrmEdit();
+  if (sm) { sm.target_dir = fullPath; saveStrmCard(sm); refreshStrmCard(sm); closeSrcPicker(); return; }
+  const m = activeEditMapping();
+  if (m) { m.source = fullPath; saveMappingCard(m); refreshMappingCard(m); }
+  closeSrcPicker();
+}
+let targetCid = "0";            // 当前选中目标目录 id（0=根）
+let targetCidStack = [];        // 目录树导航栈
+let targetNameStack = [];       // 目录名栈（拼接显示路径）
+async function openTargetPicker(){
+  targetCid = "0"; targetCidStack = []; targetNameStack = [];
+  el("targetOverlay").hidden = false;
+  el("targetSel").textContent = "未选择目录（将传到网盘根目录）";
+  el("targetCrumb").textContent = "/";
+  loadTargetDirs(targetCid);
+}
+function closeTargetPicker(){ el("targetOverlay").hidden = true; }
+async function loadTargetDirs(cid){
+  el("targetEmpty").textContent = "加载中…"; el("targetEmpty").hidden = false;
+  el("targetTable").hidden = true;
+  const tb = el("targetTable").querySelector("tbody"); tb.innerHTML="";
+  const r = await call("dirs_only?cid="+encodeURIComponent(cid));
+  el("targetEmpty").hidden = true;
+  el("targetUpBtn").disabled = !targetCidStack.length;
+  if(!r.success){ el("targetEmpty").textContent = r.message || "加载失败"; el("targetEmpty").hidden=false; return; }
+  const items = r.data.items || [];
+  if(!items.length){ el("targetEmpty").textContent = "此目录下没有子目录"; el("targetEmpty").hidden=false; return; }
+  el("targetTable").hidden = false;
+  for(const it of items){
+    const tr=document.createElement("tr");
+    tr.style.cursor="pointer";
+    tr.innerHTML=`<td><span class="glyph">${ICON_DIR}</span><span class="name">${esc(it.name)}</span></td>`;
+    tr.addEventListener("click", ()=>targetDirClick(it));
+    tb.appendChild(tr);
+  }
+}
+function targetDirClick(it){
+  // 点击目录：进入下一层，同时将该目录设为当前选中项
+  targetCidStack.push(targetCid);
+  targetNameStack.push(it.name);
+  targetCid = String(it.cid);
+  el("targetCrumb").textContent = "/" + targetNameStack.join("/");
+  el("targetSel").textContent = "已选：" + el("targetCrumb").textContent;
+  el("targetConfirmBtn").disabled = false;
+  loadTargetDirs(targetCid);
+}
+function targetGoUp(){
+  if(!targetCidStack.length) return;
+  targetCid = targetCidStack.pop();
+  targetNameStack.pop();
+  el("targetCrumb").textContent = targetNameStack.length ? ("/" + targetNameStack.join("/")) : "/";
+  el("targetSel").textContent = "已选：" + el("targetCrumb").textContent + "（可继续下钻）";
+  el("targetConfirmBtn").disabled = false;
+  loadTargetDirs(targetCid);
+}
+function targetConfirm(){
+  if (onceMode){
+    const crumb = el("targetCrumb").textContent || "/";
+    if (onceMode.kind === "strm"){ onceSel.strm.source_cid = targetCid; onceSel.strm.source_name = crumb; }
+    else { onceSel.upload.target_cid = targetCid; onceSel.upload.target_path = crumb; }
+    onceMode = null; closeTargetPicker(); renderOnceCards(); return;
+  }
+  const sm = activeStrmEdit();
+  if (sm) { sm.source_cid = targetCid; sm.source_name = el("targetCrumb").textContent; saveStrmCard(sm); refreshStrmCard(sm); closeTargetPicker(); return; }
+  const m = activeEditMapping();
+  if (m) { m.target_cid = targetCid; m.target_path = el("targetCrumb").textContent; saveMappingCard(m); refreshMappingCard(m); }
+  closeTargetPicker();
+}
+
+/* ---- 签到 ---- */
+async function checkinNow(){ const r=await call("checkin_now","POST",{}); el("signinResult").textContent=r.message||(r.success?"完成":"失败"); }
+// 签到时段显示跟随「应用中心 → 运行设置」配置（配置项已迁移；2026-09-17）
+async function refreshSigninRange(){
+  const r=await call("get_config");
+  if(!r.success)return;
+  const d=r.data||{};
+  const range=d.checkin_time_range;
+  const sr=el("signinRange"); if(sr&&range) sr.textContent=range;
+  // 自动签到开关提示（运行设置唯一写入口；手动签到不受影响）
+  const hint=el("signinAutoHint");
+  if(hint) hint.textContent = d.checkin_enabled ? "" : "每日自动签到已关闭（定时不执行）；手动签到仍可用";
+}
+
+/* ---- STRM ---- */
+let strmCards = [];
+let activeStrmRef = null;       // 当前编辑的 STRM 卡片对象引用（选择器回填目标）
+// 不用 id 匹配：新卡片 id 为空串，保存后 id 更新+重渲染会使 id 匹配失效（同上传卡片）。
+function activeStrmEdit(){ return activeStrmRef; }
+/* STRM 基础地址：可手动填写（存 strm_base_url），自动补充播放中转端口 */
+async function saveStrmBase(){
+  const rc = await call("strm_status");
+  if (!rc.success || !rc.data) return;
+  const d = rc.data;
+  // 回填输入框：手动配置过则显示配置原值，否则显示自动推导的基础地址
+  el("strmBaseUrl").value = d.manual_base_url || d.base_url || "";
+  el("strmRelayHint").textContent =
+    `中转端口 ${d.relay_port}（应用设置 → 运行设置 中修改）→ 实际 STRM 地址 ${d.base_url || "未确定"}`;
+  // 外网提示：手动填写公网可达地址 + 路由器映射中转端口，否则外网播放器无法访问
+  const extHint = el("strmOutboundHint");
+  if (extHint) {
+    const manual = d.manual_base_url || "";
+    extHint.textContent = manual
+      ? "外网播放：请确认该地址公网可达，且路由器已把中转端口映射到本机。"
+      : "外网播放：请在下方填写公网可达地址（如 http://公网IP 或域名），并在路由器映射中转端口。";
+  }
+}
+function bindStrmBaseEdit(){
+  const input = el("strmBaseUrl");
+  if (!input || input.dataset.bound) return;
+  input.dataset.bound = "1";
+  input.addEventListener("change", async (e)=>{
+    const v = e.target.value.trim();
+    const r = await call("save_config", "POST", { strm_base_url: v });
+    const hint = el("strmRelayHint");
+    if (!r.success){
+      if (hint) hint.textContent = "保存失败：" + (r.message || "未知错误");
+      return;
+    }
+    await saveStrmBase();
+  });
+}
+async function loadStrmMappings(){
+  const r = await call("strm_mappings");
+  strmCards = (r.success && r.data && Array.isArray(r.data.mappings)) ? r.data.mappings : [];
+  renderStrmCards();
+  await saveStrmBase();
+  bindStrmBaseEdit();
+  // 增量生成状态（运行设置唯一写入口；前端只读提示，避免语义重叠困惑）
+  const rc = await call("strm_status");
+  if (rc.success && rc.data) {
+    const inc = rc.data.incremental !== false;
+    el("strmIncrementalHint").textContent = `增量生成：${inc ? "开" : "关"}（在应用设置 → 运行设置调整）`;
+  }
+  return r;
+}
+function renderStrmCards(){
+  const box = el("strmList");
+  box.innerHTML = "";
+  el("strmEmpty").hidden = strmCards.length > 0;
+  for (const m of strmCards) box.appendChild(strmCardEl(m));
+}
+function strmCardEl(m){
+  const wrap = document.createElement("div");
+  wrap.className = "pane";
+  wrap.style.marginBottom = "12px";
+  wrap.style.padding = "14px 16px";
+  const srcShow = m.source_cid ? `<span class="mono">${esc(m.source_name || m.source_cid)}</span>` : `<span class="muted">未选择 115 源目录</span>`;
+  const tgtShow = m.target_dir ? `<span class="mono">${esc(m.target_dir)}</span>` : `<span class="muted">未选择输出目录</span>`;
+  wrap.innerHTML = `
+    <div class="field-row" style="justify-content:space-between;gap:8px">
+      <input class="input mono" style="flex:1;min-width:140px;max-width:260px" value="${escAttr(m.name)}" data-field="name" placeholder="映射名称">
+      <label class="switch" title="启用/停用">
+        <input type="checkbox" data-field="enabled" ${m.enabled !== false ? "checked" : ""}>
+        <span class="track"></span>
+      </label>
+      <button class="btn btn-mini danger" data-act="del">删除</button>
+    </div>
+    <div class="field-row" style="margin-top:10px;align-items:center;gap:8px">
+      <span class="muted" style="width:62px;flex:none">源目录</span>
+      <button class="btn" data-act="pick-src">选择 115 目录</button>
+      <div style="flex:1;min-width:0" data-role="src-show">${srcShow}</div>
+    </div>
+    <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
+      <span class="muted" style="width:62px;flex:none">输出目录</span>
+      <button class="btn" data-act="pick-tgt">选择本地目录</button>
+      <div style="flex:1;min-width:0" data-role="tgt-show">${tgtShow}</div>
+    </div>`;
+  const nameInput = wrap.querySelector('input[data-field="name"]');
+  nameInput.addEventListener("input", ()=>{ m.name = nameInput.value.trim() || "未命名映射"; saveStrmCard(m); });
+  const ena = wrap.querySelector('input[data-field="enabled"]');
+  ena.addEventListener("change", ()=>{ m.enabled = ena.checked; saveStrmCard(m); });
+  wrap.querySelector('[data-act="del"]').addEventListener("click", async ()=>{
+    if(!confirm(`删除 STRM 映射「${m.name || ""}」？`)) return;
+    if(m.id) await call("delete_strm_mapping", "POST", { id: m.id });
+    strmCards = strmCards.filter(x => String(x.id) !== String(m.id));
+    renderStrmCards();
+  });
+  wrap.querySelector('[data-act="pick-src"]').addEventListener("click", ()=>{ activeEditRef = null; activeStrmRef = m; onceMode = null; openTargetPicker(); });
+  wrap.querySelector('[data-act="pick-tgt"]').addEventListener("click", ()=>{ activeEditRef = null; activeStrmRef = m; onceMode = null; openSrcPicker(); });
+  m._srcShowEl = wrap.querySelector('[data-role="src-show"]');
+  m._tgtShowEl = wrap.querySelector('[data-role="tgt-show"]');
+  return wrap;
+}
+// 局部刷新 STRM 卡片显示的源目录/输出目录（确认选择后立即可见）
+function refreshStrmCard(m){
+  if (m._srcShowEl){
+    m._srcShowEl.innerHTML = m.source_cid
+      ? `<span class="mono">${esc(m.source_name || m.source_cid)}</span>`
+      : `<span class="muted">未选择 115 源目录</span>`;
+  }
+  if (m._tgtShowEl){
+    m._tgtShowEl.innerHTML = m.target_dir
+      ? `<span class="mono">${esc(m.target_dir)}</span>`
+      : `<span class="muted">未选择输出目录</span>`;
+  }
+}
+async function saveStrmCard(m){
+  const r = await call("save_strm_mapping", "POST", {
+    id: m.id || "",
+    name: m.name || "未命名映射",
+    source_cid: m.source_cid || "",
+    source_name: m.source_name || "",
+    target_dir: m.target_dir || "",
+    enabled: m.enabled !== false,
+  });
+  if (r.success && !m.id && r.data && r.data.id) {
+    m.id = r.data.id;
+    renderStrmCards();
+  }
+  el("strmResult").textContent = r.success ? (r.message || "已保存") : (r.message || "保存失败");
+}
+async function addStrmCard(){
+  const name = "STRM 映射 " + (strmCards.length + 1);
+  strmCards.push({ id: "", name, source_cid: "", source_name: "", target_dir: "", enabled: true });
+  renderStrmCards();
+  const first = el("strmList").querySelector('input[data-field="name"]');
+  if (first) first.focus();
+}
+async function runStrmSync(){
+  el("strmResult").textContent = "同步中…（大目录可能需要几分钟）";
+  const r = await call("strm_sync", "POST", {});
+  el("strmResult").textContent = r.message || (r.success ? "同步完成" : "同步失败");
+  loadStrmMappings();
+}
+
+/* ---- 设置（配置项已迁移至应用中心「运行设置」，此处仅展示版本） ---- */
+async function loadSettings(){
+  const r=await call("get_config");
+  if(!r.success)return;
+  const d=r.data;
+  if (el("currentVersion")) el("currentVersion").textContent = d.version || "1.0.0";
+  // 侧边栏底部版本徽标动态跟随实际版本（不再硬编码；2026-09-17 修复 1.1.0 残留）
+  if (el("appVersion")) el("appVersion").textContent = "v" + (d.version || "1.0.0");
+}
+/* ---- 自更新（半自动） ---- */
+async function checkUpdate(){
+  const btn = el("updateResult");
+  btn.textContent = "检查中…";
+  const r = await call("check_update");
+  if (!r.success){ btn.textContent = r.message || "检查失败"; return; }
+  const d = r.data || r;
+  if (!d.has_update){ el("latestVersionInfo").textContent = "已是最新版本 v"+(d.latest&&d.latest.version||d.current); btn.textContent = d.message || "已是最新"; return; }
+  const lv = d.latest || {};
+  el("latestVersionInfo").textContent = "v"+lv.version+"（"+(lv.published_at||"").slice(0,10)+"）";
+  btn.textContent = "发现新版本 v"+lv.version+"！";
+  const dlBtn = el("downloadUpdateBtn");
+  dlBtn.style.display="inline-block";
+  dlBtn.dataset.version = lv.version;
+}
+async function downloadAndUpdate(){
+  const btn = el("updateResult");
+  const dlBtn = el("downloadUpdateBtn");
+  btn.textContent = "下载中…"; dlBtn.disabled = true;
+  const r = await call("download_update","POST",{});
+  if (!r.success){ btn.textContent = r.message || "下载失败"; dlBtn.disabled = false; return; }
+  const f = r.data && r.data.file;
+  if (!confirm("新版本 FPK 已下载（"+(r.data&&r.data.size||0)+" 字节）\n确认应用更新？应用将重启。")) { dlBtn.disabled=false; btn.textContent="已取消"; return; }
+  btn.textContent = "更新中…";
+  const a = await call("apply_update","POST",{ file: f });
+  btn.textContent = a.message || (a.success?"更新已提交":"更新失败");
+  if (a.success){ setTimeout(()=>location.reload(), 2500); }
+  else { dlBtn.disabled = false; }
+}
+/* ---- 日志 ---- */
+let lastLogOffset=0, lastLogText="";
+let logFilter = { level: "ALL", type: "ALL" };
+const TYPE_LABELS = { UPLOAD:"上传", STRM:"STRM", WATCH:"监听", CHECKIN:"签到", RISK:"风控", CONFIG:"配置", LINK:"取链", SYSTEM:"系统" };
+function logLineHtml(item){
+  const lv = String(item.l || "INFO");
+  const color = lv === "ERROR" ? "#f85149" : lv === "WARN" ? "#d29922" : "#7ee787";
+  const typ = TYPE_LABELS[String(item.y || "SYSTEM")] || String(item.y || "SYSTEM");
+  const time = String(item.t || "");
+  return `<span style="color:#8b949e">[${time}]</span> <span style="color:${color};font-weight:600">[${lv}]</span> <span style="color:#58a6ff">[${typ}]</span> ${escapeHtml(item.x || "")}`;
+}
+function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+async function pollLog(){
+  const r=await call("log_tail?limit=300");
+  if(!r.success) return;
+  const items = r.data.lines || [];
+  const shown = items.filter(it => (logFilter.level==="ALL" || String(it.l||"INFO")===logFilter.level) && (logFilter.type==="ALL" || String(it.y||"SYSTEM")===logFilter.type));
+  const txt = shown.map(logLineHtml).join("\n");
+  if(txt===lastLogText) return;
+  lastLogText=txt;
+  el("logBox").innerHTML=txt;
+  el("logBox").scrollTop=el("logBox").scrollHeight;
+  el("logCount").textContent = `显示 ${shown.length}/${items.length} 条`;
+}
+function setLogFilter(kind, val){
+  logFilter[kind] = val;
+  lastLogText = null;   // 哨兵：强制下次 pollLog 重绘（空结果也要更新计数）
+  document.querySelectorAll(".logf").forEach(b=>{
+    const active = (kind==="level" && b.dataset.level===val) || (kind==="type" && b.dataset.type===val);
+    b.style.fontWeight = active ? "700" : "";
+    b.style.outline = active ? "1px solid var(--accent,#58a6ff)" : "";
+  });
+  pollLog();
+}
+document.addEventListener("click", (e)=>{
+  const b = e.target.closest(".logf");
+  if(!b) return;
+  if(b.dataset.level) setLogFilter("level", b.dataset.level);
+  if(b.dataset.type) setLogFilter("type", b.dataset.type);
+});
+
+/* ---- 历史 ---- */
+const HISTORY_TYPES = { upload:"上传", checkin:"签到", link:"取链", strm:"STRM", other:"其他" };
+async function refreshConflicts(){
+  const tb = el("conflictTable").querySelector("tbody");
+  tb.innerHTML="";
+  const r = await call("upload_conflicts");
+  const items = (r.data && r.data.items) || [];
+  const block = el("conflictBlock"), table = el("conflictTable"), empty = el("conflictEmpty");
+  block.hidden = table.hidden = empty.hidden = true;
+  if (!r.success || !items.length) { if (items.length===0) return; return; }
+  block.hidden = false;
+  table.hidden = false;
+  empty.hidden = true;
+  const labels = { adopt:"采用远端", reupload:"重传覆盖", dismiss:"先不管" };
+  for (const c of items){
+    const tr = document.createElement("tr");
+    const reason = c.reason || "";
+    const pathAttr = escjs(c.path || "");
+    tr.innerHTML =
+      `<td class="name">${esc(c.path || "")}<div class="muted">${esc(reason)}</div></td>` +
+      `<td>${esc(c.target || "")}</td>` +
+      `<td class="mono">${esc(c.recorded_pickcode || "")}</td>` +
+      `<td class="mono">${esc(c.remote_pickcode || "")}</td>` +
+      `<td class="ops">` +
+        `<button class="btn btn-mini" onclick="resolveConflict('${pathAttr}','adopt')">${labels.adopt}</button> ` +
+        `<button class="btn btn-mini" onclick="resolveConflict('${pathAttr}','reupload')">${labels.reupload}</button> ` +
+        `<button class="btn btn-mini" onclick="resolveConflict('${pathAttr}','dismiss')">${labels.dismiss}</button>` +
+      `</td>`;
+    tb.appendChild(tr);
+  }
+}
+async function resolveConflict(p, action){
+  const r = await call("upload_conflicts_resolve","POST",{action, paths:[p]});
+  alert(r.message || "完成");
+  refreshConflicts();
+}
+async function refreshHistory(){
+  const r = await call("history");
+  const tb = el("historyTable").querySelector("tbody");
+  const empty = el("historyEmpty");
+  tb.innerHTML="";
+  if (!r.success){ empty.textContent = r.message || "读取失败"; empty.hidden=false; el("historyTable").hidden=true; return; }
+  const items = r.data.items || [];
+  empty.hidden = items.length > 0;
+  el("historyTable").hidden = items.length === 0;
+  for (const it of items){
+    const tr = document.createElement("tr");
+    const d = new Date(Number(it.ts) || 0);
+    const time = isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12: false });
+    const type = HISTORY_TYPES[it.type] || it.type || "其他";
+    const ok = it.ok !== false;
+    tr.innerHTML =
+      `<td class="mono">${esc(time)}</td>` +
+      `<td>${esc(type)}</td>` +
+      `<td class="name">${esc(it.title || "")}<div class="muted">${esc(it.detail || "")}</div></td>` +
+      `<td class="ops ${ok ? "ok" : "err"}">${ok ? "成功" : "失败"}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+/* ---- 媒体库（账本 / 云端核对 / 失效清理）---- */
+// 账本只读本地记录与文件系统，本身不打 115；只有「云端核对」会按预算发少量请求。
+let ledgerRows = [];
+let ledgerSum = {};                  // 最近一次账本摘要（重画勾选态时沿用）
+let ledgerPick = new Set();          // 已勾选的行 id（只有含失效文件的行才可勾）
+const KIND_LABEL  = { movie:"电影", tv:"剧集", other:"其他" };
+const STATE_LABEL = { ok:"正常", stale:"失效", unchecked:"待核对", untracked:"记录缺失" };
+const STATE_PILL  = { ok:"ok", stale:"bad", unchecked:"warn", untracked:"warn" };
+function fmtTime(sec){
+  sec = Number(sec || 0);
+  if (!sec) return "—";
+  const d = new Date(sec * 1000);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12:false });
+}
+async function loadLedger(){
+  el("ledgerSummary").textContent = "加载中…";
+  const r = await call("ledger");
+  if (!r.success){
+    ledgerRows = [];
+    ledgerSum = {};
+    ledgerPick = new Set();
+    renderLedger();
+    el("ledgerEmpty").textContent = r.message || "加载失败";
+    el("ledgerSummary").textContent = r.message || "加载失败";
+    return;
+  }
+  ledgerRows = (r.data && r.data.rows) || [];
+  ledgerSum = (r.data && r.data.summary) || {};
+  // 默认帮用户把失效行勾上（删之前仍有二次确认）；手动取消后不再自动勾回
+  ledgerPick = new Set(ledgerRows.filter(r => r.stale_files > 0).map(r => r.id));
+  renderLedger();
+}
+function renderLedger(){
+  const sum = ledgerSum;
+  const tb = el("ledgerTable").querySelector("tbody");
+  tb.innerHTML = "";
+  const staleIds = new Set(ledgerRows.filter(r => r.stale_files > 0).map(r => r.id));
+  // 重画时丢掉已经不再是失效行的勾选，避免拿着过期 id 去删
+  ledgerPick = new Set([...ledgerPick].filter(id => staleIds.has(id)));
+  const has = ledgerRows.length > 0;
+  el("ledgerTable").hidden = !has;
+  el("ledgerEmpty").hidden = has;
+  el("ledgerEmpty").textContent = has ? "" : "账本为空：先到「STRM」页生成 .strm，或用下面的「对指定目录生成一次」";
+  for (const row of ledgerRows){
+    const tr = document.createElement("tr");
+    const tail = row.kind === "tv" && row.season !== null && row.season !== undefined ? ` 第 ${row.season} 季` : "";
+    const year = row.year ? `（${row.year}）` : "";
+    const notes = [];
+    if (row.span) notes.push(`集数 ${row.span}${row.missing && row.missing.length ? "，缺 " + row.missing.join("/") : ""}`);
+    if (row.stale_files > 0) notes.push(`失效 ${row.stale_files}/${row.tracked_files}`);
+    else if (row.untracked_files > 0) notes.push(`未记录 ${row.untracked_files}`);
+    const chan = row.channel || "—";
+    const dir = (row.target_dirs && row.target_dirs[0]) || "";
+    const pick = row.stale_files > 0
+      ? `<input type="checkbox" data-pick="${escAttr(row.id)}" ${ledgerPick.has(row.id) ? "checked" : ""}>` : "";
+    tr.innerHTML =
+      `<td class="pick">${pick}</td>` +
+      `<td class="name">${esc(row.title || "未命名")}${esc(tail)}${esc(year)}` +
+        (notes.length ? `<div class="muted">${esc(notes.join("；"))}</div>` : "") + `</td>` +
+      `<td>${esc(KIND_LABEL[row.kind] || row.kind || "")}</td>` +
+      `<td class="name">${esc(chan)}${dir ? `<div class="muted mono">${esc(dir)}</div>` : ""}</td>` +
+      `<td class="ops">${esc(String(row.files || 0))}</td>` +
+      `<td class="ops">${esc(fmtSize(row.size))}</td>` +
+      `<td class="mono">${esc(fmtTime(row.last_sync))}</td>` +
+      `<td><span class="pill ${STATE_PILL[row.state] || ""}">${esc(STATE_LABEL[row.state] || row.state || "")}</span></td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll("input[data-pick]").forEach(cb => cb.addEventListener("change", () => {
+    if (cb.checked) ledgerPick.add(cb.dataset.pick); else ledgerPick.delete(cb.dataset.pick);
+    syncLedgerPick();
+  }));
+  el("ledgerAll").checked = staleIds.size > 0 && ledgerPick.size === staleIds.size;
+  el("ledgerAll").disabled = staleIds.size === 0;
+  el("ledgerSummary").textContent =
+    `共 ${sum.rows || 0} 行（电影 ${sum.movies || 0} / 剧集 ${sum.tv || 0} / 其他 ${sum.other || 0}），` +
+    `STRM ${sum.files || 0} 个，合计 ${fmtSize(sum.size)}；` +
+    `失效 ${sum.stale || 0} 行（${sum.stale_files || 0} 个），待核对 ${sum.unchecked || 0} 行，记录缺失 ${sum.untracked || 0} 行`;
+  syncLedgerPick();
+}
+// 「清理失效 STRM」只在真的勾了失效行时才可点
+function syncLedgerPick(){
+  el("ledgerDropBtn").disabled = ledgerStaleTargets().length === 0;
+}
+function toggleAllLedger(box){
+  ledgerPick = box.checked
+    ? new Set(ledgerRows.filter(r => r.stale_files > 0).map(r => r.id))
+    : new Set();
+  renderLedger();   // 只重画勾选态，摘要沿用 ledgerSum
+}
+// 交给后端的 id 只有「已勾选行里被确认云端失效」的那些 —— 正好是 ledgerVerify 返回的 stale_items[].id
+function ledgerStaleTargets(){
+  const ids = [];
+  for (const row of ledgerRows){
+    if (!ledgerPick.has(row.id) || !row.stale_files) continue;
+    for (const item of (row.items || [])){
+      if (item.tracked && item.verify_state === "no") ids.push(item.id);
+    }
+  }
+  return ids;
+}
+async function verifyLedger(){
+  const picked = [...ledgerPick];
+  const scope = picked.length ? `已勾选的 ${picked.length} 行` : "全部行";
+  if (!confirm(`对${scope}做云端核对？\n\n一部片/一季只问一次它所在的云目录，撞上 115 访问上限会自动停下。只做标记，不删任何东西。`)) return;
+  const btn = el("ledgerVerifyBtn");
+  btn.disabled = true;
+  el("ledgerResult").textContent = "核对中…";
+  const r = await call("ledger_verify", "POST", picked.length ? { ids: picked } : {});
+  btn.disabled = false;
+  el("ledgerResult").textContent = r.message || (r.success ? "核对完成" : "核对失败");
+  await loadLedger();
+}
+async function dropStaleLedger(){
+  const ids = ledgerStaleTargets();
+  if (!ids.length){ alert("没有勾选任何已确认失效的 STRM"); return; }
+  const rows = ledgerRows.filter(r => ledgerPick.has(r.id) && r.stale_files > 0);
+  const names = rows.slice(0, 3).map(r => r.title).join("、") + (rows.length > 3 ? " 等" : "");
+  if (!confirm(`将删除本地 ${ids.length} 个失效 .strm（涉及 ${rows.length} 行：${names}）。\n\n只删本地文件，绝不动云端。继续？`)) return;
+  if (!confirm(`再确认一次：确认删除这 ${ids.length} 个本地 .strm 文件？此操作不可撤销。`)) return;
+  const btn = el("ledgerDropBtn");
+  btn.disabled = true;
+  el("ledgerResult").textContent = "清理中…";
+  const r = await call("library_drop", "POST", { ids });
+  el("ledgerResult").textContent = r.message || (r.success ? "清理完成" : "清理失败");
+  await loadLedger();
+}
+
+/* ---- 一次性任务台 ---- */
+// 复用既有的目录选择器：onceMode 说明这次选择是给哪张一次性卡片用的
+let onceMode = null;
+const onceSel = {
+  strm:   { source_cid:"", source_name:"", target_dir:"" },
+  upload: { source:"", target_cid:"0", target_path:"" },
+};
+function toggleOnceCard(id){
+  const card = el(id);
+  card.hidden = !card.hidden;
+  if (!card.hidden) renderOnceCards();
+}
+function pickOnce(kind, field){
+  activeEditRef = null;
+  activeStrmRef = null;
+  onceMode = { kind, field };
+  if (field === "src115" || field === "tgt115") openTargetPicker();
+  else openSrcPicker();
+}
+function renderOnceCards(){
+  const s = onceSel.strm;
+  const u = onceSel.upload;
+  el("strmOnceSource").innerHTML = s.source_cid
+    ? `<span class="mono">${esc(s.source_name || s.source_cid)}</span>` : `<span class="muted">未选择</span>`;
+  el("strmOnceTarget").innerHTML = s.target_dir
+    ? `<span class="mono">${esc(s.target_dir)}</span>` : `<span class="muted">未选择</span>`;
+  el("strmOnceRunBtn").disabled = !(s.source_cid && s.target_dir);
+  el("uploadOnceSource").innerHTML = u.source
+    ? `<span class="mono">${esc(u.source)}</span>` : `<span class="muted">未选择</span>`;
+  el("uploadOnceTarget").innerHTML = u.target_path
+    ? `<span class="mono">${esc(u.target_path)}</span>` : `<span class="muted">未选择</span>`;
+  el("uploadOnceRunBtn").disabled = !u.source;
+}
+async function runStrmOnce(){
+  const s = onceSel.strm;
+  if (!s.source_cid || !s.target_dir){ alert("先选好 115 源目录与本地输出目录"); return; }
+  if (!confirm(`对「${s.source_name || s.source_cid}」生成一次 STRM 到\n${s.target_dir}\n\n不保存为映射，只跑这一次。继续？`)) return;
+  const btn = el("strmOnceRunBtn");
+  btn.disabled = true;
+  el("strmOnceResult").textContent = "生成中…（大目录可能较慢，请勿关闭页面）";
+  const r = await call("strm_once", "POST", {
+    source_cid: s.source_cid, source_name: s.source_name, target_dir: s.target_dir,
+  });
+  btn.disabled = false;
+  el("strmOnceResult").textContent = r.message || (r.success ? "生成完成" : "生成失败");
+}
+async function runUploadOnce(){
+  const u = onceSel.upload;
+  if (!u.source){ alert("先选择本地源目录"); return; }
+  if (!confirm(`把本地目录\n${u.source}\n上传到 115：${u.target_path || "/"}\n\n不保存为映射，排队执行一次。继续？`)) return;
+  const btn = el("uploadOnceRunBtn");
+  btn.disabled = true;
+  el("uploadOnceResult").textContent = "提交中…";
+  const r = await call("upload_once", "POST", {
+    source: u.source, target_cid: u.target_cid || "0", target_path: u.target_path || "/",
+  });
+  btn.disabled = false;
+  el("uploadOnceResult").textContent = r.message || (r.success ? "已排队" : "提交失败");
+}
+
+/* ---- 工具 ---- */
+function fmtSize(n){ n=Number(n||0); if(n<1024)return n+"B"; const u=["KB","MB","GB","TB"]; let i=-1; do{n/=1024;i++;}while(n>=1024&&i<3); return n.toFixed(1)+u[i]; }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function escjs(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,'\\"'); }
+
+window.addEventListener("load", boot);
+</script>
+<script type="module">
+// fnOS 宿主 JS SDK（@trimjs/web-app）：提供用户授权的文件/文件夹选择器
+import { TrimApp } from './static/trimjs-web-app.js';
+window.TrimApp = TrimApp;
+// 预建单例（SDK 构造时内部会做宿主握手，避免每次选择重复连接）
+window.trimApp = new TrimApp({ debug: false });
+window.dispatchEvent(new Event("trimapp-ready"));
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+#!/bin/sh
+# 115网盘助手 配置变更初始化：应用中心「应用设置 → 运行设置」保存后，
+# fnOS 把 wizard/config 字段值作为同名环境变量传入（无 TRIM_ 前缀），
+# 本脚本在配置应用前执行：记录变更请求日志，供排查。
+set -u
+
+VAR_DIR="${TRIM_PKGVAR:-/vol1/@appdata/p115assistant}"
+LOG_FILE="${VAR_DIR}/info.log"
+mkdir -p "${VAR_DIR}"
+
+log_msg() {
+    local msg="$(date '+%Y-%m-%d %H:%M:%S') - [config_init] $1"
+    echo "$msg"
+    echo "$msg" >> "${LOG_FILE}" 2>/dev/null || true
+}
+
+log_msg "=== config_init start ==="
+# 列出本次收到的 wizard 字段（仅字段名，不输出值，避免 webhook/token 泄露）
+# POSIX sh 无间接扩展，用 case 逐个探测（环境变量未设置时视为未提交）
+_fields=""
+for _k in enabled rate_limit_profile login_client_type link_redirect_mode \
+          upload_include_sidecars upload_generate_strm upload_delete_source \
+          upload_conflict_policy upload_risk_profile watch_enabled \
+          checkin_enabled checkin_time_range checkin_notify \
+          feishu_enabled feishu_webhook strm_incremental; do
+    _val=""
+    case "$_k" in
+        enabled) _val="${enabled:-}" ;;
+        rate_limit_profile) _val="${rate_limit_profile:-}" ;;
+        login_client_type) _val="${login_client_type:-}" ;;
+        link_redirect_mode) _val="${link_redirect_mode:-}" ;;
+        upload_include_sidecars) _val="${upload_include_sidecars:-}" ;;
+        upload_generate_strm) _val="${upload_generate_strm:-}" ;;
+        upload_delete_source) _val="${upload_delete_source:-}" ;;
+        upload_conflict_policy) _val="${upload_conflict_policy:-}" ;;
+        upload_risk_profile) _val="${upload_risk_profile:-}" ;;
+        watch_enabled) _val="${watch_enabled:-}" ;;
+        checkin_enabled) _val="${checkin_enabled:-}" ;;
+        checkin_time_range) _val="${checkin_time_range:-}" ;;
+        checkin_notify) _val="${checkin_notify:-}" ;;
+        feishu_enabled) _val="${feishu_enabled:-}" ;;
+        feishu_webhook) _val="${feishu_webhook:-}" ;;
+        strm_incremental) _val="${strm_incremental:-}" ;;
+    esac
+    if [ -n "$_val" ]; then
+        if [ -z "$_fields" ]; then
+            _fields="$_k"
+        else
+            _fields="${_fields},$_k"
+        fi
+    fi
+done
+log_msg "wizard fields: ${_fields:-<none>}"
+log_msg "=== config_init end ==="
+exit 0

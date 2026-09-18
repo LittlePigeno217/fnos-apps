@@ -1,0 +1,30 @@
+{
+ "schema_version": 1,
+ "generated_at": "2026-09-16T00:00:00Z",
+ "source": {
+  "name": "LittlePigeno217/fnos-apps",
+  "url": "https://github.com/LittlePigeno217/fnos-apps"
+ },
+ "apps": [
+  {
+   "slug": "p115assistant",
+   "appname": "p115assistant",
+   "file_prefix": "p115assistant",
+   "display_name": "115网盘助手",
+   "description": "在 fnOS 上登录 115 网盘，浏览、上传（秒传/增量/实时监听）、STRM 生成、签到与 302 取链。核心能力移植自 MoviePilot-Plugins 的 115 轻量助手。",
+   "version": "1.0.0",
+   "fpk_version": "1.0.0",
+   "release_tag": "p115assistant/v1.0.0",
+   "service_port": 0,
+   "homepage_url": "https://github.com/LittlePigeno217",
+   "icon_url": "https://raw.githubusercontent.com/LittlePigeno217/fnos-apps/main/apps/p115assistant/fnos/ICON_256.PNG",
+   "platforms": [
+    "all"
+   ],
+   "updated_at": "2026-09-17T06:00:00Z",
+   "download_count": 0,
+   "app_type": "native",
+   "category": "media"
+  }
+ ]
+}

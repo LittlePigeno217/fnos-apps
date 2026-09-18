@@ -1,0 +1,19 @@
+# 构建产物
+dist/
+app.tgz
+*.fpk
+
+# 应用数据（可能含敏感配置）
+*.env
+.env*
+!*.env.example
+
+# 备份
+Backups/
+backups/
+
+# 系统/IDE
+.DS_Store
+*.swp
+__pycache__/
+node_modules/

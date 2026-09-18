@@ -1,0 +1,34 @@
+#!/bin/sh
+# 115网盘助手 安装回调：应用文件就位后执行。
+#
+# 本版本后端为 Node.js，全部使用内置模块，不携带任何第三方依赖，
+# 因此没有需要安装的离线包。此回调只做幂等的运行时自检与目录准备；
+# 失败仅告警，不阻断安装（start 阶段 cmd/main 会再做解释器校验并报错）。
+set -u
+
+VAR_DIR="${TRIM_PKGVAR:-/tmp/p115assistant_data}"
+APP_DIR="${TRIM_APPDEST:-.}"
+
+mkdir -p "$VAR_DIR"
+
+if command -v node >/dev/null 2>&1; then
+  node_ver="$(node --version 2>/dev/null || true)"
+  echo "115网盘助手：检测到 node ${node_ver:-未知版本}（依赖 nodejs_v24）。" >&2
+  exit 0
+fi
+
+# 兜底：nodejs_v24 可能不并入 PATH，cmd/main 会在 start 阶段探测运行时目录。
+for cand in \
+  "$APP_DIR/.runtime/nodejs_v24/bin/node" \
+  /vol*/@appcenter/nodejs_v24/bin/node \
+  "/opt/nodejs_v24/bin/node" \
+  "/usr/lib/nodejs_v24/bin/node" \
+  "/usr/local/lib/nodejs_v24/bin/node"; do
+  if [ -x "$cand" ]; then
+    echo "115网盘助手：检测到 node（$cand）。" >&2
+    exit 0
+  fi
+done
+
+echo "115网盘助手：未在 PATH 找到 node；如果 nodejs_v24 应用未安装，启动阶段将失败。数据目录已准备：$VAR_DIR" >&2
+exit 0

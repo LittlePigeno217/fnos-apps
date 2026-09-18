@@ -1,0 +1,10 @@
+{
+  "name": "p115assistant-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "115网盘助手后端（零第三方依赖，node:http/node:https/node:crypto/node:fs）",
+  "main": "main.js",
+  "engines": {
+    "node": ">=24"
+  }
+}

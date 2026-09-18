@@ -1,0 +1,13 @@
+[
+  {
+    "stepTitle": "升级",
+    "items": [
+      {
+        "type": "tips",
+        "label": "升级 115网盘助手",
+        "content": "升级将保留已有配置与上传记录。升级前建议在应用内确认 115 登录仍有效。",
+        "helpText": "升级不会删除 TRIM_PKGVAR 下的配置、上传记录与 302 取链密钥；Node.js 版与 Python 版数据格式互通。"
+      }
+    ]
+  }
+]

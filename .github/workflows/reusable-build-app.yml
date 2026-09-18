@@ -1,0 +1,260 @@
+name: Reusable fnOS App Build
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: 'App slug (must have apps/<app>/ directory and scripts/apps/<app>/meta.env)'
+        required: true
+        type: string
+      version:
+        description: 'Override version (empty for latest)'
+        required: false
+        type: string
+        default: ''
+      revision:
+        description: 'Revision suffix, e.g. r2'
+        required: false
+        type: string
+        default: ''
+      event_name:
+        description: 'Original trigger event name'
+        required: false
+        type: string
+        default: 'workflow_dispatch'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      full_version: ${{ steps.version.outputs.full_version }}
+      upstream_tag: ${{ steps.version.outputs.upstream_tag }}
+      release_tag: ${{ steps.check.outputs.release_tag }}
+      should_build: ${{ steps.check.outputs.should_build }}
+      fpk_version: ${{ steps.check.outputs.fpk_version }}
+      file_prefix: ${{ steps.meta.outputs.file_prefix }}
+      release_title: ${{ steps.meta.outputs.release_title }}
+      arch_matrix: ${{ steps.meta.outputs.arch_matrix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate App Input
+        run: |
+          APP="${{ inputs.app }}"
+          if [ ! -d "apps/$APP" ]; then
+            echo "::error::Invalid app '$APP': directory apps/$APP/ not found"
+            exit 1
+          fi
+          if [ ! -f "scripts/apps/$APP/meta.env" ]; then
+            echo "::error::Invalid app '$APP': build contract scripts/apps/$APP/meta.env not found"
+            exit 1
+          fi
+
+      - name: Resolve App Metadata
+        id: meta
+        run: |
+          APP="${{ inputs.app }}"
+          source "scripts/apps/${APP}/meta.env"
+          echo "file_prefix=${FILE_PREFIX}" >> "$GITHUB_OUTPUT"
+          echo "release_title=${RELEASE_TITLE}" >> "$GITHUB_OUTPUT"
+
+          SUPPORTED_ARCH="${SUPPORTED_ARCH:-x86 arm}"
+          ARCH_MATRIX="[]"
+          if echo "$SUPPORTED_ARCH" | grep -qw "x86"; then
+            ARCH_MATRIX=$(echo "$ARCH_MATRIX" | jq -c '. + [{"arch":"x86","manifest_platform":"x86","deb_arch":"amd64","plex_build":"linux-x86_64","qb_binary_prefix":"x86_64","tarball_arch":"amd64","jre_arch":"x64"}]')
+          fi
+          if echo "$SUPPORTED_ARCH" | grep -qw "arm"; then
+            ARCH_MATRIX=$(echo "$ARCH_MATRIX" | jq -c '. + [{"arch":"arm","manifest_platform":"arm","deb_arch":"arm64","plex_build":"linux-aarch64","qb_binary_prefix":"aarch64","tarball_arch":"arm64","jre_arch":"aarch64"}]')
+          fi
+          echo "arch_matrix=${ARCH_MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "Architectures: ${ARCH_MATRIX}"
+
+      - name: Get Latest Version
+        id: version
+        run: |
+          APP="${{ inputs.app }}"
+          INPUT_VERSION="${{ inputs.version }}"
+          bash "scripts/apps/${APP}/get-latest-version.sh" "${INPUT_VERSION}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check Release and Determine Tag
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          REVISION="${{ inputs.revision }}"
+          APP="${{ inputs.app }}"
+          EVENT_NAME="${{ inputs.event_name }}"
+          bash scripts/ci/resolve-release-tag.sh "$APP" "$VERSION" "$EVENT_NAME" "$REVISION"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJson(needs.check-version.outputs.arch_matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Package
+        run: |
+          APP="${{ inputs.app }}"
+          VERSION="${{ needs.check-version.outputs.version }}"
+          FPK_VERSION="${{ needs.check-version.outputs.fpk_version }}"
+          MANIFEST_PLATFORM="${{ matrix.manifest_platform }}"
+          FILE_PREFIX="${{ needs.check-version.outputs.file_prefix }}"
+
+          bash "scripts/apps/${APP}/build.sh"
+
+          ls -lh app.tgz
+          bash scripts/build-fpk.sh "apps/${APP}" app.tgz "${VERSION}" "${MANIFEST_PLATFORM}"
+          FPK_BUILT="${FILE_PREFIX}_${VERSION}_${MANIFEST_PLATFORM}.fpk"
+          FPK_FINAL="${FILE_PREFIX}_${FPK_VERSION}_${MANIFEST_PLATFORM}.fpk"
+          if [ "$FPK_BUILT" != "$FPK_FINAL" ]; then
+            mv "$FPK_BUILT" "$FPK_FINAL"
+          fi
+          echo "Built: ${FPK_FINAL}"
+          ls -lh "${FPK_FINAL}"
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+          FPK_VERSION: ${{ needs.check-version.outputs.fpk_version }}
+          FULL_VERSION: ${{ needs.check-version.outputs.full_version }}
+          UPSTREAM_TAG: ${{ needs.check-version.outputs.upstream_tag }}
+          DEB_ARCH: ${{ matrix.deb_arch }}
+          PLEX_BUILD: ${{ matrix.plex_build }}
+          QB_BINARY_PREFIX: ${{ matrix.qb_binary_prefix }}
+          TARBALL_ARCH: ${{ matrix.tarball_arch }}
+          JRE_ARCH: ${{ matrix.jre_arch }}
+          CODENAME: bookworm
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpk-${{ inputs.app }}-${{ matrix.arch }}
+          path: ${{ needs.check-version.outputs.file_prefix }}_${{ needs.check-version.outputs.fpk_version }}_${{ matrix.manifest_platform }}.fpk
+          retention-days: 1
+
+  release:
+    needs: [check-version, build]
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fpk-${{ inputs.app }}-*
+          path: artifacts
+
+      - name: Create Release
+        run: |
+          APP="${{ inputs.app }}"
+          VERSION="${{ needs.check-version.outputs.version }}"
+          FPK_VERSION="${{ needs.check-version.outputs.fpk_version }}"
+          FULL_VERSION="${{ needs.check-version.outputs.full_version }}"
+          UPSTREAM_TAG="${{ needs.check-version.outputs.upstream_tag }}"
+          RELEASE_TAG="${{ needs.check-version.outputs.release_tag }}"
+          TITLE_PREFIX="${{ needs.check-version.outputs.release_title }}"
+          FILE_PREFIX="${{ needs.check-version.outputs.file_prefix }}"
+
+          # Source meta.env for template variables (DEFAULT_PORT, etc.)
+          source "scripts/apps/${APP}/meta.env"
+
+          if [[ "$RELEASE_TAG" != "$APP/v$VERSION" ]]; then
+            REVISION_NOTE="
+          - **打包修订**: ${RELEASE_TAG##*-}
+          - ⚠️ 如果当前版本使用正常，无需更新此修订版。需先卸载再重新安装。"
+          else
+            REVISION_NOTE=""
+          fi
+
+          CHANGELOG=""
+          CHANGELOG_FILE="apps/${APP}/CHANGELOG.md"
+          if [ -f "$CHANGELOG_FILE" ]; then
+            CHANGELOG=$(awk '/^## /{if(found) exit; found=1; next} found' "$CHANGELOG_FILE")
+          fi
+
+          export VERSION FPK_VERSION FULL_VERSION UPSTREAM_TAG RELEASE_TAG FILE_PREFIX REVISION_NOTE CHANGELOG DEFAULT_PORT
+          NOTES=$(envsubst < "scripts/apps/${APP}/release-notes.tpl")
+
+          gh release create "$RELEASE_TAG" \
+            --title "${TITLE_PREFIX} ${VERSION} for fnOS" \
+            --notes "$NOTES" \
+            artifacts/fpk-${APP}-*/*.fpk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup old revisions
+        run: |
+          APP="${{ inputs.app }}"
+          RELEASE_TAG="${{ needs.check-version.outputs.release_tag }}"
+          VERSION="${{ needs.check-version.outputs.version }}"
+          BASE_TAG="${APP}/v${VERSION}"
+
+          OLD_TAGS=$(gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName \
+            | jq -r --arg base "$BASE_TAG" --arg current "$RELEASE_TAG" \
+              '.[] | select((.tagName == $base or (.tagName | startswith($base + "-r"))) and .tagName != $current) | .tagName')
+
+          if [ -z "$OLD_TAGS" ]; then
+            echo "No old revisions to clean up"
+          else
+            for tag in $OLD_TAGS; do
+              echo "Deleting old revision: $tag"
+              gh release delete "$tag" --yes --cleanup-tag || true
+            done
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup old versions
+        run: |
+          APP="${{ inputs.app }}"
+          MAX_VERSIONS=3
+
+          # Get all releases for this app
+          RELEASES=$(gh release list --repo "${{ github.repository }}" --limit 1000 \
+            --json tagName,publishedAt \
+            | jq --arg prefix "${APP}/v" \
+              '[.[] | select(.tagName | startswith($prefix))]')
+
+          # Group by upstream version (strip -rN), keep only latest MAX_VERSIONS
+          TAGS_TO_DELETE=$(echo "$RELEASES" | jq -r --argjson max "$MAX_VERSIONS" '
+            map(. + {base_version: (.tagName | sub("-r[0-9]+$"; ""))})
+            | group_by(.base_version)
+            | map({latest: (map(.publishedAt) | sort | last), tags: map(.tagName)})
+            | sort_by(.latest) | reverse
+            | .[$max:]
+            | map(.tags[]) | .[]
+          ')
+
+          if [ -z "$TAGS_TO_DELETE" ]; then
+            echo "No old versions to clean up (keeping up to $MAX_VERSIONS upstream versions)"
+          else
+            for tag in $TAGS_TO_DELETE; do
+              echo "Deleting old version: $tag"
+              gh release delete "$tag" --yes --cleanup-tag || true
+            done
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update apps.json
+        run: gh workflow run update-apps-json.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

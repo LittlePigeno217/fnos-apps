@@ -1,0 +1,118 @@
+name: Release p115assistant
+
+on:
+  push:
+    tags:
+      - 'p115assistant/v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.0.1），不填则读 manifest'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-p115assistant-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 设置 Node（构建语法检查需要）
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 确定版本号
+        id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="$(grep '^version' apps/p115assistant/fnos/manifest | awk -F'=' '{print $2}' | tr -d ' ')"
+          else
+            # tag 格式 p115assistant/v1.0.1 → 1.0.1
+            TAG="${GITHUB_REF#refs/tags/p115assistant/}"
+            VERSION="${TAG#v}"
+          fi
+          if [[ -z "$VERSION" || ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: 无法解析版本号: '${VERSION}'"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: 构建 fpk
+        run: |
+          VERSION=${{ steps.ver.outputs.version }} ./apps/p115assistant/update_p115assistant.sh
+          FPK="dist/p115assistant_${{ steps.ver.outputs.version }}_all.fpk"
+          ls -la "${FPK}"
+
+      - name: 计算校验值并生成 Release Body
+        id: chk
+        run: |
+          FPK="dist/p115assistant_${{ steps.ver.outputs.version }}_all.fpk"
+          MD5=$(md5sum "${FPK}" | awk '{print $1}')
+          SHA256=$(sha256sum "${FPK}" | awk '{print $1}')
+          printf 'MD5: %s\nSHA256: %s\n文件: %s\n' "$MD5" "$SHA256" "${FPK##*/}" > dist/checksum.txt
+          {
+            echo "## p115assistant v${{ steps.ver.outputs.version }}"
+            echo ""
+            echo '`scripts/apps/p115assistant/get-latest-version.sh` 自动发布的构建产物。'
+            echo ""
+            echo "**校验值**"
+            cat dist/checksum.txt
+          } > /tmp/release_body.md
+          cat dist/checksum.txt
+
+      - name: 生成版本清单并提交构建产物（raw 加速源）
+        run: |
+          VERSION=${{ steps.ver.outputs.version }}
+          FPK="dist/p115assistant_${VERSION}_all.fpk"
+          MD5=$(md5sum "${FPK}" | awk '{print $1}')
+          SHA256=$(sha256sum "${FPK}" | awk '{print $1}')
+          SIZE=$(stat -c%s "${FPK}")
+          python3 - "$VERSION" "$FPK" "$MD5" "$SHA256" "$SIZE" <<'EOF'
+          import json, sys, datetime
+          version, fpk, md5, sha256, size = sys.argv[1:]
+          manifest = {
+              "version": version,
+              "tag": f"p115assistant/v{version}",
+              "file": fpk.split("/")[-1],
+              "rawUrl": f"https://raw.githubusercontent.com/LittlePigeno217/fnos-apps/main/dist/{fpk.split('/')[-1]}",
+              "size": int(size),
+              "md5": md5,
+              "sha256": sha256,
+              "publishedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+          }
+          json.dump(manifest, open("dist/latest.json", "w"), ensure_ascii=False, indent=2)
+          EOF
+          cat dist/latest.json
+          git config user.name "LittlePigeno"
+          git config user.email "LittlePigeno217@users.noreply.github.com"
+          # 基于最新 main 重建发布分支（checkout 默认在 tag SHA 上、无 main 引用，
+          # pull --rebase 会失败；未跟踪的 dist/ 产物在切换分支时保留）
+          git fetch origin main
+          git checkout -B publish origin/main
+          git add -f dist/latest.json "dist/p115assistant_${VERSION}_all.fpk"
+          git commit -m "chore(release): p115assistant v${VERSION} 构建产物与版本清单 [skip ci]" || true
+          git push origin publish:main || true
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: p115assistant/v${{ steps.ver.outputs.version }}
+          name: p115assistant v${{ steps.ver.outputs.version }}
+          body_path: /tmp/release_body.md
+          files: |
+            dist/p115assistant_${{ steps.ver.outputs.version }}_all.fpk
+            dist/checksum.txt
+          fail_on_unmatched_files: true

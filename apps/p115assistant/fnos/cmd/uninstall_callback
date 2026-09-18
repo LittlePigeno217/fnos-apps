@@ -1,0 +1,13 @@
+#!/bin/sh
+# 115网盘助手 卸载回调：应用文件移除后执行。
+#
+# 用户数据（TRIM_PKGVAR：配置/上传记录/日志）由系统根据卸载选项决定去留；
+# 这里只清理本应用私有的运行态残留（pid/socket），不删除数据。
+set -u
+
+VAR_DIR="${TRIM_PKGVAR:-/tmp/p115assistant_data}"
+APP_DIR="${TRIM_APPDEST:-.}"
+
+rm -f "$VAR_DIR/p115assistant.pid"
+rm -f "$APP_DIR/app.sock"
+exit 0

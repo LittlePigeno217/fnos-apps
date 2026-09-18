@@ -1,0 +1,178 @@
+name: FPK Runtime Test (L2 + L3)
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'shared/**'
+      - 'scripts/**'
+      - '.github/workflows/test-fpk.yml'
+      - '!**/*.md'
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App slug to test (must be in WHITELIST below)'
+        required: true
+        type: string
+      version:
+        description: 'Version (empty for latest)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  WHITELIST: "alist bililive-go ezbookkeeping forgejo gopeed headscale jellyfin loki lucky mosdns picoclaw prometheus smartdns syncthing zeroclaw"
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      mode: ${{ steps.detect.outputs.mode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Compute matrix
+        id: detect
+        run: |
+          set -e
+          EVENT="${{ github.event_name }}"
+          INPUT_APP="${{ inputs.app }}"
+          WL="${WHITELIST}"
+
+          to_matrix() {
+            echo "$1" | tr ' ' '\n' | grep -v '^$' \
+              | jq -R -s -c 'split("\n") | map(select(. != ""))'
+          }
+
+          in_whitelist() {
+            echo " $WL " | grep -q " $1 "
+          }
+
+          full_matrix() {
+            to_matrix "$WL"
+          }
+
+          intersect_with_whitelist() {
+            local candidates="$1" result=""
+            for a in $candidates; do
+              if in_whitelist "$a"; then
+                result="$result $a"
+              fi
+            done
+            to_matrix "$result"
+          }
+
+          case "$EVENT" in
+            workflow_dispatch)
+              if [ -z "$INPUT_APP" ]; then
+                echo "::error::workflow_dispatch requires 'app' input"
+                exit 1
+              fi
+              if ! in_whitelist "$INPUT_APP"; then
+                echo "::error::App '$INPUT_APP' not in WHITELIST ($WL). Add it to WHITELIST after manual sign-off."
+                exit 1
+              fi
+              MATRIX="[\"$INPUT_APP\"]"
+              MODE="manual:$INPUT_APP"
+              ;;
+            pull_request|push)
+              if [ "$EVENT" = "pull_request" ]; then
+                BASE="${{ github.event.pull_request.base.sha }}"
+                HEAD="${{ github.event.pull_request.head.sha }}"
+              else
+                BASE="${{ github.event.before }}"
+                HEAD="${{ github.sha }}"
+              fi
+              CHANGED=$(git diff --name-only "$BASE" "$HEAD" 2>/dev/null || true)
+
+              if echo "$CHANGED" | grep -qE '^(shared/|scripts/(test|lib|ci|new-app|build-fpk)|\.github/workflows/test-fpk)'; then
+                MATRIX=$(full_matrix)
+                MODE="full (shared/runner/build change)"
+              else
+                CHANGED_APPS=$(echo "$CHANGED" | grep -E '^(apps|scripts/apps)/' \
+                              | cut -d/ -f2 | sort -u | grep -v '^$' || true)
+                if [ -z "$CHANGED_APPS" ]; then
+                  MATRIX="[]"
+                  MODE="empty (no relevant changes)"
+                else
+                  MATRIX=$(intersect_with_whitelist "$CHANGED_APPS")
+                  if [ "$MATRIX" = "[]" ]; then
+                    MODE="empty (changed apps not in WHITELIST: $(echo $CHANGED_APPS | tr '\n' ' '))"
+                  else
+                    MODE="changed ∩ WHITELIST"
+                  fi
+                fi
+              fi
+              ;;
+            *)
+              MATRIX="[]"
+              MODE="unsupported event"
+              ;;
+          esac
+
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Detected mode='$MODE' matrix=$MATRIX"
+
+  build-and-test:
+    needs: detect
+    if: needs.detect.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          APP="${{ matrix.app }}"
+          INPUT_V="${{ inputs.version }}"
+          bash "scripts/apps/${APP}/get-latest-version.sh" "${INPUT_V}"
+
+      - name: Build .fpk (x86 only for L3 smoke)
+        env:
+          DEB_ARCH: amd64
+          ZIP_ARCH: amd64
+          TARBALL_ARCH: amd64
+        run: |
+          APP="${{ matrix.app }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          export VERSION
+          bash "scripts/apps/${APP}/build.sh"
+          bash scripts/build-fpk.sh "apps/${APP}" app.tgz "${VERSION}" "x86"
+          FPK=$(ls "${APP}"_*.fpk | head -1)
+          echo "FPK=$FPK" >> "$GITHUB_ENV"
+          ls -lh "$FPK"
+
+      - name: L2 — verify-fpk contract
+        run: |
+          sudo apt-get install -y jq file
+          bash scripts/test/verify-fpk.sh "$FPK" "${{ matrix.app }}"
+
+      - name: L3 — fpk-runner install/start/probe/stop/uninstall
+        run: |
+          bash scripts/test/run-fpk-tests.sh "$FPK" "${{ matrix.app }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## FPK Test Result — ${{ matrix.app }}"
+            echo ""
+            echo "- **Mode:** ${{ needs.detect.outputs.mode }}"
+            echo "- **Version:** ${{ steps.version.outputs.version }}"
+            echo "- **Artifact:** \`$FPK\`"
+            echo "- **Job status:** ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
