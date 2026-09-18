@@ -37,13 +37,6 @@
     "items": [
       {
         "type": "switch",
-        "field": "upload_include_sidecars",
-        "label": "上传附属文件",
-        "default": true,
-        "tips": "同时上传 nfo/jpg/srt/ass 等附属文件。"
-      },
-      {
-        "type": "switch",
         "field": "upload_generate_strm",
         "label": "上传后生成 STRM",
         "default": false,

@@ -18,18 +18,16 @@ log_msg "=== config_init start ==="
 # 列出本次收到的 wizard 字段（仅字段名，不输出值，避免 webhook/token 泄露）
 # POSIX sh 无间接扩展，用 case 逐个探测（环境变量未设置时视为未提交）
 _fields=""
-for _k in enabled rate_limit_profile login_client_type link_redirect_mode \
-          upload_include_sidecars upload_generate_strm upload_delete_source \
+for _k in enabled rate_limit_profile login_client_type \
+          upload_generate_strm upload_delete_source \
           upload_conflict_policy upload_risk_profile watch_enabled \
           checkin_enabled checkin_time_range checkin_notify \
-          feishu_enabled feishu_webhook strm_incremental; do
+          feishu_enabled feishu_webhook; do
     _val=""
     case "$_k" in
         enabled) _val="${enabled:-}" ;;
         rate_limit_profile) _val="${rate_limit_profile:-}" ;;
         login_client_type) _val="${login_client_type:-}" ;;
-        link_redirect_mode) _val="${link_redirect_mode:-}" ;;
-        upload_include_sidecars) _val="${upload_include_sidecars:-}" ;;
         upload_generate_strm) _val="${upload_generate_strm:-}" ;;
         upload_delete_source) _val="${upload_delete_source:-}" ;;
         upload_conflict_policy) _val="${upload_conflict_policy:-}" ;;
@@ -40,7 +38,6 @@ for _k in enabled rate_limit_profile login_client_type link_redirect_mode \
         checkin_notify) _val="${checkin_notify:-}" ;;
         feishu_enabled) _val="${feishu_enabled:-}" ;;
         feishu_webhook) _val="${feishu_webhook:-}" ;;
-        strm_incremental) _val="${strm_incremental:-}" ;;
     esac
     if [ -n "$_val" ]; then
         if [ -z "$_fields" ]; then

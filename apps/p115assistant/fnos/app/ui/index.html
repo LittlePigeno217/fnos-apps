@@ -591,6 +591,12 @@
           <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">高级：上传扩展名 <span class="muted">（可选）</span></summary>
           <div class="pane" style="padding:12px 16px;margin-top:6px">
             <div class="field-row" style="align-items:center;gap:8px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="uploadIncludeSidecars" onchange="toggleUploadSidecars()">
+                <span class="muted">上传附属文件（nfo/jpg/srt/ass 等随主文件一起上传）</span>
+              </label>
+            </div>
+            <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">媒体扩展名</span>
               <input class="input mono grow" type="text" id="mediaExtensions" placeholder=".mp4,.mkv,.ts,.iso,…">
             </div>
@@ -3334,8 +3340,17 @@ async function loadExtensions(){
   const r = await call("get_config");
   if(!r.success || !r.data) return;
   const d = r.data;
+  el("uploadIncludeSidecars").checked = d.upload_include_sidecars !== false;
   el("mediaExtensions").value = d.upload_media_extensions || "";
   el("sidecarExtensions").value = d.upload_sidecar_extensions || "";
+}
+// 上传附属文件开关：即时保存（upload_include_sidecars 由本页唯一持有）
+async function toggleUploadSidecars() {
+  const checked = el("uploadIncludeSidecars").checked === true;
+  const r = await call("save_config", "POST", { upload_include_sidecars: checked });
+  if (!r.success) {
+    el("uploadIncludeSidecars").checked = !checked;
+  }
 }
 async function saveExtensions(){
   const media = el("mediaExtensions").value.trim();

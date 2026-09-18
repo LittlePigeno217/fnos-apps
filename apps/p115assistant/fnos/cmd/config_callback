@@ -63,10 +63,6 @@ esac
 case "${rate_limit_profile:-}" in
     conservative|balanced|fast|aggressive) _set_field rate_limit_profile "$rate_limit_profile" text ;;
 esac
-case "${upload_include_sidecars:-}" in
-    true|True|TRUE|1|on|yes) _set_field upload_include_sidecars true bool ;;
-    false|False|FALSE|0|off|no) _set_field upload_include_sidecars false bool ;;
-esac
 case "${upload_generate_strm:-}" in
     true|True|TRUE|1|on|yes) _set_field upload_generate_strm true bool ;;
     false|False|FALSE|0|off|no) _set_field upload_generate_strm false bool ;;
@@ -97,15 +93,10 @@ case "${feishu_enabled:-}" in
     false|False|FALSE|0|off|no) _set_field feishu_enabled false bool ;;
 esac
 [ -n "${feishu_webhook:-}" ] && _set_field feishu_webhook "$feishu_webhook" text
-case "${strm_incremental:-}" in
-    true|True|TRUE|1|on|yes) _set_field strm_incremental true bool ;;
-    false|False|FALSE|0|off|no) _set_field strm_incremental false bool ;;
-esac
 case "${relay_port:-}" in
     [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
         _set_field relay_port "$relay_port" text ;;
 esac
-[ -n "${strm_base_url:-}" ] && _set_field strm_base_url "$strm_base_url" text
 
 if [ -z "$_json" ]; then
     log_msg "无有效字段提交，跳过"
