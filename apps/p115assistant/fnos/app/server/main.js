@@ -40,6 +40,8 @@ const _error = gatewayError;
 let _logHandle = null;
 
 // /action/<name> -> [允许方法, Server 方法名]。只放与 UI 交互相关的安全暴露面。
+const REDIRECT_LIMITER = new Map(); // 302 播放中转限流桶（进程级共享，跨请求生效）
+
 const ACTIONS = new Map([
   ["get_config", ["GET", "getConfig"]],
   ["save_config", ["POST", "saveConfig"]],
@@ -317,8 +319,10 @@ class TrimHandler {
   }
 
   _redirectLimiter() {
-    if (!this._redirectLimiterMap) this._redirectLimiterMap = new Map();
-    return this._redirectLimiterMap;
+    // 进程级共享限流桶：限流必须跨请求生效。
+    // 不能挂在每请求新建的 TrimHandler 实例上（否则桶永远从 n=0 开始，
+    // 60req/60s 形同虚设——claude 审查 P1-1 回归问题）。
+    return REDIRECT_LIMITER;
   }
 
   // 托管前端页面：微应用在 fnOS 网关的根路径就是 /app/p115assistant，
