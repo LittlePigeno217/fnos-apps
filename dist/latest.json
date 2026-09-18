@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0",
-  "tag": "p115assistant/v1.0.0",
-  "file": "p115assistant_1.0.0_all.fpk",
-  "rawUrl": "https://raw.githubusercontent.com/LittlePigeno217/fnos-apps/main/dist/p115assistant_1.0.0_all.fpk",
-  "size": 689377,
-  "md5": "c78ab475b11e14d6f4516981315c8e81",
-  "sha256": "95ab8961901406255182590129b0309a31b6c6278965e3de33c7bea737053ce7",
-  "publishedAt": "2026-09-18T11:04:20Z"
+  "version": "1.0.1",
+  "tag": "p115assistant/v1.0.1",
+  "file": "p115assistant_1.0.1_all.fpk",
+  "rawUrl": "https://raw.githubusercontent.com/LittlePigeno217/fnos-apps/main/dist/p115assistant_1.0.1_all.fpk",
+  "size": 689440,
+  "md5": "bc29ab9738c3240998a0d19478702a02",
+  "sha256": "f0e0f892f48bf3edea33634c52cf4dbb08e567eb1f5109cb682e61be9d1c7bfe",
+  "publishedAt": "2026-09-18T11:43:12Z"
 }
