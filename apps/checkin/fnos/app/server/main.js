@@ -98,7 +98,12 @@ function readBody(req) {
 }
 
 async function handle(req, res) {
-  const url = req.url.split("?")[0];
+  // fnOS 网关以 /app/checkin 前缀转发请求，剥离后再做路由匹配
+  let rawPath = req.url.split("?")[0];
+  if (rawPath === "/app/checkin" || rawPath.startsWith("/app/checkin/")) {
+    rawPath = rawPath.slice("/app/checkin".length) || "/";
+  }
+  const url = rawPath;
   const method = req.method || "GET";
   const send = (obj) => {
     res.writeHead(200, { "Content-Type": "application/json" });
