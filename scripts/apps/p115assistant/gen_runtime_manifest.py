@@ -21,6 +21,7 @@ import sys
 
 ROOT = "apps/p115assistant/fnos"
 MANIFEST_PATH = "apps/p115assistant/runtime-manifest.json"
+VERSION_FILE = "apps/p115assistant/VERSION"   # 功能版本单一事实源（热更发布时用 --bump 递增）
 
 # 仓库子目录 → (安装前缀, 排除文件名集合)
 RUNTIME_ROOTS = [
@@ -112,6 +113,30 @@ def build_manifest(version):
     }
 
 
+def load_version():
+    """功能版本单一事实源：apps/<app>/VERSION 文件；缺失时回落 dev。"""
+    try:
+        with open(VERSION_FILE, encoding="utf-8") as f:
+            v = f.read().strip()
+        return v if v else "dev"
+    except FileNotFoundError:
+        return "dev"
+
+
+def bump_version(v):
+    """补丁号递增：1.0.0 → 1.0.1（功能热更发布用）。"""
+    parts = [int(x) for x in str(v).split(".")]
+    if len(parts) < 3:
+        parts += [0] * (3 - len(parts))
+    parts[-1] += 1
+    return ".".join(str(x) for x in parts)
+
+
+def write_version(v):
+    with open(VERSION_FILE, "w", encoding="utf-8") as f:
+        f.write(v + "\n")
+
+
 def verify_manifest(expected):
     """校验本地清单与仓库现状一致（CI/发布前调用）。返回错误列表。"""
     errors = []
@@ -143,16 +168,51 @@ def main():
     if args and args[0] == "--check":
         expected = build_manifest("check")
         errors = verify_manifest(expected)
+        # 校验版本一致性：清单版本应与 VERSION 文件一致（保证热更后版本号递增可追踪）
+        cur = json.load(open(MANIFEST_PATH, encoding="utf-8")) if os.path.isfile(MANIFEST_PATH) else {}
+        declared = cur.get("version")
+        if declared and declared != load_version():
+            errors.append(f"版本不一致：VERSION={load_version()} ≠ manifest={declared}（发布前运行 --bump）")
         if errors:
             print("❌ 清单校验失败：")
             for e in errors:
                 print("  - " + e)
             sys.exit(1)
-        print("✅ runtime-manifest.json 与仓库一致（{} 个文件，版本{}）".format(
-            len(expected["files"]), json.load(open(MANIFEST_PATH, encoding="utf-8")).get("version")))
+        print("✅ runtime-manifest.json 与仓库一致（{} 个文件，版本{}）".format(len(expected["files"]), declared))
         return
 
-    version = args[0] if args else "dev"
+    # 版本来源：--bump 递增 VERSION → 显式 VERSION → VERSION 文件
+    bump = "--bump" in args
+    explicit = [a for a in args if a != "--bump"]
+    if bump:
+        version = bump_version(load_version())
+        write_version(version)
+        # 同步运行时源码中的版本字面量（store.js / update.js），保证「源码默认版本 == 清单版本」，
+        # 否则热更下载的是源码（无构建注入），与按注入后计算的清单 sha 不一致会校验失败
+        for p, rule in INJECT_RULES.items():
+            fp = os.path.join(ROOT, p)
+            if not os.path.isfile(fp):
+                continue
+            with open(fp, encoding="utf-8") as f:
+                content = f.read()
+            if p.endswith("store.js"):
+                content = re.sub(r'version: "[0-9.]*"', f'version: "{version}"', content)
+            else:
+                # 只同步 CURRENT_VERSION 声明行的默认版本，避免误伤其他业务默认值文本
+                content = re.sub(
+                    r'(const CURRENT_VERSION = process\.env\.[A-Z_]+ \|\| )"[0-9.]*"',
+                    rf'\g<1>"{version}"',
+                    content,
+                )
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(content)
+        print(f"功能版本已递增：VERSION -> {version}（源码版本字面量已同步）")
+    elif explicit:
+        version = explicit[0]
+        write_version(version)
+    else:
+        version = load_version()
+
     manifest = build_manifest(version)
     errors = []
     if os.path.isfile(MANIFEST_PATH):

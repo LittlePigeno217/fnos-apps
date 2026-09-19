@@ -154,8 +154,12 @@ async function handle(req, res) {
         return send(await checkHotfix(APP_DIR));
       case "/apply_hotfix": {
         const r = await applyHotfix(APP_DIR, DATA_DIR, null);
+        if (r.success && r.version) {
+          // 功能更新后版本号递增（单一事实源：热更清单版本写入 config，重启后仍显示新版本）
+          try { store.setVersion(r.version); } catch { /* 版本写入失败不影响更新 */ }
+        }
         if (r.restarting) {
-          send({ success: true, message: r.message, data: { restarting: true, applied: r.applied } });
+          send({ success: true, message: r.message, data: { restarting: true, applied: r.applied, version: r.version } });
           setTimeout(() => process.exit(0), 3000); // hotfix.js 内部已尝试系统重启；此兜底由 fnOS 拉起
         } else {
           send({ success: r.success, message: r.message, data: r });
