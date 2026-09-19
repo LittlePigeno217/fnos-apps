@@ -106,7 +106,7 @@ class Server {
       for (const h of history.reverse()) this._store.appendHistory(h);
       const allOk = results.length > 0 && results.every((r) => r.status !== "执行失败");
       if (this._notifier && cfg.notify_enabled) {
-        const text = this._notifier.buildNotifyText("自用签到", results);
+        const text = this._notifier.buildNotifyText("签到工具", results);
         const sent = await this._notifier.sendText(cfg.feishu_webhook, text);
         if (sent) this._log("签到通知已发送");
       }

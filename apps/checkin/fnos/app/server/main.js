@@ -97,14 +97,43 @@ function readBody(req) {
   });
 }
 
+/* ── HTTP 路由表（path → handler；handler 收到 { req, res, url, method, send, sendFile }）── */
+const ROUTES = {
+  "/": (ctx) => ctx.sendFile(path.join(APP_DIR, "www", "index.html")),
+  "/index.html": (ctx) => ctx.sendFile(path.join(APP_DIR, "www", "index.html")),
+  "/get_config": (ctx) => ctx.send(api.getConfig()),
+  "/save_config": async (ctx) => ctx.send(api.saveConfig(await readBody(ctx.req))),
+  "/status": (ctx) => ctx.send(api.status()),
+  "/run": async (ctx) => {
+    const body = await readBody(ctx.req);
+    ctx.send(await api.runOnce(body.sites));
+  },
+  "/test_login": async (ctx) => {
+    const body = await readBody(ctx.req);
+    ctx.send(await api.testLogin(body.site));
+  },
+  "/history": (ctx) => {
+    const q = new URL(ctx.req.url, "http://x").searchParams;
+    ctx.send(api.getHistory(q.get("limit")));
+  },
+  "/history/clear": (ctx) => ctx.send(api.clearHistory()),
+  "/check_hotfix": async (ctx) => ctx.send(await checkHotfix(APP_DIR)),
+  "/apply_hotfix": async (ctx) => {
+    const r = await applyHotfix(APP_DIR, DATA_DIR, null);
+    if (r.success && r.version) {
+      // 功能更新后版本号递增（单一事实源：热更清单版本写入 config，重启后仍显示新版本）
+      try { store.setVersion(r.version); } catch { /* 版本写入失败不影响更新 */ }
+    }
+    if (r.restarting) {
+      ctx.send({ success: true, message: r.message, data: { restarting: true, applied: r.applied, version: r.version } });
+      setTimeout(() => process.exit(0), 3000); // hotfix.js 内部已尝试系统重启；此兜底由 fnOS 拉起
+      return;
+    }
+    ctx.send({ success: r.success, message: r.message, data: r });
+  },
+};
+
 async function handle(req, res) {
-  // fnOS 网关以 /app/checkin 前缀转发请求，剥离后再做路由匹配
-  let rawPath = req.url.split("?")[0];
-  if (rawPath === "/app/checkin" || rawPath.startsWith("/app/checkin/")) {
-    rawPath = rawPath.slice("/app/checkin".length) || "/";
-  }
-  const url = rawPath;
-  const method = req.method || "GET";
   const send = (obj) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(obj));
@@ -116,59 +145,20 @@ async function handle(req, res) {
       return;
     }
     const content = fs.readFileSync(filePath);
-    res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html; charset=utf-8" });
+    res.writeHead(200, { "Content-Type": req.url.endsWith(".js") ? "application/javascript" : "text/html; charset=utf-8" });
     res.end(content);
   };
-
+  // fnOS 网关以 /app/checkin 前缀转发请求，剥离后再做路由匹配
+  let rawPath = req.url.split("?")[0];
+  if (rawPath === "/app/checkin" || rawPath.startsWith("/app/checkin/")) {
+    rawPath = rawPath.slice("/app/checkin".length) || "/";
+  }
+  const url = rawPath;
+  const ctx = { req, res, url, method: req.method || "GET", send, sendFile };
+  const handler = ROUTES[url];
   try {
-    switch (url) {
-      case "/":
-        sendFile(path.join(APP_DIR, "www", "index.html"));
-        return;
-      case "/index.html":
-        sendFile(path.join(APP_DIR, "www", "index.html"));
-        return;
-      case "/get_config":
-        return send(api.getConfig());
-      case "/save_config": {
-        const body = await readBody(req);
-        return send(api.saveConfig(body));
-      }
-      case "/status":
-        return send(api.status());
-      case "/run": {
-        const body = await readBody(req);
-        return send(await api.runOnce(body.sites));
-      }
-      case "/test_login": {
-        const body = await readBody(req);
-        return send(await api.testLogin(body.site));
-      }
-      case "/history": {
-        const q = new URL(req.url, "http://x").searchParams;
-        return send(api.getHistory(q.get("limit")));
-      }
-      case "/history/clear":
-        return send(api.clearHistory());
-      case "/check_hotfix":
-        return send(await checkHotfix(APP_DIR));
-      case "/apply_hotfix": {
-        const r = await applyHotfix(APP_DIR, DATA_DIR, null);
-        if (r.success && r.version) {
-          // 功能更新后版本号递增（单一事实源：热更清单版本写入 config，重启后仍显示新版本）
-          try { store.setVersion(r.version); } catch { /* 版本写入失败不影响更新 */ }
-        }
-        if (r.restarting) {
-          send({ success: true, message: r.message, data: { restarting: true, applied: r.applied, version: r.version } });
-          setTimeout(() => process.exit(0), 3000); // hotfix.js 内部已尝试系统重启；此兜底由 fnOS 拉起
-        } else {
-          send({ success: r.success, message: r.message, data: r });
-        }
-        return;
-      }
-      default:
-        return send({ success: false, message: "404" });
-    }
+    if (!handler) return send({ success: false, message: "404" });
+    return await handler(ctx);
   } catch (err) {
     return send({ success: false, message: err.message || String(err) });
   }

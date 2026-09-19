@@ -45,7 +45,7 @@ const FLZT = {
   checkinPath: "/api/v1/user/checkIn",
 
   defaultConfig() {
-    return { enabled: false, email: "", password: "" };
+    return { enabled: false, use_proxy: false, email: "", password: "" };
   },
   isConfigured(cfg) {
     return !!(cfg && cfg.email && cfg.password);
@@ -111,7 +111,7 @@ const RIGHT_FORUM = {
   CHALLENGE_MARKERS: ["_waf_is_mobile", "CF_APP_WAF", '"sceneId"', 'id="renderData"'],
 
   defaultConfig() {
-    return { enabled: false, cookie: "" };
+    return { enabled: false, use_proxy: false, cookie: "" };
   },
   isConfigured(cfg) {
     return !!(cfg && cfg.cookie && cfg.cookie.trim());
@@ -238,7 +238,7 @@ const YPOJIE = {
   ajaxPath: "/wp-admin/admin-ajax.php",
 
   defaultConfig() {
-    return { enabled: false, email: "", password: "" };
+    return { enabled: false, use_proxy: false, email: "", password: "" };
   },
   isConfigured(cfg) {
     return !!(cfg && cfg.email && cfg.password);

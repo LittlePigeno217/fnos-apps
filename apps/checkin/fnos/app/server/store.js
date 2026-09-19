@@ -5,22 +5,27 @@
  */
 const fs = require("fs");
 const path = require("path");
+const { FLZT, RIGHT_FORUM, YPOJIE } = require("./sites");
+
+const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE };
+const SITE_KEYS = Object.keys(ADAPTERS);
+
+// 站点默认配置单一事实源：来自每个 adapter 的 defaultConfig()（内部补 use_proxy: false）
+const DEFAULT_SITES = {};
+for (const key of SITE_KEYS) {
+  const adapter = ADAPTERS[key];
+  DEFAULT_SITES[key] = { use_proxy: false, ...(adapter.defaultConfig ? adapter.defaultConfig() : {}) };
+}
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.0.3",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.0.4",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
   feishu_webhook: "",      // 飞书机器人 Webhook
-  sites: {
-    flzt: { enabled: false, use_proxy: false, email: "", password: "" },
-    right_forum: { enabled: false, use_proxy: false, cookie: "" },
-    ypojie: { enabled: false, use_proxy: false, email: "", password: "" },
-  },
+  sites: DEFAULT_SITES,
 };
-
-const SITE_KEYS = ["flzt", "right_forum", "ypojie"];
 
 class Store {
   constructor(dataDir) {
