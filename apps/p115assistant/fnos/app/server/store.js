@@ -38,6 +38,7 @@ const DEFAULT_CONFIG = {
   upload_sidecar_extensions: ".nfo,.jpg,.jpeg,.png,.webp,.srt,.ass,.ssa,.sup",
   strm_mappings: [],
   strm_incremental: true,
+  strm_add_subtitles: true,
   strm_base_url: "",
   relay_port: 3667,
   strm_delete_cloud_on_missing: false,

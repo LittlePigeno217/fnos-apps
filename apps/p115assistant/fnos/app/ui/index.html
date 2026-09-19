@@ -654,6 +654,10 @@
             <input type="checkbox" id="strmIncremental" onchange="toggleStrmIncremental()">
             <span class="muted" style="font-size:13px">增量生成（仅生成新增/更新的 STRM）</span>
           </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="strmAddSubtitles" onchange="toggleStrmAddSubtitles()">
+            <span class="muted" style="font-size:13px">附带云端同名字幕</span>
+          </label>
         </div>
         <div class="toolbar">
           <button class="btn" onclick="addStrmCard()">
@@ -3747,6 +3751,11 @@ async function loadStrmMappings(){
       const d = rc.data;
       const inc = d.incremental !== false;
       el("strmIncremental").checked = inc;
+      // 云端同名字幕开关状态（strm_add_subtitles）
+      const rc2 = await call("get_config");
+      if (rc2.success && rc2.data) {
+        el("strmAddSubtitles").checked = rc2.data.strm_add_subtitles !== false;
+      }
     }
     return r;
   }
@@ -3756,6 +3765,14 @@ async function loadStrmMappings(){
     const r = await call("save_config", "POST", { strm_incremental: checked });
     if (!r.success) {
       el("strmIncremental").checked = !checked;
+    }
+  }
+  // 附带云端同名字幕开关：生成 STRM 时下载同目录同名 .srt/.ass 等（save_config 白名单含 strm_add_subtitles）
+  async function toggleStrmAddSubtitles() {
+    const checked = el("strmAddSubtitles").checked === true;
+    const r = await call("save_config", "POST", { strm_add_subtitles: checked });
+    if (!r.success) {
+      el("strmAddSubtitles").checked = !checked;
     }
   }
 function renderStrmCards(){

@@ -67,6 +67,7 @@ const PUBLIC_CONFIG_FIELDS = new Set([
   "watch_enabled",
   "strm_mappings",
   "strm_incremental",
+  "strm_add_subtitles",
   "strm_base_url",
   "relay_port",
   "checkin_enabled",
@@ -95,6 +96,7 @@ const EDITABLE_CONFIG_FIELDS = new Set([
   "upload_risk_profile",
   "strm_mappings",
   "strm_incremental",
+  "strm_add_subtitles",
   "strm_base_url",
   "relay_port",
 ]);
@@ -1635,12 +1637,14 @@ class Server {
   }
 
   async _runStrmMapping(client, mapping, sourceCid, targetDir, baseUrl, incremental, mediaExts) {
-    const counts = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0 };
+    const counts = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0, subtitles: 0, subtitles_skipped: 0, subtitles_errors: 0 };
     const mappingId = String(mapping.id || sourceCid || "default");
     // 源目录的云路径：账本核对要靠它把本地 .strm 对回云上的目录
     const sourcePath = await this._resolveSourcePath(client, mapping, sourceCid);
     // 1) 递归收集 115 目录树中的媒体文件（不依赖 cache，直接走 getDirList）
     const cloudFiles = [];   // { relPath, pickcode, name, size, mtime, cloudPath, cloudDir }
+    const subtitleMap = new Map(); // dirPrefix -> [{ name, pickcode, size }]
+    const SUBTITLE_EXT = new Set([".srt", ".ass", ".ssa", ".sup", ".vtt"]);
     const seenDirs = new Set();
     const stack = [{ cid: sourceCid, prefix: "" }];
     seenDirs.add(String(sourceCid));
@@ -1663,6 +1667,17 @@ class Server {
         const pickcode = String(raw.pc || raw.pickcode || raw.pick_code || "").trim();
         if (!pickcode) continue;
         const suffix = path.extname(name).toLowerCase();
+        // 字幕文件单独收集：生成 STRM 时按同目录同名匹配，下载到本地供播放器加载
+        if (SUBTITLE_EXT.has(suffix)) {
+          const dirKey = current.prefix || "";
+          if (!subtitleMap.has(dirKey)) subtitleMap.set(dirKey, []);
+          subtitleMap.get(dirKey).push({
+            name,
+            pickcode,
+            size: parseInt(U115Client._itemSize(raw) || 0, 10) || 0,
+          });
+          continue;
+        }
         if (!suffix || !mediaExts.has(suffix)) continue;
         const relPath = current.prefix ? `${current.prefix}/${name}` : name;
         const cloudPath = sourcePath
@@ -1713,6 +1728,35 @@ class Server {
         const tmp = `${target.outputPath}.${process.pid}.tmp`;
         fs.writeFileSync(tmp, target.content);
         fs.renameSync(tmp, target.outputPath);
+        // 附带同名字幕：云端同目录同名 .srt/.ass/.ssa/.sup/.vtt → 下载到 STRM 同目录（播放器自动加载）
+        if (this.store.getConfig().strm_add_subtitles !== false) {
+          const relOut = String(outName).replace(/\\/g, "/");
+          const dirKey = path.posix.dirname(relOut);
+          const subs = subtitleMap.get(dirKey === "." ? "" : dirKey) || [];
+          if (subs.length) {
+            const base = path.basename(relOut).replace(/\.strm$/i, "").toLowerCase();
+            for (const sub of subs) {
+              if (path.basename(sub.name).replace(/\.[^.]+$/, "").toLowerCase() !== base) continue;
+              const subOut = path.join(path.dirname(target.outputPath), sub.name);
+              let skip = false;
+              try {
+                const st = fs.statSync(subOut);
+                if (st.isFile() && st.size === sub.size) skip = true;
+              } catch { /* 不存在则下载 */ }
+              if (skip) {
+                counts.subtitles_skipped += 1;
+                continue;
+              }
+              try {
+                await client.downloadFile(sub.pickcode, subOut, true);
+                counts.subtitles += 1;
+              } catch (err) {
+                counts.subtitles_errors += 1;
+                console.warn(`[STRM] 字幕下载失败 ${sub.name}: ${err.message}`);
+              }
+            }
+          }
+        }
       } catch (err) {
         counts.errors += 1;
         console.warn(`[STRM] 写入失败 ${target.outputPath}：${err.message}`);
