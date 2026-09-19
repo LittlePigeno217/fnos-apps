@@ -112,13 +112,9 @@ function bust(url) {
 }
 
 /** 检查差异：返回 { version, has_update, changed: [{rel, size}] } */
-let hotfixCache = null; // { ts, payload } — 检查结果缓存（10 分钟），避免每次点击都等待 raw
-const HOTFIX_CACHE_TTL = 10 * 60 * 1000;
+let hotfixLastOk = null; // 最近一次成功检查结果（仅 raw 拉取失败时兜底返回，不拦截实时检查）
 
 async function checkHotfix(appDir) {
-  if (hotfixCache && Date.now() - hotfixCache.ts < HOTFIX_CACHE_TTL) {
-    return hotfixCache.payload;
-  }
   try {
     const manifest = await fetchManifest();
     const changed = [];
@@ -142,16 +138,15 @@ async function checkHotfix(appDir) {
       has_update: changed.length > 0,
       changed,
     };
-    hotfixCache = { ts: Date.now(), payload };
+    hotfixLastOk = payload;
     return payload;
   } catch (err) {
-    // raw 拉取失败时兜底返回最近一次检查结果（陈旧可用），避免前端解析失败
-    if (hotfixCache) return hotfixCache.payload;
+    // raw 拉取失败时兜底返回最近一次成功检查结果（陈旧可用），避免前端解析失败
+    if (hotfixLastOk) return hotfixLastOk;
     throw err;
   }
 }
 
-/** 应用热更新：下载差异 → sha256 校验 → 替换（备份旧文件）→ 记录 → 重启 */
 async function applyHotfix(appDir, dataDir, creds) {
   const manifest = await fetchManifest();
   const changedAll = [];
