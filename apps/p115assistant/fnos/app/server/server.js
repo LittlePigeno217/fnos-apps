@@ -1434,6 +1434,44 @@ class Server {
     return ok(undefined, "已清除");
   }
 
+  // ── 功能热更新（不更新 fpk，直接热更运行时文件）──
+  _appDir() {
+    return process.env.TRIM_APPDEST || "/vol1/@appcenter/p115assistant";
+  }
+
+  async checkHotfix() {
+    try {
+      const hotfix = require("./hotfix");
+      const res = await hotfix.checkHotfix(this._appDir());
+      return ok(res);
+    } catch (err) {
+      console.error(`检查功能更新失败：${err.message}`);
+      return error(`检查功能更新失败: ${err.message}`);
+    }
+  }
+
+  async applyHotfix() {
+    try {
+      const hotfix = require("./hotfix");
+      const cfg = this.store.getConfig();
+      const res = await hotfix.applyHotfix(
+        this._appDir(),
+        this._updateDataDir(),
+        {
+          username: String(cfg.fnos_username || ""),
+          password: String(cfg.fnos_password || ""),
+        }
+      );
+      if (res && res.applied && res.applied.length) {
+        this.recordLog(`功能热更新：应用 ${res.applied.length} 个文件（v${res.version || ""}）`, "INFO", "SYSTEM");
+      }
+      return ok(res, (res && res.message) || "");
+    } catch (err) {
+      console.error(`功能热更新失败：${err.message}`);
+      return error(`功能热更新失败: ${err.message}`);
+    }
+  }
+
   // ── 签到 ──
   async checkinNow() {
     if (this._checkinBusy) return error("签到正在执行中，请稍候");

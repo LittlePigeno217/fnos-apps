@@ -81,6 +81,8 @@ const ACTIONS = new Map([
   ["apply_update", ["POST", "applyUpdate"]],
   ["fnos_login", ["POST", "fnosLogin"]],
   ["fnos_forget", ["POST", "fnosForget"]],
+  ["check_hotfix", ["GET", "checkHotfix"]],
+  ["apply_hotfix", ["POST", "applyHotfix"]],
   ["link", ["GET", "link"]],
   ["history", ["GET", "history"]],
   ["browse_local", ["GET", "browseLocal"]],

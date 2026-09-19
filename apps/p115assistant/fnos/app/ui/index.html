@@ -834,6 +834,11 @@
           <button class="btn primary" id="downloadUpdateBtn" style="display:none" onclick="downloadAndUpdate()">下载更新</button>
           <span class="muted" id="updateResult"></span>
         </div>
+        <div class="settings-row" style="margin-top:8px;border-top:1px solid var(--border, #21262d);padding-top:10px">
+          <button class="btn" onclick="checkHotfix()">检查功能更新</button>
+          <button class="btn primary" id="hotfixBtn" style="display:none" onclick="applyHotfix()">应用功能更新</button>
+          <span class="muted" id="hotfixResult">热更新：业务代码免 fpk 升级，秒级生效</span>
+        </div>
         <div id="fnosCredBox" style="display:none;margin-top:10px;padding:10px 12px;border:1px solid #30363d;border-radius:8px">
           <div class="setting-label" style="color:#58a6ff">需要 fnOS 凭据（自动安装预检）</div>
           <div class="muted" style="margin:2px 0 6px">填一次即可：应用将用它登录系统 CLI 验证安装包可升级，密码加密保存、可随时清除。</div>
@@ -4081,6 +4086,36 @@ function renderUpdateGuide(d){
 function copyUpdatePath(){
   const p = el("updateFilePath"); if(!p) return;
   navigator.clipboard && navigator.clipboard.writeText(p.textContent).then(()=>{ el("updateResult").textContent="路径已复制"; }).catch(()=>{ el("updateResult").textContent="复制失败，请手动选择"; });
+}
+/* ---- 功能热更新（免 fpk） ---- */
+let pendingHotfix = null;
+async function checkHotfix(){
+  const label = el("hotfixResult");
+  label.textContent = "检查中…";
+  const r = await call("check_hotfix");
+  if (!r.success){ label.textContent = r.message || "检查失败"; return; }
+  const d = r.data || {};
+  if (!d.has_update){ label.textContent = "功能已是最新（v"+(d.version||"?")+"）"; el("hotfixBtn").style.display="none"; pendingHotfix=null; return; }
+  label.textContent = `发现功能更新 v${d.version}（${(d.changed||[]).length} 个文件）`;
+  el("hotfixBtn").style.display = "inline-block";
+  pendingHotfix = d.version;
+}
+async function applyHotfix(){
+  const btn = el("hotfixBtn");
+  btn.disabled = true;
+  el("hotfixResult").textContent = "正在下载并应用功能更新，完成后自动重启…";
+  const r = await call("apply_hotfix","POST",{});
+  const msg = (r.data && r.data.message) || r.message || "完成";
+  el("hotfixResult").textContent = msg;
+  if (r.success && r.data && r.data.applied && r.data.applied.length && r.data.restarting){
+    setTimeout(()=>location.reload(), 3500);
+    return;
+  }
+  if (r.success && r.data && r.data.applied && !r.data.restarting){
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
 }
 /* ---- 日志 ---- */
 let lastLogOffset=0, lastLogText="";
