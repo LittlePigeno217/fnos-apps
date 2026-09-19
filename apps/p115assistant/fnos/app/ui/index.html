@@ -93,6 +93,11 @@
   .sidebar-foot { display: flex; justify-content: space-between; align-items: center;
                   padding: 12px 8px 0; border-top: 1px solid var(--border);
                   color: var(--muted); font-size: 11px; }
+  .sidebar-foot .btn-mini { font-size: 11px; padding: 2px 8px; }
+  .sidebar-foot-status { padding: 6px 8px 8px; font-size: 11px; color: var(--muted);
+                         text-align: center; line-height: 1.5; }
+  .sidebar-foot-status.ok { color: var(--ok); }
+  .sidebar-foot-status.warn { color: var(--accent-strong); }
   .ver { font-family: var(--font-mono); }
 
   /* ---------- 登录状态芯片 ---------- */
@@ -447,8 +452,9 @@
     </nav>
     <div class="sidebar-foot">
       <span class="ver" id="appVersion">v1.0.1</span>
-      <span>115</span>
+      <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
+    <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
   </aside>
 
   <div class="main">
@@ -860,46 +866,6 @@
             <div class="setting-desc">机器人 Webhook 地址；已配置时留空保存不修改</div>
           </div>
           <input type="password" id="feishuWebhook" placeholder="已配置请留空" style="max-width:240px" onchange="saveFeishuWebhook()">
-        </div>
-      </div>
-      <div class="settings-group">
-        <header>更新</header>
-        <div class="setting-row">
-          <div style="flex:1;min-width:0">
-            <div class="setting-label">当前版本</div>
-            <div class="setting-desc" id="currentVersion">未知</div>
-          </div>
-        </div>
-        <div class="setting-row">
-          <div style="flex:1;min-width:0">
-            <div class="setting-label">最新版本</div>
-            <div class="setting-desc" id="latestVersionInfo">点击「检查更新」获取</div>
-          </div>
-        </div>
-        <div class="settings-row">
-          <button class="btn" onclick="checkUpdate()">检查更新</button>
-          <button class="btn primary" id="downloadUpdateBtn" style="display:none" onclick="downloadAndUpdate()">下载更新</button>
-          <span class="muted" id="updateResult"></span>
-        </div>
-        <div class="settings-row" style="margin-top:8px;border-top:1px solid var(--border, #21262d);padding-top:10px">
-          <button class="btn" onclick="checkHotfix()">检查功能更新</button>
-          <button class="btn primary" id="hotfixBtn" style="display:none" onclick="applyHotfix()">应用功能更新</button>
-          <span class="muted" id="hotfixResult">热更新：业务代码免 fpk 升级，秒级生效</span>
-        </div>
-        <div id="fnosCredBox" style="display:none;margin-top:10px;padding:10px 12px;border:1px solid #30363d;border-radius:8px">
-          <div class="setting-label" style="color:#58a6ff">需要 fnOS 凭据（自动安装预检）</div>
-          <div class="muted" style="margin:2px 0 6px">填一次即可：应用将用它登录系统 CLI 验证安装包可升级，密码加密保存、可随时清除。</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <input type="text" id="fnosUsername" placeholder="fnOS 用户名" style="flex:1;min-width:110px">
-            <input type="password" id="fnosPassword" placeholder="fnOS 密码" style="flex:1;min-width:110px" onkeydown="if(event.key==='Enter')saveFnosCreds()">
-            <button class="btn primary" onclick="saveFnosCreds()">保存并继续</button>
-            <button class="btn" onclick="closeFnosCredBox()">取消</button>
-          </div>
-          <div class="muted" id="fnosCredStatus" style="margin-top:4px"></div>
-        </div>
-        <div id="updateGuide" style="display:none;margin-top:10px;border:1px solid #2ea043;border-radius:8px;padding:10px 12px">
-          <div class="setting-label" style="color:#3fb950">✅ 安装包已下载并验证通过，完成最后三步即可升级</div>
-          <div id="updateGuideBody" style="margin-top:6px;line-height:1.8"></div>
         </div>
       </div>
     </section>
@@ -4065,7 +4031,6 @@ async function loadSettings(){
   const r=await call("get_config");
   if(!r.success)return;
   const d=r.data;
-  if (el("currentVersion")) el("currentVersion").textContent = d.version || "1.0.0";
   // 侧边栏底部版本徽标动态跟随实际版本（不再硬编码；2026-09-17 修复 1.1.0 残留）
   if (el("appVersion")) el("appVersion").textContent = "v" + (d.version || "1.0.0");
   await loadAppSettings(d);
@@ -4110,118 +4075,44 @@ async function saveFeishuWebhook(){
   if (r.success) el("feishuWebhook").value = "";
   else alert(r.message || "保存失败");
 }
-/* ---- 自更新（半自动） ---- */
-async function checkUpdate(){
-  const btn = el("updateResult");
-  btn.textContent = "检查中…";
-  const r = await call("check_update");
-  if (!r.success){ btn.textContent = r.message || "检查失败"; return; }
-  const d = r.data || r;
-  if (!d.has_update){ el("latestVersionInfo").textContent = "已是最新版本 v"+(d.latest&&d.latest.version||d.current); btn.textContent = d.message || "已是最新"; return; }
-  const lv = d.latest || {};
-  el("latestVersionInfo").textContent = "v"+lv.version+"（"+(lv.published_at||"").slice(0,10)+"）";
-  btn.textContent = "发现新版本 v"+lv.version+"！";
-  const dlBtn = el("downloadUpdateBtn");
-  dlBtn.style.display="inline-block";
-  dlBtn.dataset.version = lv.version;
+/* ---- 功能热更新（左下角入口，免 fpk） ---- */
+let hotfixState = { has_update: false, version: "" };
+async function hotfixMiniClick(){
+  if (hotfixState.has_update) return hotfixMiniApply();
+  await hotfixMiniCheck();
 }
-async function downloadAndUpdate(){
-  const btn = el("updateResult");
-  const dlBtn = el("downloadUpdateBtn");
-  btn.textContent = "下载中…"; dlBtn.disabled = true;
-  const r = await call("download_update","POST",{});
-  if (!r.success){ btn.textContent = r.message || "下载失败"; dlBtn.disabled = false; return; }
-  const f = r.data && r.data.file;
-  if (!confirm("新版本 FPK 已下载（"+(r.data&&r.data.size||0)+" 字节）\n确认应用更新？应用将重启。")) { dlBtn.disabled=false; btn.textContent="已取消"; return; }
-  btn.textContent = "验证并提交更新…";
-  const a = await call("apply_update","POST",{ file: f });
-  // need_login：需要 fnOS 凭据 → 弹出表单，保存后自动续跑同一安装
-  if (a.success === false && (a.data && (a.data.need_login || a.data.code === "NEED_CREDS" || a.data.code === "NEED_LOGIN"))){
-    btn.textContent = a.data.message || "需要 fnOS 凭据";
-    pendingApplyFile = f;
-    showFnosCredBox();
-    return;
-  }
-  btn.textContent = (a.data && a.data.message) || a.message || (a.success?"更新已提交":"更新失败");
-  if (a.success && a.data && a.data.need_ui){
-    renderUpdateGuide(a.data);
-    dlBtn.disabled = false;
-    return;
-  }
-  if (a.success){ setTimeout(()=>location.reload(), 2500); }
-  else { dlBtn.disabled = false; }
-}
-/* fnOS 凭据：仅用于自动登录 trim-cli 完成安装预检；密码不落前端、可随时清除 */
-let pendingApplyFile = null;
-function showFnosCredBox(){ const box=el("fnosCredBox"); if(box) box.style.display="block"; }
-function closeFnosCredBox(){ const box=el("fnosCredBox"); if(box) box.style.display="none"; pendingApplyFile=null; }
-async function saveFnosCreds(){
-  const u = el("fnosUsername").value.trim();
-  const p = el("fnosPassword").value;
-  const st = el("fnosCredStatus");
-  if(!u||!p){ if(st) st.textContent="请填写用户名和密码"; return; }
-  const r = await call("fnos_login","POST",{ username:u, password:p });
-  if(!r.success){ if(st) st.textContent=r.message||"保存失败"; return; }
-  if(st) st.textContent="已保存 ✓（密码已加密存储）";
-  el("fnosPassword").value="";
-  const box = el("fnosCredBox"); if(box) box.style.display="none";
-  const f = pendingApplyFile; pendingApplyFile = null;
-  if(f){ el("updateResult").textContent="凭据已保存，自动继续安装…"; const a=await call("apply_update","POST",{ file:f }); finishApply(a); }
-  else { el("updateResult").textContent="凭据已保存"; }
-}
-async function clearFnosCreds(){
-  const r = await call("fnos_forget","POST",{});
-  el("fnosCredStatus").textContent = r.success ? "已清除" : (r.message||"清除失败");
-}
-function finishApply(a){
-  const btn = el("updateResult");
-  btn.textContent = (a.data && a.data.message) || a.message || (a.success?"更新已提交":"更新失败");
-  const dlBtn = el("downloadUpdateBtn");
-  if (a.success && a.data && a.data.need_ui){ renderUpdateGuide(a.data); dlBtn.disabled=false; return; }
-  if (a.success){ setTimeout(()=>location.reload(), 2500); }
-  else { dlBtn.disabled = false; }
-}
-function renderUpdateGuide(d){
-  const g = el("updateGuide"); if(!g) return;
-  g.style.display = "block";
-  const steps = Array.isArray(d.steps) ? d.steps : [];
-  const body = el("updateGuideBody");
-  body.innerHTML = steps.map((s,i)=>`<div><b>${i+1}.</b> ${escapeHtml(s)}</div>`).join("") +
-    `<div style="margin-top:6px"><code id="updateFilePath" style="word-break:break-all">${escapeHtml(d.file||"")}</code> <button class="btn" onclick="copyUpdatePath()">复制路径</button></div>`;
-}
-function copyUpdatePath(){
-  const p = el("updateFilePath"); if(!p) return;
-  navigator.clipboard && navigator.clipboard.writeText(p.textContent).then(()=>{ el("updateResult").textContent="路径已复制"; }).catch(()=>{ el("updateResult").textContent="复制失败，请手动选择"; });
-}
-/* ---- 功能热更新（免 fpk） ---- */
-let pendingHotfix = null;
-async function checkHotfix(){
-  const label = el("hotfixResult");
-  label.textContent = "检查中…";
+async function hotfixMiniCheck(){
+  const btn = el("hotfixMiniBtn"), st = el("hotfixMiniStatus");
+  if (btn) btn.disabled = true;
+  if (st){ st.hidden = false; st.textContent = "检查中…"; }
   const r = await call("check_hotfix");
-  if (!r.success){ label.textContent = r.message || "检查失败"; return; }
   const d = r.data || {};
-  if (!d.has_update){ label.textContent = "功能已是最新（v"+(d.version||"?")+"）"; el("hotfixBtn").style.display="none"; pendingHotfix=null; return; }
-  label.textContent = `发现功能更新 v${d.version}（${(d.changed||[]).length} 个文件）`;
-  el("hotfixBtn").style.display = "inline-block";
-  pendingHotfix = d.version;
+  hotfixState.has_update = !!d.has_update;
+  hotfixState.version = d.version || "";
+  if (!r.success){
+    if (st) st.textContent = (r.message || "检查失败") + "（可稍后重试）";
+    if (btn) btn.disabled = false;
+    return;
+  }
+  if (!d.has_update){
+    if (st) st.textContent = "功能已是最新（v" + (d.version || "?") + "）";
+    if (btn) btn.disabled = false;
+    setTimeout(() => { if (st && !hotfixState.has_update) st.hidden = true; }, 4000);
+    return;
+  }
+  if (st) st.textContent = "发现功能更新 v" + d.version + "（" + (d.changed || []).length + " 个文件）";
+  if (btn){ btn.textContent = "应用功能更新"; btn.disabled = false; }
 }
-async function applyHotfix(){
-  const btn = el("hotfixBtn");
-  btn.disabled = true;
-  el("hotfixResult").textContent = "正在下载并应用功能更新，完成后自动重启…";
-  const r = await call("apply_hotfix","POST",{});
+async function hotfixMiniApply(){
+  const btn = el("hotfixMiniBtn"), st = el("hotfixMiniStatus");
+  if (!confirmDanger("应用功能热更新？\n将下载并替换运行时代码，完成后自动重启应用。")) return;
+  if (btn) btn.disabled = true;
+  if (st) st.textContent = "正在下载并应用，完成后自动重启…";
+  const r = await call("apply_hotfix", "POST", {});
   const msg = (r.data && r.data.message) || r.message || "完成";
-  el("hotfixResult").textContent = msg;
-  if (r.success && r.data && r.data.applied && r.data.applied.length && r.data.restarting){
-    setTimeout(()=>location.reload(), 12000); // trim-cli 重启约 8-10s，等就绪再刷新
-    return;
-  }
-  if (r.success && r.data && r.data.applied && !r.data.restarting){
-    btn.disabled = false;
-    return;
-  }
-  btn.disabled = false;
+  if (st) st.textContent = msg;
+  if (r.success && r.data && r.data.restarting){ setTimeout(() => location.reload(), 12000); return; }
+  if (btn){ btn.disabled = false; }
 }
 /* ---- 日志 ---- */
 let lastLogOffset=0, lastLogText="";
