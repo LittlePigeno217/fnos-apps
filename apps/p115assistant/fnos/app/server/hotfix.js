@@ -164,7 +164,13 @@ function sha256Hex(buf) {
 async function restartApp(dataDir, creds) {
   const cli = trimCliPath();
   if (!cli) return { ok: false, err: "未找到 trim-cli" };
-  const env = { ...process.env, HOME: process.env.HOME || "/vol1/@apphome/p115assistant" };
+  // 会话环境必须与 update.js trimEnv 一致：TRIM_CLI_CONFIG_DIR 指向应用数据目录下的 trimclip
+  const env = {
+    ...process.env,
+    HOME: process.env.HOME || "/vol1/@apphome/p115assistant",
+    TRIM_CLI_CONFIG_DIR: path.join(dataDir, "trimclip"),
+    TRIM_CLI_SESSION_STORAGE: "file",
+  };
   let sessionOk = await trimHasSession(dataDir);
   if (!sessionOk && creds && creds.username && creds.password) {
     const lg = await trimCliLogin(dataDir, creds.username, creds.password);
