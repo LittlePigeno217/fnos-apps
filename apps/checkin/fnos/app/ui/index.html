@@ -312,7 +312,15 @@ function renderSiteCards(serverSites) {
           <span class="recent" id="recent_${key}"></span>
         </div>
       </div>`);
-    $("account_" + key).textContent = st.enabled ? (st.configured ? (st.account || "已配置") : "已启用·未配凭据") : "未启用";
+    const accEl = $("account_" + key);
+    if (!st.configured) {
+      // 未配置凭据：醒目标识，引导到下方「站点凭据」区填写
+      accEl.textContent = "⚠ 未配置凭据";
+      accEl.style.color = "#d29922";
+    } else {
+      accEl.textContent = st.enabled ? (st.account || "已配置") : "已配置";
+      accEl.style.color = "";
+    }
     $("sw_" + key).checked = !!st.enabled;
     $("px_" + key).checked = !!st.use_proxy;
   }
