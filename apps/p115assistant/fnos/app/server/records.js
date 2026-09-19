@@ -62,6 +62,15 @@ class IncrementalRecordStore {
     return false;
   }
 
+  /** 是否存在指向 target 的上传记录（用于判断该映射是否已有上传历史，重启恢复时用） */
+  someFor(target) {
+    for (const key of Object.keys(this._records)) {
+      const r = this._records[key];
+      if (r && String(r.target || "") === String(target || "")) return true;
+    }
+    return false;
+  }
+
   markUploaded(p, target, uploadedAt, metadata) {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");

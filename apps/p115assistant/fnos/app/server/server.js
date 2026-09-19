@@ -202,7 +202,26 @@ class FileWatcher {
     const isBaseline = snap.baseline;
     let hasNewFiles = false;
 
-    if (!isBaseline) {
+    if (isBaseline) {
+      // 基线：不能只建快照——若该映射已有上传历史（重启恢复场景），必须用持久化
+      // 上传记录核对，把「没有记录」的文件视为待上传，防止上传任务执行期间应用
+      // 重启后剩余文件被基线吞掉而丢任务。首次配置（无任何记录）保持原语义：
+      // 只建快照不触发，避免首次连接就把目录历史文件突击上传。
+      const records = this._server.store.getUploadRecords();
+      const targetCid = String(mapping.target_cid || "0");
+      if (records.someFor(targetCid)) {
+        for (const [relPath, size] of currentSnapshot) {
+          try {
+            if (!records.hasChanged(relPath, targetCid)) continue; // 已有记录：已上传过，跳过
+          } catch {
+            /* 记录异常按待上传处理 */
+          }
+          if (!pending.has(relPath)) {
+            pending.set(relPath, { firstSeen: now, size });
+          }
+        }
+      }
+    } else {
       // diff：新增/修改文件 → pending（等稳定）
       for (const [relPath, size] of currentSnapshot) {
         if (prevSnapshot.has(relPath)) {
