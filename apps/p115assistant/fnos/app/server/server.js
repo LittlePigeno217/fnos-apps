@@ -1170,6 +1170,15 @@ class Server {
             });
             console.log(`已上传 ${path.basename(filePath)}（${result.reused ? "秒传" : "上传"}）`);
             this._riskState.consecutiveFailures = 0;
+            // upload_delete_source：上传成功后删除本地源文件（只删成功项）
+            if (config.upload_delete_source) {
+              try {
+                fs.unlinkSync(filePath);
+                console.log(`已删除源文件 ${path.basename(filePath)}（upload_delete_source）`);
+              } catch (delErr) {
+                console.warn(`删除源文件失败 ${path.basename(filePath)}：${delErr.message}`);
+              }
+            }
           } else {
             failed += 1;
             this._riskState.consecutiveFailures += 1;
