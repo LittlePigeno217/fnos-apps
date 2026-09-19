@@ -1,0 +1,22 @@
+#!/bin/sh
+# 自用签到 配置变更回调：应用中心「应用设置」已无可配置业务字段
+# （全部配置已迁移到应用内页面：登录 / 上传 / STRM / 签到 / 设置）。
+# 保留回调框架以兼容 fnOS 生命周期调用；收到字段直接忽略并记录。
+set -u
+
+APP_DIR="${TRIM_APPDEST:-/vol1/@appcenter/checkin}"
+VAR_DIR="${TRIM_PKGVAR:-/vol1/@appdata/checkin}"
+LOG_FILE="${VAR_DIR}/info.log"
+SOCKET_FILE="${APP_DIR}/app.sock"
+mkdir -p "${VAR_DIR}"
+
+log_msg() {
+    local msg="$(date '+%Y-%m-%d %H:%M:%S') - [config_callback] $1"
+    echo "$msg"
+    echo "$msg" >> "${LOG_FILE}" 2>/dev/null || true
+}
+
+log_msg "=== config_callback start ==="
+log_msg "配置已全部迁移到应用内页面，忽略应用设置回调"
+log_msg "=== config_callback end (no-op) ==="
+exit 0
