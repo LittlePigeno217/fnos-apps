@@ -21,6 +21,13 @@ const MANIFEST_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAM
 const RAW_BASE = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/apps/p115assistant/fnos`;
 const APP_NAME = "p115assistant";
 
+/** 安装路径 → 仓库路径（清单里的 rel 是安装路径：server/、www/） */
+function rawRel(installRel) {
+  if (installRel.startsWith("server/")) return "app/server/" + installRel.slice("server/".length);
+  if (installRel.startsWith("www/")) return "app/ui/" + installRel.slice("www/".length);
+  return installRel;
+}
+
 /** sha256（流式） */
 function sha256File(filePath) {
   return new Promise((resolve, reject) => {
@@ -115,8 +122,8 @@ async function applyHotfix(appDir, dataDir, creds) {
     } catch {
       /* 原文件不存在则不备份 */
     }
-    // 下载新文件（raw 直链）
-    const rawUrl = `${RAW_BASE}/${rel}`;
+    // 下载新文件（raw 直链，安装路径→仓库路径）
+    const rawUrl = `${RAW_BASE}/${rawRel(rel)}`;
     const buf = await httpsGet(rawUrl);
     if (sha256Hex(buf) !== String(info.sha256 || "")) {
       try { fs.unlinkSync(bak); } catch { /* ignore */ }
