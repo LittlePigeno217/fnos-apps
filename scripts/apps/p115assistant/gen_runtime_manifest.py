@@ -16,6 +16,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import sys
 
 ROOT = "apps/p115assistant/fnos"
@@ -27,6 +28,13 @@ RUNTIME_ROOTS = [
     ("app/ui", "www", set()),
 ]
 
+# 构建期版本注入文件（build.sh 打包时 sed 注入 fpk 版本号）：
+# 清单必须按「注入后」内容计算 sha，否则与 NAS 上运行的注入版永远不一致，热更检查无法收敛。
+INJECT_RULES = {
+    "app/server/store.js": re.compile(r'version: "[0-9.]*"'),
+    "app/server/update.js": re.compile(r'const CURRENT_VERSION = process\.env\.P115ASSISTANT_VERSION \|\| "[0-9.]*"'),
+}
+
 
 def sha256_file(p):
     h = hashlib.sha256()
@@ -34,6 +42,20 @@ def sha256_file(p):
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def sha256_file_injected(p, version):
+    """sha256：对构建期注入文件先模拟 build.sh 的版本注入，再取哈希。"""
+    if version == "dev" or p not in INJECT_RULES:
+        return sha256_file(p)
+    with open(p, encoding="utf-8") as f:
+        content = f.read()
+    rule = INJECT_RULES[p]
+    if p.endswith("store.js"):
+        content = rule.sub(f'version: "{version}"', content)
+    else:
+        content = rule.sub(f'const CURRENT_VERSION = process.env.P115ASSISTANT_VERSION || "{version}"', content)
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def repo_to_install(rel):
@@ -78,7 +100,7 @@ def build_manifest(version):
             continue
         p = os.path.join(ROOT, repo_rel)
         files[install_rel] = {
-            "sha256": sha256_file(p),
+            "sha256": sha256_file_injected(p, version),
             "size": os.path.getsize(p),
         }
     if missing:
