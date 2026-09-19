@@ -183,10 +183,14 @@ async function applyHotfix(appDir, dataDir, creds) {
     }
     // 下载新文件（raw 直链，安装路径→仓库路径；带缓存破坏参数；raw 失败回退镜像）
     const rawUrl = bust(`${RAW_BASE}/${rawRel(rel)}`);
-    const buf = await fetchWithMirror(rawUrl);
+    let buf = await fetchWithMirror(rawUrl);
+    if (sha256Hex(buf) !== String(info.sha256 || "")) {
+      // CDN 传播窗口：清单与文件异步传播时可能短暂不一致 → 换源重试一次
+      buf = await fetchWithMirror(bust(`${RAW_BASE}/${rawRel(rel)}`));
+    }
     if (sha256Hex(buf) !== String(info.sha256 || "")) {
       try { fs.unlinkSync(bak); } catch { /* ignore */ }
-      throw new Error(`SHA-256 校验失败：${rel}`);
+      throw new Error(`SHA-256 校验失败：${rel}（CDN 缓存未同步，请稍后重试）`);
     }
     fs.mkdirSync(path.dirname(p), { recursive: true });
     const tmp = p + ".hotfix.tmp";
