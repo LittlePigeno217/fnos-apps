@@ -210,7 +210,9 @@ function downloadUpdate(payload, dataDir) {
       resolve({ success: false, message: "无效的下载参数" });
       return;
     }
-    if (!/\.fpk$/.test(name)) {
+    // 文件名必须与 manifest 版本严格一致，防下载任意 .fpk 落盘（越界写入）
+    const expectName = `p115assistant_${String((payload && payload.version) || "")}_all.fpk`;
+    if (!name || name !== expectName) {
       resolve({ success: false, message: "无效的 FPK 文件名" });
       return;
     }

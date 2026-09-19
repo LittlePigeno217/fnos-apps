@@ -446,7 +446,7 @@ class Server {
       String(config.rate_limit_profile || "balanced"),
       String((config.tokens || {}).access_token || ""),
       String((config.tokens || {}).refresh_token || ""),
-    ].join(" ");
+    ].join("\n");
   }
 
   _getClient() {

@@ -3998,20 +3998,33 @@ async function refreshConflicts(){
   for (const c of items){
     const tr = document.createElement("tr");
     const reason = c.reason || "";
-    const pathAttr = escjs(c.path || "");
+    const pathAttr = escAttr(c.path || "");
     tr.innerHTML =
       `<td class="name">${esc(c.path || "")}<div class="muted">${esc(reason)}</div></td>` +
       `<td>${esc(c.target || "")}</td>` +
       `<td class="mono">${esc(c.recorded_pickcode || "")}</td>` +
       `<td class="mono">${esc(c.remote_pickcode || "")}</td>` +
       `<td class="ops">` +
-        `<button class="btn btn-mini" onclick="resolveConflict('${pathAttr}','adopt')">${labels.adopt}</button> ` +
-        `<button class="btn btn-mini" onclick="resolveConflict('${pathAttr}','reupload')">${labels.reupload}</button> ` +
-        `<button class="btn btn-mini" onclick="resolveConflict('${pathAttr}','dismiss')">${labels.dismiss}</button>` +
+        `<button class="btn btn-mini" data-role="conflict-resolve" data-action="adopt" data-path="${pathAttr}">${labels.adopt}</button> ` +
+        `<button class="btn btn-mini" data-role="conflict-resolve" data-action="reupload" data-path="${pathAttr}">${labels.reupload}</button> ` +
+        `<button class="btn btn-mini" data-role="conflict-resolve" data-action="dismiss" data-path="${pathAttr}">${labels.dismiss}</button>` +
       `</td>`;
     tb.appendChild(tr);
   }
 }
+// 冲突按钮事件委托（属性转义 + data-* 读取，杜绝属性逃逸执行任意 JS；只注册一次）
+(function () {
+  const table = document.getElementById("conflictTable");
+  if (!table) return;
+  const tbody = table.querySelector("tbody");
+  if (!tbody || tbody.dataset.delegated) return;
+  tbody.dataset.delegated = "1";
+  tbody.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-role='conflict-resolve']");
+    if (!btn) return;
+    resolveConflict(btn.dataset.path || "", btn.dataset.action || "");
+  });
+})();
 async function resolveConflict(p, action){
   const r = await call("upload_conflicts_resolve","POST",{action, paths:[p]});
   alert(r.message || "完成");
