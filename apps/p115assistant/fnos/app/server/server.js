@@ -519,10 +519,30 @@ class Server {
       return error("没有可保存的配置项");
     }
     try {
+      // 联动：STRM 基础连接变更 → 防抖 2s 自动触发一次同步重写（免等 watch）
+      const before = this.store.getConfig();
       this.store.updateConfig(updates);
+      const after = this.store.getConfig();
+      const linkChanged = ["strm_base_url", "relay_port"].some(
+        (k) => String(before[k] === undefined ? "" : before[k]) !== String(after[k] === undefined ? "" : after[k])
+      );
       this._client = null;
       this._clientSignature = null;
       this.recordLog(`配置已保存：${Object.keys(updates).join(", ")}`, "INFO", "CONFIG");
+      if (linkChanged) {
+        clearTimeout(this._strmSyncTimer);
+        this._strmSyncTimer = setTimeout(() => {
+          this.strmSync({})
+            .then((res) => {
+              this.recordLog(
+                `STRM 基础连接变更，自动同步：${res && res.success ? res.message : (res && res.message ? res.message : "无启用的映射或无需更新")}`,
+                "INFO",
+                "STRM"
+              );
+            })
+            .catch((err) => console.warn(`自动 STRM 同步失败：${err.message}`));
+        }, 2000);
+      }
       return ok(undefined, "配置已保存");
     } catch (err) {
       console.error(`保存配置失败：${err.message}`);
