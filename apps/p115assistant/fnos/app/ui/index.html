@@ -672,6 +672,10 @@
                 <option value="fast">激进</option>
               </select>
             </div>
+            <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+              <span class="muted" id="uploadCfgStatus"></span>
+              <button class="btn primary" id="uploadSaveBtn" onclick="saveUploadCfg()">保存设置</button>
+            </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">媒体扩展名</span>
               <input class="input mono grow" type="text" id="mediaExtensions" placeholder=".mp4,.mkv,.ts,.iso,…">
@@ -728,6 +732,10 @@
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">签到时段</span>
               <input class="input mono grow" type="text" id="checkinTimeRange" placeholder="06:00-09:00" onchange="markDirty('signin')">
+            </div>
+            <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+              <span class="muted" id="signinCfgStatus"></span>
+              <button class="btn primary" id="signinSaveBtn" onclick="saveSigninCfg()">保存设置</button>
             </div>
           </div>
         </details>
@@ -806,6 +814,10 @@
               <span class="muted" style="font-size:12px">提示：增量适合长期同步；首次使用建议先全量生成一次，再开启增量。</span>
             </div>
           </div>
+          <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+            <span class="muted" id="strmCfgStatus"></span>
+            <button class="btn primary" id="strmSaveBtn" onclick="saveStrmCfg()">保存设置</button>
+          </div>
         </details>
 
       </section>
@@ -842,6 +854,10 @@
             <div class="setting-desc">机器人 Webhook 地址；已配置时留空保存不修改</div>
           </div>
           <input type="password" id="feishuWebhook" placeholder="已配置请留空" style="max-width:240px" onchange="markDirty('settings')">
+        </div>
+        <div class="setting-row" style="justify-content:flex-end">
+          <span class="muted" id="appCfgStatus" style="margin-right:8px"></span>
+          <button class="btn primary" id="appSaveBtn" onclick="saveAppCfg()">保存设置</button>
         </div>
       </div>
     </section>
@@ -3500,38 +3516,19 @@ async function loadExtensions(){
   el("sidecarExtensions").value = d.upload_sidecar_extensions || "";
 }
 // 上传附属文件开关：即时保存（upload_include_sidecars 由本页唯一持有）
-/* 手动保存模式：控件 onchange 只标记，右下角「保存设置」统一提交 */
-const AREA_NAMES = { upload:"上传", signin:"签到", strm:"STRM", settings:"设置" };
-let activeArea = null;
-let dirtyTimer = null;
+/* 手动保存模式：控件 onchange 只标记，各页设置区底部「保存设置」统一提交 */
+const SAVE_BTN = { upload:"uploadSaveBtn", signin:"signinSaveBtn", strm:"strmSaveBtn", settings:"appSaveBtn" };
+const SAVE_STATUS = { upload:"uploadCfgStatus", signin:"signinCfgStatus", strm:"strmCfgStatus", settings:"appCfgStatus" };
 function markDirty(area){
-  activeArea = area;
-  const b = el("globalSaveBtn");
-  b.disabled = false;
-  b.style.opacity = "1";
-  b.textContent = "保存设置 · " + (AREA_NAMES[area]||area) + "（有更改）";
+  const b = el(SAVE_BTN[area]), st = el(SAVE_STATUS[area]);
+  if (b) b.textContent = "保存设置（有更改）";
+  if (st) st.textContent = "有未保存的更改";
 }
-function clearDirty(){
-  activeArea = null;
-  const b = el("globalSaveBtn");
-  b.textContent = "已保存 ✓";
-  clearTimeout(dirtyTimer);
-  dirtyTimer = setTimeout(()=>{
-    b.disabled = true;
-    b.style.opacity = ".55";
-    b.textContent = "保存设置";
-  }, 1800);
-}
-async function globalSave(){
-  if (!activeArea) return;
-  const fns = { upload:saveUploadCfg, signin:saveSigninCfg, strm:saveStrmCfg, settings:saveAppCfg };
-  const fn = fns[activeArea];
-  if (!fn) return;
-  const b = el("globalSaveBtn");
-  b.disabled = true;
-  const ok = await fn();
-  if (ok === true || ok === undefined) { /* fn 内部已 clearDirty */ }
-  else { b.disabled = false; }
+function clearDirty(area){
+  const b = el(SAVE_BTN[area]), st = el(SAVE_STATUS[area]);
+  if (b) b.textContent = "保存设置";
+  if (st) st.textContent = "已保存 ✓";
+  setTimeout(()=>{ if (st) st.textContent = ""; }, 2000);
 }
 async function saveUploadCfg(){
   const updates = {
@@ -3543,26 +3540,24 @@ async function saveUploadCfg(){
     rate_limit_profile: el("rateLimit").value,
   };
   const r = await call("save_config", "POST", updates);
-  if (r.success){ clearDirty(); return true; }
+  if (r.success){ clearDirty("upload"); return; }
   alert("保存失败：" + (r.message || ""));
-  return false;
 }
 async function saveSigninCfg(){
   const range = el("checkinTimeRange").value.trim();
-  if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(range)) { alert("签到时段格式应为 HH:MM-HH:MM"); return false; }
+  if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(range)) { alert("签到时段格式应为 HH:MM-HH:MM"); return; }
   const updates = {
     checkin_enabled: el("checkinEnabled").checked === true,
     checkin_notify: el("checkinNotify").checked === true,
     checkin_time_range: range,
   };
   const r = await call("save_config", "POST", updates);
-  if (r.success){ clearDirty(); refreshSigninRange(); return true; }
+  if (r.success){ clearDirty("signin"); refreshSigninRange(); return; }
   alert("保存失败：" + (r.message || ""));
-  return false;
 }
 async function saveStrmCfg(){
   const port = el("relayPortInput").value.trim();
-  if (port && !/^\d{2,5}$/.test(port)) { alert("中转端口应为数字（如 3667）"); return false; }
+  if (port && !/^\d{2,5}$/.test(port)) { alert("中转端口应为数字（如 3667）"); return; }
   const updates = {
     strm_base_url: el("strmBaseUrl").value.trim(),
     relay_port: port,
@@ -3570,9 +3565,8 @@ async function saveStrmCfg(){
     strm_add_subtitles: el("strmAddSubtitles").checked === true,
   };
   const r = await call("save_config", "POST", updates);
-  if (r.success){ clearDirty(); saveStrmBase && saveStrmBase(); return true; }
+  if (r.success){ clearDirty("strm"); saveStrmBase && saveStrmBase(); return; }
   alert("保存失败：" + (r.message || ""));
-  return false;
 }
 async function saveAppCfg(){
   const updates = {
@@ -3582,9 +3576,8 @@ async function saveAppCfg(){
   const hook = el("feishuWebhook").value.trim();
   if (hook) updates.feishu_webhook = hook; // 留空=保持当前
   const r = await call("save_config", "POST", updates);
-  if (r.success){ clearDirty(); el("feishuWebhook").value = ""; return true; }
+  if (r.success){ clearDirty("settings"); el("feishuWebhook").value = ""; return; }
   alert("保存失败：" + (r.message || ""));
-  return false;
 }
 async function saveExtensions(){
   const media = el("mediaExtensions").value.trim();
@@ -4339,10 +4332,5 @@ window.TrimApp = TrimApp;
 window.trimApp = new TrimApp({ debug: false });
 window.dispatchEvent(new Event("trimapp-ready"));
 </script>
-  <!-- 右下角悬浮「保存设置」（手动保存模式统一入口） -->
-  <button class="btn primary" id="globalSaveBtn" onclick="globalSave()" disabled
-          style="position:fixed;right:22px;bottom:22px;z-index:70;box-shadow:0 4px 16px rgba(0,0,0,.28);opacity:.55;transition:opacity .2s">
-    保存设置
-  </button>
 </body>
 </html>
