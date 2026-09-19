@@ -375,7 +375,10 @@ function updateCapsule(on) {
 
 /* ── 签到执行 ─────────────────────────────────── */
 async function runSite(key) {
-  $("res_" + key).textContent = "签到中…"; $("res_" + key).className = "result-line muted";
+  $("res_" + key).textContent = "保存配置并签到中…"; $("res_" + key).className = "result-line muted";
+  // 像插件一样：先用当前表单填写值保存，再签到
+  const saved = await call("save_config", "POST", { sites: { [key]: collectSitePatch(key) } });
+  if (!saved.success) { $("res_" + key).textContent = "✗ 配置保存失败：" + (saved.message || ""); $("res_" + key).className = "result-line err"; return; }
   const r = await call("run", "POST", { sites: [key] });
   const data = r.data || {};
   const item = (data.results || []).find((x) => x.site_key === key);
@@ -403,7 +406,10 @@ async function runAll() {
 
 async function testSite(key) {
   const line = $("res_" + key);
-  line.textContent = "测试中…"; line.className = "result-line muted";
+  line.textContent = "保存配置并测试中…"; line.className = "result-line muted";
+  // 像插件一样：先用当前表单填写值保存，再测试（未保存也能直接测）
+  const saved = await call("save_config", "POST", { sites: { [key]: collectSitePatch(key) } });
+  if (!saved.success) { line.textContent = "✗ 配置保存失败：" + (saved.message || ""); line.className = "result-line err"; return; }
   const r = await call("test_login", "POST", { site: key });
   line.textContent = r.success ? "✓ " + (r.data.message || "测试成功") : "✗ " + (r.message || "测试失败");
   line.className = "result-line " + (r.success ? "ok" : "err");
