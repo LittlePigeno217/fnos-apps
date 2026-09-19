@@ -742,29 +742,35 @@
 
       <!-- STRM -->
       <section id="tab-link" class="pane" hidden>
-        <div class="field-row" style="margin-bottom:6px">
-          <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测，或手动填写基础地址（如 http://192.168.1.100）" title="STRM 基础地址：手动填写后自动补充播放中转端口；留空自动检测宿主机 IP" onchange="markDirty('strm')">
+        <p class="muted" style="font-size:13px;margin-bottom:10px">STRM：媒体文件留在 115 云端，本地只生成轻量占位 .strm，播放时经中转端口 302 拉流。</p>
+        <div class="pane" style="margin-bottom:12px;padding:14px 16px">
+          <div class="field-row" style="align-items:center;gap:8px">
+            <span class="muted" style="width:66px;flex:none">播放地址</span>
+            <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测" title="留空自动检测宿主机 IP；或填公网可达地址并在路由器映射中转端口" onchange="markDirty('strm')">
+            <span class="muted" style="flex:none;font-size:12px">中转端口</span>
+            <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:88px" onchange="markDirty('strm')">
+          </div>
+          <div class="field-row" style="margin-top:6px">
+            <span class="muted" id="strmRelayHint" style="font-size:12px"></span>
+          </div>
+          <div class="field-row">
+            <span class="muted" id="strmOutboundHint" style="font-size:12px"></span>
+          </div>
         </div>
-        <div class="field-row" style="margin-bottom:10px">
-          <span class="muted" id="strmRelayHint" style="font-size:13px"></span>
-        </div>
-        <div class="field-row" style="margin-bottom:10px;align-items:center;gap:8px">
-          <span class="muted" style="width:88px;flex:none">中转端口</span>
-          <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:120px" onchange="markDirty('strm')">
-          <span class="muted" style="font-size:12px">302 播放中转端口（STRM 直连端口）</span>
-        </div>
-        <div class="field-row" style="margin-bottom:6px">
-          <span class="muted" id="strmOutboundHint" style="font-size:12px;color:var(--muted)"></span>
-        </div>
-        <div class="field-row" style="margin-bottom:10px;align-items:center;gap:8px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="strmIncremental" onchange="markDirty('strm')">
-            <span class="muted" style="font-size:13px">增量生成（仅生成新增/更新的 STRM）</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="strmAddSubtitles" onchange="markDirty('strm')">
-            <span class="muted" style="font-size:13px">附带云端同名字幕</span>
-          </label>
+        <div class="pane" style="margin-bottom:12px;padding:14px 16px">
+          <div class="field-row" style="align-items:center;gap:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="strmIncremental" onchange="markDirty('strm')">
+              <span class="muted" style="font-size:13px">增量生成（只处理新增/变动的文件）</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="strmAddSubtitles" onchange="markDirty('strm')">
+              <span class="muted" style="font-size:13px">附带云端同名字幕</span>
+            </label>
+          </div>
+          <div class="field-row" style="margin-top:4px">
+            <span class="muted" style="font-size:12px">提示：增量适合长期同步；首次使用建议先全量生成一次，再开启增量。</span>
+          </div>
         </div>
         <div class="toolbar">
           <button class="btn" onclick="addStrmCard()">
@@ -784,6 +790,7 @@
           </button>
         </div>
         <div class="pane" id="strmOnceCard" hidden style="padding:14px 16px;margin-bottom:12px">
+          <p class="muted" style="font-size:12px;margin-bottom:8px">临时生成：把某个 115 目录的媒体一次性生成为 STRM 到指定本地目录（不进映射、不增量）。</p>
           <div class="field-row" style="align-items:center;gap:8px">
             <span class="muted" style="width:76px;flex:none">115 源目录</span>
             <button class="btn" onclick="pickOnce('strm','src115')">选择 115 目录</button>
@@ -801,7 +808,8 @@
           </div>
         </div>
         <div id="strmList"></div>
-        <p class="empty" id="strmEmpty">暂无 STRM 映射，点击「添加映射」创建</p>
+        <p class="empty" id="strmEmpty">暂无 STRM 映射。
+第一步：点击「添加映射」→ 选 115 源目录 → 选本地输出目录 → 点「立即同步」。</p>
       </section>
 
       <!-- 媒体库：一部电影一行、一季剧一行 -->
@@ -3954,7 +3962,7 @@ async function saveStrmBase(){
   // 回填输入框：手动配置过则显示配置原值，否则显示自动推导的基础地址
   el("strmBaseUrl").value = d.manual_base_url || d.base_url || "";
   el("strmRelayHint").textContent =
-    `中转端口 ${d.relay_port}（本页「保存设置」生效）→ 实际 STRM 地址 ${d.base_url || "未确定"}`;
+    `实际 STRM 地址：${d.base_url || "未确定"}（中转端口 ${d.relay_port}）`;
   // 外网提示：手动填写公网可达地址 + 路由器映射中转端口，否则外网播放器无法访问
   const extHint = el("strmOutboundHint");
   if (extHint) {
@@ -3974,6 +3982,8 @@ async function loadStrmMappings(){
   const r = await call("strm_mappings");
   strmCards = (r.success && r.data && Array.isArray(r.data.mappings)) ? r.data.mappings : [];
   renderStrmCards();
+  const hp = el("strmHelp");
+  if (hp) hp.textContent = strmCards.length ? `${strmCards.length} 个映射` : "";
   await saveStrmBase();
   bindStrmBaseEdit();
     // 增量生成开关状态（strm_incremental 由本页直接读写，不再重复出现在应用配置）
