@@ -1,6 +1,6 @@
 {
-  "version": "1.0.4",
-  "generated_at": "2026-09-19T11:02:54Z",
+  "version": "1.0.0",
+  "generated_at": "2026-09-19T11:35:37Z",
   "files": {
     "server/main.js": {
       "sha256": "f7165ee69f72193522704ef6f4f9e3f0afe30fd8ac95ab90d91ef19dafd2caca",
@@ -47,8 +47,8 @@
       "size": 4444
     },
     "www/index.html": {
-      "sha256": "7c315ec1f50a8b890626deabbf643d96fdccb6bf5876d0f7d3b6fa663c029061",
-      "size": 173687
+      "sha256": "237af38655d37c371294c5d1ee5a3b2073ee667732447de48b568c995f7780c2",
+      "size": 167271
     }
   }
 }
