@@ -496,6 +496,18 @@ class Server {
     return "";
   }
 
+  // 功能版本：最近一次热更新应用的清单版本（patches/current.json）；从未热更新则 = fpk 初始版本
+  _functionVersion(configVersion) {
+    try {
+      const p = path.join(this.store._dir || "", "patches", "current.json");
+      if (require("fs").existsSync(p)) {
+        const j = JSON.parse(require("fs").readFileSync(p, "utf8"));
+        if (j && /^\d+\.\d+\.\d+$/.test(String(j.version || ""))) return j.version;
+      }
+    } catch { /* 读不到视为未热更 */ }
+    return configVersion || "";
+  }
+
   getConfig() {
     try {
       const config = this.store.getConfig();
@@ -507,6 +519,8 @@ class Server {
       publicConfig.fnos_configured = !!(config.fnos_username && config.fnos_password);
       // fpk 安装版本（fnOS 构建注入 env；与热更新功能版本区分）
       publicConfig.fpk_version = this._fpkVersion() || publicConfig.version || "";
+      // 功能版本（热更清单版本；左下角显示用）
+      publicConfig.function_version = this._functionVersion(publicConfig.version || "1.0.0");
       if (publicConfig.feishu_webhook) {
         publicConfig.feishu_webhook = mask(publicConfig.feishu_webhook);
       }

@@ -4058,7 +4058,7 @@ async function loadSettings(){
   if(!r.success)return;
   const d=r.data;
   // 侧边栏底部版本徽标动态跟随实际版本（不再硬编码；2026-09-17 修复 1.1.0 残留）
-  if (el("appVersion")) el("appVersion").textContent = "v" + (d.fpk_version || d.version || "1.0.0");
+  if (el("appVersion")) el("appVersion").textContent = "v" + (d.function_version || d.version || "1.0.0");
   await loadAppSettings(d);
 }
 /* 应用设置：全部迁移到前端（原应用中心运行设置字段），单一入口 */
