@@ -145,7 +145,11 @@ async function handle(req, res) {
       return;
     }
     const content = fs.readFileSync(filePath);
-    res.writeHead(200, { "Content-Type": req.url.endsWith(".js") ? "application/javascript" : "text/html; charset=utf-8" });
+    res.writeHead(200, {
+      "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
+    });
     res.end(content);
   };
   // fnOS 网关以 /app/checkin 前缀转发请求，剥离后再做路由匹配
