@@ -53,7 +53,7 @@ function sha256File(filePath) {
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const req = https.get(u, { headers: { "User-Agent": "p115assistant-hotfix/1.0", "Cache-Control": "no-cache" }, timeout: 20000 }, (res) => {
+    const req = https.get(u, { headers: { "User-Agent": "p115assistant-hotfix/1.0", "Cache-Control": "no-cache" }, timeout: 8000 }, (res) => {
       if (res.statusCode >= 400) {
         res.resume();
         reject(new Error(`HTTP ${res.statusCode}`));
