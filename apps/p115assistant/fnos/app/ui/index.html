@@ -392,9 +392,6 @@
   }
   /* ---------- 媒体账本 ---------- */
   /* 账本行要放下媒体名与「源 → 输出」路径，允许换行；其余列保持单行右对齐 */
-  #ledgerTable td { white-space: normal; overflow-wrap: anywhere; }
-  #ledgerTable td.ops, #ledgerTable th { white-space: nowrap; }
-  #ledgerTable th.pick, #ledgerTable td.pick { width: 34px; padding-right: 0; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px;
           border: 1px solid var(--border); color: var(--muted); }
   .pill.ok { color: var(--ok); border-color: var(--ok-border); }
@@ -432,10 +429,6 @@
       <button data-tab="link">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="8" height="8" rx="4"/><path d="M10.8 13.2a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7.1-7.1l-.9.9"/></svg>
         STRM
-      </button>
-      <button data-tab="ledger">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5A2.5 2.5 0 0 1 4 20.5z"/><path d="M8 7h7"/></svg>
-        媒体库
       </button>
       <button data-tab="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.5a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.5a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
@@ -817,37 +810,7 @@
 
       </section>
 
-      <!-- 媒体库：一部电影一行、一季剧一行 -->
-      <section id="tab-ledger" class="pane" hidden>
-        <div class="toolbar">
-          <button class="btn" onclick="loadLedger()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
-            刷新账本
-          </button>
-          <span class="grow"></span>
-          <span class="muted" id="ledgerResult"></span>
-          <button class="btn" id="ledgerVerifyBtn" onclick="verifyLedger()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="m9 12 2.5 2.5L20 6"/></svg>
-            云端核对
-          </button>
-          <button class="btn danger" id="ledgerDropBtn" onclick="dropStaleLedger()" disabled>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/></svg>
-            清理失效 STRM
-          </button>
-        </div>
-        <p class="muted" id="ledgerSummary">加载中…</p>
-        <div class="table-wrap" style="margin-top:10px">
-          <table id="ledgerTable" hidden>
-            <thead><tr>
-              <th class="pick"><input type="checkbox" id="ledgerAll" onclick="toggleAllLedger(this)" aria-label="全选"></th>
-              <th>媒体</th><th>类型</th><th>所属 STRM 映射</th>
-              <th class="ops">STRM</th><th class="ops">总大小</th><th>最近同步</th><th>状态</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <p class="empty" id="ledgerEmpty">加载中…</p>
-      </section>
+
 
       <!-- 设置：配置项已迁移至「应用中心 → 应用设置 → 运行设置」，此处仅保留更新与版本信息 -->
       <section id="tab-settings" class="pane" hidden>
@@ -3267,7 +3230,7 @@ function el(id){ return document.getElementById(id); }
 function refreshAuth(){ /* 授权刷新由宿主选择器提供；独立页面忽略 */ }
 
 /* ---- 通用 ---- */
-const TITLES = { drive:"网盘", upload:"上传", signin:"签到", link:"STRM", ledger:"媒体库", settings:"设置", log:"日志", history:"历史" };
+const TITLES = { drive:"网盘", upload:"上传", signin:"签到", link:"STRM", settings:"设置", log:"日志", history:"历史" };
 
 /* ---- 顶栏账号菜单（人性化交互：右上角账号 → 信息/切换/退出/清凭据） ---- */
 function confirmDanger(msg){ return window.confirm(msg); }
@@ -3353,7 +3316,6 @@ document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
   if (b.dataset.tab === "history"){ refreshHistory(); refreshConflicts(); }
   if (b.dataset.tab === "upload"){ loadMappings(); loadExtensions(); startWatchPolling(); }
   if (b.dataset.tab === "link"){ loadStrmMappings(); }
-  if (b.dataset.tab === "ledger"){ loadLedger(); }
   if (b.dataset.tab === "signin"){ refreshSigninRange(); }
 });
 
@@ -4300,133 +4262,6 @@ function renderHistoryPage(){
       `<td class="ops ${ok ? "ok" : "err"}">${ok ? "成功" : "失败"}</td>`;
     tb.appendChild(tr);
   }
-}
-
-/* ---- 媒体库（账本 / 云端核对 / 失效清理）---- */
-// 账本只读本地记录与文件系统，本身不打 115；只有「云端核对」会按预算发少量请求。
-let ledgerRows = [];
-let ledgerSum = {};                  // 最近一次账本摘要（重画勾选态时沿用）
-let ledgerPick = new Set();          // 已勾选的行 id（只有含失效文件的行才可勾）
-const KIND_LABEL  = { movie:"电影", tv:"剧集", other:"其他" };
-const STATE_LABEL = { ok:"正常", stale:"失效", unchecked:"待核对", untracked:"记录缺失" };
-const STATE_PILL  = { ok:"ok", stale:"bad", unchecked:"warn", untracked:"warn" };
-function fmtTime(sec){
-  sec = Number(sec || 0);
-  if (!sec) return "—";
-  const d = new Date(sec * 1000);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12:false });
-}
-async function loadLedger(){
-  el("ledgerSummary").textContent = "加载中…";
-  const r = await call("ledger");
-  if (!r.success){
-    ledgerRows = [];
-    ledgerSum = {};
-    ledgerPick = new Set();
-    renderLedger();
-    el("ledgerEmpty").textContent = r.message || "加载失败";
-    el("ledgerSummary").textContent = r.message || "加载失败";
-    return;
-  }
-  ledgerRows = (r.data && r.data.rows) || [];
-  ledgerSum = (r.data && r.data.summary) || {};
-  // 默认帮用户把失效行勾上（删之前仍有二次确认）；手动取消后不再自动勾回
-  ledgerPick = new Set(ledgerRows.filter(r => r.stale_files > 0).map(r => r.id));
-  renderLedger();
-}
-function renderLedger(){
-  const sum = ledgerSum;
-  const tb = el("ledgerTable").querySelector("tbody");
-  tb.innerHTML = "";
-  const staleIds = new Set(ledgerRows.filter(r => r.stale_files > 0).map(r => r.id));
-  // 重画时丢掉已经不再是失效行的勾选，避免拿着过期 id 去删
-  ledgerPick = new Set([...ledgerPick].filter(id => staleIds.has(id)));
-  const has = ledgerRows.length > 0;
-  el("ledgerTable").hidden = !has;
-  el("ledgerEmpty").hidden = has;
-  el("ledgerEmpty").textContent = has ? "" : "账本为空：先到「STRM」页生成 .strm，或用下面的「对指定目录生成一次」";
-  for (const row of ledgerRows){
-    const tr = document.createElement("tr");
-    const tail = row.kind === "tv" && row.season !== null && row.season !== undefined ? ` 第 ${row.season} 季` : "";
-    const year = row.year ? `（${row.year}）` : "";
-    const notes = [];
-    if (row.span) notes.push(`集数 ${row.span}${row.missing && row.missing.length ? "，缺 " + row.missing.join("/") : ""}`);
-    if (row.stale_files > 0) notes.push(`失效 ${row.stale_files}/${row.tracked_files}`);
-    else if (row.untracked_files > 0) notes.push(`未记录 ${row.untracked_files}`);
-    const chan = row.channel || "—";
-    const dir = (row.target_dirs && row.target_dirs[0]) || "";
-    const pick = row.stale_files > 0
-      ? `<input type="checkbox" data-pick="${escAttr(row.id)}" ${ledgerPick.has(row.id) ? "checked" : ""}>` : "";
-    tr.innerHTML =
-      `<td class="pick">${pick}</td>` +
-      `<td class="name">${esc(row.title || "未命名")}${esc(tail)}${esc(year)}` +
-        (notes.length ? `<div class="muted">${esc(notes.join("；"))}</div>` : "") + `</td>` +
-      `<td>${esc(KIND_LABEL[row.kind] || row.kind || "")}</td>` +
-      `<td class="name">${esc(chan)}${dir ? `<div class="muted mono">${esc(dir)}</div>` : ""}</td>` +
-      `<td class="ops">${esc(String(row.files || 0))}</td>` +
-      `<td class="ops">${esc(fmtSize(row.size))}</td>` +
-      `<td class="mono">${esc(fmtTime(row.last_sync))}</td>` +
-      `<td><span class="pill ${STATE_PILL[row.state] || ""}">${esc(STATE_LABEL[row.state] || row.state || "")}</span></td>`;
-    tb.appendChild(tr);
-  }
-  tb.querySelectorAll("input[data-pick]").forEach(cb => cb.addEventListener("change", () => {
-    if (cb.checked) ledgerPick.add(cb.dataset.pick); else ledgerPick.delete(cb.dataset.pick);
-    syncLedgerPick();
-  }));
-  el("ledgerAll").checked = staleIds.size > 0 && ledgerPick.size === staleIds.size;
-  el("ledgerAll").disabled = staleIds.size === 0;
-  el("ledgerSummary").textContent =
-    `共 ${sum.rows || 0} 行（电影 ${sum.movies || 0} / 剧集 ${sum.tv || 0} / 其他 ${sum.other || 0}），` +
-    `STRM ${sum.files || 0} 个，合计 ${fmtSize(sum.size)}；` +
-    `失效 ${sum.stale || 0} 行（${sum.stale_files || 0} 个），待核对 ${sum.unchecked || 0} 行，记录缺失 ${sum.untracked || 0} 行`;
-  syncLedgerPick();
-}
-// 「清理失效 STRM」只在真的勾了失效行时才可点
-function syncLedgerPick(){
-  el("ledgerDropBtn").disabled = ledgerStaleTargets().length === 0;
-}
-function toggleAllLedger(box){
-  ledgerPick = box.checked
-    ? new Set(ledgerRows.filter(r => r.stale_files > 0).map(r => r.id))
-    : new Set();
-  renderLedger();   // 只重画勾选态，摘要沿用 ledgerSum
-}
-// 交给后端的 id 只有「已勾选行里被确认云端失效」的那些 —— 正好是 ledgerVerify 返回的 stale_items[].id
-function ledgerStaleTargets(){
-  const ids = [];
-  for (const row of ledgerRows){
-    if (!ledgerPick.has(row.id) || !row.stale_files) continue;
-    for (const item of (row.items || [])){
-      if (item.tracked && item.verify_state === "no") ids.push(item.id);
-    }
-  }
-  return ids;
-}
-async function verifyLedger(){
-  const picked = [...ledgerPick];
-  const scope = picked.length ? `已勾选的 ${picked.length} 行` : "全部行";
-  if (!confirm(`对${scope}做云端核对？\n\n一部片/一季只问一次它所在的云目录，撞上 115 访问上限会自动停下。只做标记，不删任何东西。`)) return;
-  const btn = el("ledgerVerifyBtn");
-  btn.disabled = true;
-  el("ledgerResult").textContent = "核对中…";
-  const r = await call("ledger_verify", "POST", picked.length ? { ids: picked } : {});
-  btn.disabled = false;
-  el("ledgerResult").textContent = r.message || (r.success ? "核对完成" : "核对失败");
-  await loadLedger();
-}
-async function dropStaleLedger(){
-  const ids = ledgerStaleTargets();
-  if (!ids.length){ alert("没有勾选任何已确认失效的 STRM"); return; }
-  const rows = ledgerRows.filter(r => ledgerPick.has(r.id) && r.stale_files > 0);
-  const names = rows.slice(0, 3).map(r => r.title).join("、") + (rows.length > 3 ? " 等" : "");
-  if (!confirm(`将删除本地 ${ids.length} 个失效 .strm（涉及 ${rows.length} 行：${names}）。\n\n只删本地文件，绝不动云端。继续？`)) return;
-  if (!confirm(`再确认一次：确认删除这 ${ids.length} 个本地 .strm 文件？此操作不可撤销。`)) return;
-  const btn = el("ledgerDropBtn");
-  btn.disabled = true;
-  el("ledgerResult").textContent = "清理中…";
-  const r = await call("library_drop", "POST", { ids });
-  el("ledgerResult").textContent = r.message || (r.success ? "清理完成" : "清理失败");
-  await loadLedger();
 }
 
 /* ---- 一次性任务台 ---- */
