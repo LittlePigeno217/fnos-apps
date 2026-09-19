@@ -28,7 +28,6 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang 
 .input:focus{border-color:var(--accent)}
 select.input{padding:8px 8px}
 
-/* 顶栏 */
 .topbar{display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--surface);
   border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
 .brand{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
@@ -41,36 +40,42 @@ select.input{padding:8px 8px}
 .capsule.on{color:var(--ok);border-color:var(--ok)}
 .ver-badge{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
 
-/* 主布局 */
 .main{max-width:880px;margin:0 auto;padding:20px 18px 90px}
 .pane{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
 .pane h3{font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
 .pane h3 svg{width:18px;height:18px;color:var(--accent-strong)}
-.field-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.site-card{border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--surface2)}
-.site-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.site-name{font-weight:600;font-size:14px}
-.site-mode{font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+.section-desc{font-size:12.5px;color:var(--muted);margin:-6px 0 12px;line-height:1.6}
+
+/* 站点独立配置卡片 */
+.site-card{border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface2)}
+.site-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.site-avatar{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#2E8BF0,#1663D6);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#fff}
+.site-title{min-width:0}
+.site-name{font-weight:600;font-size:14.5px}
+.site-sub{font-size:12px;color:var(--muted)}
+.site-mode{font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px}
 .switch{position:relative;display:inline-block;width:40px;height:22px;flex:none}
 .switch input{opacity:0;width:0;height:0}
 .switch .track{position:absolute;inset:0;background:var(--surface);border:1px solid var(--border);border-radius:20px;cursor:pointer;transition:.2s}
 .switch .track::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:var(--muted);top:2px;left:2px;transition:.2s}
 .switch input:checked+.track{background:var(--accent);border-color:var(--accent)}
 .switch input:checked+.track::after{transform:translateX(18px);background:#fff}
-.switch.disabled{opacity:.4}
-.site-fields{display:flex;flex-direction:column;gap:8px}
-.site-actions{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.site-cfg{border-top:1px dashed var(--border);padding-top:10px}
+.cfg-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.cfg-label{width:88px;flex:none;color:var(--muted);font-size:12.5px}
+.cfg-label .kv{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+.site-actions{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
 .result-line{font-size:13px;margin-top:8px}
 .result-line.ok{color:var(--ok)}
 .result-line.err{color:var(--err)}
+.result-line.muted{color:var(--muted)}
+.recent{font-size:12px;color:var(--muted);margin-left:auto}
 
-/* 设置区 */
 .settings-grid{display:flex;flex-direction:column;gap:10px}
 .setting-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .setting-label{width:88px;flex:none;color:var(--muted);font-size:13px}
 .save-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:6px}
 
-/* 结果与历史 */
 .run-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 #runResult{font-size:13px;white-space:pre-line;line-height:1.7}
 .history-list{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-top:8px}
@@ -82,11 +87,9 @@ select.input{padding:8px 8px}
 .history-item .msg{flex:1;min-width:0;word-break:break-all}
 .history-item .tm{flex:none;color:var(--muted);font-size:11.5px}
 
-/* 左下角固定：功能版本 + 检查功能更新 */
 .footer-fixed{position:fixed;left:14px;bottom:12px;z-index:30;display:flex;align-items:center;gap:8px}
 .ver-badge-mini{font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:3px 10px}
 .hotfix-status{font-size:12px;color:var(--muted);max-width:340px;line-height:1.4}
-details.adv-block summary{cursor:pointer;padding:8px 12px;border-radius:8px;background:var(--surface2);font-size:13px}
 .empty{color:var(--muted);font-size:13px;text-align:center;padding:18px 0}
 @media (max-width:640px){
   .main{padding:14px 12px 100px}
@@ -101,7 +104,7 @@ details.adv-block summary{cursor:pointer;padding:8px 12px;border-radius:8px;back
   <div class="brand">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
     签到工具
-    <span class="brand-sub">FLZT · 恩山 · 易破解</span>
+    <span class="brand-sub">各站点独立配置 · 定时自动签到</span>
   </div>
   <span class="capsule" id="appCapsule"><span class="dot"></span><span id="appCapsuleText">加载中…</span></span>
   <span class="ver-badge" id="topVersion"></span>
@@ -109,13 +112,14 @@ details.adv-block summary{cursor:pointer;padding:8px 12px;border-radius:8px;back
 
 <div class="main">
 
-  <!-- 站点卡片 -->
+  <!-- 站点独立配置 -->
   <div class="pane">
-    <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 2-1 3-2.5 3H10l-4 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>站点签到</h3>
+    <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 2-1 3-2.5 3H10l-4 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>站点配置</h3>
+    <p class="section-desc">每个站点独立启用与配置。凭据只保存在本机应用数据目录；密码/Cookie 已配置时留空保存不修改。</p>
     <div id="siteCards"></div>
   </div>
 
-  <!-- 设置 -->
+  <!-- 全局设置 -->
   <div class="pane">
     <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.5a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.5a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>运行设置</h3>
     <div class="settings-grid">
@@ -127,7 +131,12 @@ details.adv-block summary{cursor:pointer;padding:8px 12px;border-radius:8px;back
       <div class="setting-row">
         <span class="setting-label">每日时刻</span>
         <input class="input mono" type="text" id="cfgCron" placeholder="08:10" style="max-width:110px">
-        <span class="muted" style="font-size:12.5px">每天自动签到时刻（HH:MM）；错过每 30 分钟自动补签，当天最多补 5 次</span>
+        <span class="muted" style="font-size:12.5px">每天自动签到时刻（HH:MM）；错过每 30 分钟补签，当天最多 5 次</span>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">失败重试</span>
+        <input class="input mono" type="text" id="cfgRetry" placeholder="3" style="max-width:90px">
+        <span class="muted" style="font-size:12.5px">站点签到失败时的重试次数（1-10）</span>
       </div>
       <div class="setting-row">
         <span class="setting-label">飞书通知</span>
@@ -145,7 +154,7 @@ details.adv-block summary{cursor:pointer;padding:8px 12px;border-radius:8px;back
     </div>
   </div>
 
-  <!-- 立即签到 + 结果 -->
+  <!-- 立即签到 -->
   <div class="pane">
     <div class="run-row">
       <button class="btn primary" onclick="runAll()">
@@ -170,7 +179,6 @@ details.adv-block summary{cursor:pointer;padding:8px 12px;border-radius:8px;back
 
 </div>
 
-<!-- 左下角：功能版本 + 检查功能更新 -->
 <div class="footer-fixed">
   <span class="ver-badge-mini" id="footerVersion">v1.0.0</span>
   <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
@@ -186,14 +194,33 @@ async function call(path, method = "GET", body = null) {
   try { return await r.json(); } catch { return { success: false, message: "响应解析失败" }; }
 }
 
-/* ── 站点卡片渲染 ─────────────────────────────── */
+/* ── 站点定义（参考上游插件配置项：enabled / use_proxy / email / password / cookie）── */
 const SITES = {
-  flzt: { name: "FLZT", mode: "账号密码", fields: ["email", "password"] },
-  right_forum: { name: "恩山无线论坛", mode: "Cookie", fields: ["cookie"] },
-  ypojie: { name: "易破解", mode: "账号密码", fields: ["email", "password"] },
+  flzt: {
+    name: "FLZT", mode: "账号密码", short: "FL",
+    desc: "flzt.club · 账号密码登录后调用签到 API",
+    fields: [
+      { key: "email", label: "账号/邮箱", secret: false, ph: "name@example.com" },
+      { key: "password", label: "密码", secret: true, ph: "输入新密码（留空不改）" },
+    ],
+  },
+  right_forum: {
+    name: "恩山无线论坛", mode: "Cookie", short: "恩",
+    desc: "right.com.cn · Cookie 签到（formhash + 人机验证识别）",
+    fields: [
+      { key: "cookie", label: "Cookie", secret: true, ph: "粘贴浏览器 Cookie（留空不改）" },
+    ],
+  },
+  ypojie: {
+    name: "易破解", mode: "账号密码", short: "易",
+    desc: "ypojie.com · WordPress 登录后 AJAX 签到",
+    fields: [
+      { key: "email", label: "账号/邮箱", secret: false, ph: "name@example.com" },
+      { key: "password", label: "密码", secret: true, ph: "输入新密码（留空不改）" },
+    ],
+  },
 };
-const FIELD_LABELS = { email: "账号/邮箱", password: "密码", cookie: "Cookie" };
-let siteCfg = {}; // 本地编辑态（enabled + 凭据增量）
+let siteCfg = {};
 
 function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
@@ -202,79 +229,92 @@ function renderSiteCards(serverSites) {
   box.innerHTML = "";
   for (const [key, info] of Object.entries(SITES)) {
     const st = (serverSites && serverSites[key]) || {};
-    siteCfg[key] = { enabled: !!st.enabled, email: "", password: "", cookie: "" };
-    const fields = info.fields.map((f) => {
-      const ph = f === "password" || f === "cookie" ? "已配置留空" : "";
-      const isSecret = f === "password" || f === "cookie";
-      return `<div class="field-row" style="margin-top:8px">
-        <span class="muted" style="width:62px;flex:none;font-size:13px">${FIELD_LABELS[f]}</span>
-        <input class="input mono grow" type="${isSecret ? "password" : "text"}" id="site_${key}_${f}" placeholder="${ph}" data-site="${key}" data-field="${f}">
-      </div>`;
-    }).join("");
+    siteCfg[key] = { enabled: !!st.enabled, use_proxy: !!st.use_proxy, email: "", password: "", cookie: "" };
+    const fields = `
+      <div class="cfg-row" style="margin-top:2px">
+        <span style="font-size:12.5px;font-weight:600;color:var(--text)">站点凭据</span>
+        <span class="muted" style="font-size:11px">凭据仅存本机 · 留空保存 = 保持当前</span>
+      </div>
+      ${info.fields.map((f) => `
+      <div class="cfg-row">
+        <span class="cfg-label">${f.label}</span>
+        <input class="input mono grow" type="${f.secret ? "password" : "text"}" id="site_${key}_${f.key}" data-site="${key}" data-field="${f.key}" placeholder="${f.ph}">
+      </div>`).join("")}
+    `;
     box.insertAdjacentHTML("beforeend", `
       <div class="site-card" id="card_${key}">
         <div class="site-head">
-          <span class="site-name">${esc(info.name)}</span>
+          <div class="site-avatar">${info.short}</div>
+          <div class="site-title">
+            <span class="site-name">${esc(info.name)}</span>
+            <span class="site-sub">${esc(info.desc)}</span>
+          </div>
           <span class="site-mode">${info.mode}</span>
-          <span class="muted" style="font-size:12px" id="account_${key}"></span>
           <span class="grow"></span>
-          <label class="switch"><input type="checkbox" id="sw_${key}" onchange="siteDirty('${key}')"><span class="track"></span></label>
+          <span class="muted" style="font-size:12px" id="account_${key}"></span>
+          <label class="switch" title="启用本站点"><input type="checkbox" id="sw_${key}" onchange="siteDirty('${key}')"><span class="track"></span></label>
         </div>
-        <div class="site-fields">${fields}</div>
+        <div class="site-cfg">
+          ${fields}
+          <div class="cfg-row">
+            <span class="cfg-label">代理访问<span class="kv">走系统代理</span></span>
+            <label class="switch" style="width:36px;height:20px"><input type="checkbox" id="px_${key}" onchange="siteDirty('${key}')"><span class="track"></span></label>
+            <span class="muted" style="font-size:12px">开启后经 https_proxy / all_proxy 环境变量代理访问</span>
+          </div>
+        </div>
         <div class="site-actions">
           <button class="btn btn-mini" onclick="testSite('${key}')">测试连接</button>
-          <button class="btn btn-mini primary" onclick="runSite('${key}')">签到</button>
+          <button class="btn btn-mini primary" onclick="runSite('${key}')">立即签到</button>
           <span class="result-line muted" id="res_${key}" style="margin-top:0"></span>
+          <span class="recent" id="recent_${key}"></span>
         </div>
       </div>`);
-    $("account_" + key).textContent = st.configured ? (st.account || "已配置") : "未配置";
+    $("account_" + key).textContent = st.enabled ? (st.configured ? (st.account || "已配置") : "已启用·未配凭据") : "未启用";
     $("sw_" + key).checked = !!st.enabled;
+    $("px_" + key).checked = !!st.use_proxy;
   }
 }
 
 function siteDirty(key) {
-  // 开关状态本地记录；保存时一并提交
   siteCfg[key].enabled = $("sw_" + key).checked;
+  siteCfg[key].use_proxy = $("px_" + key).checked;
   $("res_" + key).textContent = "";
 }
 
 function collectSitePatch(key) {
-  const p = { enabled: $("sw_" + key).checked };
+  const p = { enabled: $("sw_" + key).checked, use_proxy: $("px_" + key).checked };
   for (const f of SITES[key].fields) {
-    const v = $("site_" + key + "_" + f).value.trim();
-    if (v) p[f] = v;
+    const v = $("site_" + key + "_" + f.key).value.trim();
+    if (v) p[f.key] = v;
   }
   return p;
 }
 
 /* ── 设置加载/保存 ─────────────────────────────── */
-let dirtyTimer = null;
-function markCfgDirty() {
-  const btn = $("cfgSaveBtn"), st = $("cfgStatus");
-  btn.textContent = "保存设置（有更改）";
-  st.textContent = "有未保存的更改";
-}
-async function loadAll() {
+async function loadAll(initial) {
   const r = await call("get_config");
   if (!r.success) return;
   const d = r.data;
   $("cfgEnabled").checked = !!d.enabled;
   $("cfgCron").value = d.cron || "08:10";
+  $("cfgRetry").value = d.retry_count || "3";
   $("cfgNotify").checked = !!d.notify_enabled;
   $("topVersion").textContent = "功能 v" + (d.version || "1.0.0");
   $("footerVersion").textContent = "v" + (d.version || "1.0.0");
   renderSiteCards(d.sites);
   updateCapsule(!!d.enabled);
-  refreshHistory();
+  if (!initial) refreshHistory();
 }
 async function saveSettings() {
   const cron = $("cfgCron").value.trim();
   if (!/^\d{2}:\d{2}$/.test(cron)) { alert("每日时刻格式应为 HH:MM"); return; }
+  const retry = parseInt($("cfgRetry").value.trim(), 10);
+  if (!Number.isFinite(retry) || retry < 1 || retry > 10) { alert("失败重试应为 1-10 的数字"); return; }
   const sites = {};
   for (const key of Object.keys(SITES)) sites[key] = collectSitePatch(key);
   const body = {
     enabled: $("cfgEnabled").checked === true,
-    cron,
+    cron, retry_count: retry,
     notify_enabled: $("cfgNotify").checked === true,
     sites,
   };
@@ -300,7 +340,7 @@ function updateCapsule(on) {
 
 /* ── 签到执行 ─────────────────────────────────── */
 async function runSite(key) {
-  $("res_" + key).textContent = "签到中…";
+  $("res_" + key).textContent = "签到中…"; $("res_" + key).className = "result-line muted";
   const r = await call("run", "POST", { sites: [key] });
   const data = r.data || {};
   const item = (data.results || []).find((x) => x.site_key === key);
@@ -391,10 +431,11 @@ async function hotfixMiniApply() {
 }
 
 /* ── 初始化 ───────────────────────────────────── */
-["cfgEnabled", "cfgCron", "cfgNotify", "cfgWebhook"].forEach((id) => {
-  $(id).addEventListener("change", markCfgDirty);
+["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook"].forEach((id) => {
+  $(id).addEventListener("change", () => { $("cfgSaveBtn").textContent = "保存设置（有更改）"; $("cfgStatus").textContent = "有未保存的更改"; });
 });
-loadAll();
+loadAll(true);
+refreshHistory();
 setInterval(() => { call("get_config").then((r) => { if (r.success) updateCapsule(!!r.data.enabled); }); }, 30000);
 </script>
 </body>

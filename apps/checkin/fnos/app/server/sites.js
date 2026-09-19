@@ -56,7 +56,7 @@ const FLZT = {
 
   async _login(cfg) {
     const s = new Session();
-    const r = await s.postJson(this.base + this.loginPath, { email: cfg.email, password: cfg.password }, { timeout: 15000 });
+    const r = await s.postJson(this.base + this.loginPath, { email: cfg.email, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
     const j = parseJson(r.text);
     if (!j || j.status !== "success" || !(j.data || {}).auth_data) {
       throw new Error((j && j.message) || `FLZT 登录失败（HTTP ${r.status}）`);
@@ -69,7 +69,7 @@ const FLZT = {
     const s = new Session();
     const r = await s.get(this.base + this.checkinPath, {
       headers: { authorization: token, Accept: "application/json, text/plain, */*" },
-      timeout: 15000,
+      timeout: 15000, useProxy: cfg.use_proxy,
     });
     const j = parseJson(r.text);
     if (!j || !["success", "fail"].includes(j.status)) {
@@ -149,12 +149,12 @@ const RIGHT_FORUM = {
     }
   },
 
-  async _fetchSignPage(cookie) {
+  async _fetchSignPage(cookie, useProxy) {
     let lastErr = null;
     for (const path of this.signPages) {
       try {
         const s = new Session();
-        const r = await s.get(this.base + path, { headers: this._headers(cookie, this.forumPage), timeout: 15000 });
+        const r = await s.get(this.base + path, { headers: this._headers(cookie, this.forumPage), timeout: 15000, useProxy: useProxy });
         const text = r.text;
         this._ensureUsable(text);
         const formhash = extractFormhash(text);
@@ -183,11 +183,11 @@ const RIGHT_FORUM = {
     const cookie = (cfg.cookie || "").trim();
     if (!cookie) throw new Error("请先配置恩山无线论坛 Cookie");
 
-    const { formhash, text: pageText, path } = await this._fetchSignPage(cookie);
+    const { formhash, text: pageText, path } = await this._fetchSignPage(cookie, cfg.use_proxy);
     const pageStats = this._extractStats(pageText);
 
     const s = new Session();
-    const r = await s.postForm(this.base + this.signAction, { formhash }, { headers: this._headers(cookie, path, true), timeout: 15000 });
+    const r = await s.postForm(this.base + this.signAction, { formhash }, { headers: this._headers(cookie, path, true), timeout: 15000, useProxy: cfg.use_proxy });
     this._ensureUsable(r.text);
     const payload = parseJson(r.text);
     if (!payload || typeof payload !== "object") {
@@ -222,7 +222,7 @@ const RIGHT_FORUM = {
   },
 
   async testConnection(cfg) {
-    await this._fetchSignPage((cfg.cookie || "").trim());
+    await this._fetchSignPage((cfg.cookie || "").trim(), cfg.use_proxy);
     return { site: this.key, site_name: this.name, message: "Cookie 有效，签到页可访问" };
   },
 };
@@ -277,7 +277,7 @@ const YPOJIE = {
     if (!account || !password) throw new Error("请先配置易破解账号和密码");
 
     const s = new Session();
-    const loginPage = await s.get(this.base + this.loginPath, { headers: this._loginHeaders(), timeout: 15000 });
+    const loginPage = await s.get(this.base + this.loginPath, { headers: this._loginHeaders(), timeout: 15000, useProxy: cfg.use_proxy });
     const slider = this._extractSlider(loginPage.text);
 
     const form = {
@@ -296,21 +296,21 @@ const YPOJIE = {
         _wp_http_referer: this.loginPath,
       });
     }
-    await s.postForm(this.base + this.loginPath, form, { headers: this._loginHeaders(), timeout: 15000 });
+    await s.postForm(this.base + this.loginPath, form, { headers: this._loginHeaders(), timeout: 15000, useProxy: cfg.use_proxy });
 
     // 登录后验证：访问 vip 页确认已登录
-    const vipPage = await s.get(this.base + this.vipPath, { headers: this._loginHeaders(), timeout: 15000 });
+    const vipPage = await s.get(this.base + this.vipPath, { headers: this._loginHeaders(), timeout: 15000, useProxy: cfg.use_proxy });
     this._validateLoginPage(vipPage.text);
     return { s, beforePage: vipPage.text };
   },
 
   async runCheckin(cfg) {
     const { s, beforePage } = await this._login(cfg);
-    const r = await s.postForm(this.base + this.ajaxPath, { action: "epd_checkin" }, { headers: this._loginHeaders(), timeout: 15000 });
+    const r = await s.postForm(this.base + this.ajaxPath, { action: "epd_checkin" }, { headers: this._loginHeaders(), timeout: 15000, useProxy: cfg.use_proxy });
     const j = parseJson(r.text) || {};
     let afterPage = "";
     try {
-      const after = await s.get(this.base + this.vipPath, { headers: this._loginHeaders(), timeout: 15000 });
+      const after = await s.get(this.base + this.vipPath, { headers: this._loginHeaders(), timeout: 15000, useProxy: cfg.use_proxy });
       afterPage = after.text;
     } catch { /* 余额差取不到不致命 */ }
 

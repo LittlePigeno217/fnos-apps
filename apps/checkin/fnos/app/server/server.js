@@ -30,6 +30,7 @@ class Server {
       version: cfg.version,          // 功能版本（左下角显示）
       cron: cfg.cron,
       notify_enabled: cfg.notify_enabled,
+      retry_count: cfg.retry_count,
       feishu_configured: !!(cfg.feishu_webhook),
       sites: {},
     };
@@ -40,6 +41,7 @@ class Server {
         name: adapter.name,
         mode: adapter.mode,
         enabled: !!site.enabled,
+        use_proxy: !!site.use_proxy,
         account: adapter.getAccountLabel(site),
         configured: adapter.isConfigured(site),
       };

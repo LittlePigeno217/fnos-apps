@@ -11,11 +11,12 @@ const DEFAULT_CONFIG = {
   version: "1.0.0",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
+  retry_count: 3,          // 站点失败重试次数
   feishu_webhook: "",      // 飞书机器人 Webhook
   sites: {
-    flzt: { enabled: false, email: "", password: "" },
-    right_forum: { enabled: false, cookie: "" },
-    ypojie: { enabled: false, email: "", password: "" },
+    flzt: { enabled: false, use_proxy: false, email: "", password: "" },
+    right_forum: { enabled: false, use_proxy: false, cookie: "" },
+    ypojie: { enabled: false, use_proxy: false, email: "", password: "" },
   },
 };
 
@@ -64,6 +65,10 @@ class Store {
     if (patch.enabled !== undefined) cfg.enabled = !!patch.enabled;
     if (patch.cron !== undefined) cfg.cron = String(patch.cron || "08:10");
     if (patch.notify_enabled !== undefined) cfg.notify_enabled = !!patch.notify_enabled;
+    if (patch.retry_count !== undefined) {
+      const n = parseInt(patch.retry_count, 10);
+      cfg.retry_count = Number.isFinite(n) ? Math.max(1, Math.min(10, n)) : cfg.retry_count;
+    }
     if (patch.feishu_webhook !== undefined) {
       const v = String(patch.feishu_webhook || "").trim();
       if (v) cfg.feishu_webhook = v; // 留空 = 不修改
@@ -74,6 +79,7 @@ class Store {
         if (!site || typeof site !== "object") continue;
         const cur = cfg.sites[k];
         if (site.enabled !== undefined) cur.enabled = !!site.enabled;
+        if (site.use_proxy !== undefined) cur.use_proxy = !!site.use_proxy;
         if (site.email !== undefined) cur.email = String(site.email || "").trim();
         if (site.password !== undefined) {
           const v = String(site.password || "");
