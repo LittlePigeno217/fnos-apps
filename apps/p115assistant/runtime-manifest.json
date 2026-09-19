@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generated_at": "2026-09-19T12:09:18Z",
+  "generated_at": "2026-09-19T12:17:16Z",
   "files": {
     "server/client.js": {
       "sha256": "f79e50a308907ceeaf743c264fd4e8f451985381b739ff5e22a28bd556c048bb",
@@ -43,11 +43,11 @@
       "size": 108075
     },
     "server/store.js": {
-      "sha256": "b83d48f6849bbd7cbc8cecde6eb3591d24aaca8d131798dbf4e2f11be01fc5f9",
+      "sha256": "38823a10447d413c182f09f589841aa0b8f243e7b9e4a17fc2c448b1ae31fd50",
       "size": 10478
     },
     "server/update.js": {
-      "sha256": "9e384356ce9872eae3c43f033ebc28b232b589345e57ca05d1caddcbb58e6571",
+      "sha256": "692b47a7090d15edc2e76363d3eb1bdacb64c9e342332700e88b98663cfe996c",
       "size": 19927
     },
     "www/index.html": {
