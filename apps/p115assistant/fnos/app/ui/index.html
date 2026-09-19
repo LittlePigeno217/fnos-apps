@@ -104,6 +104,34 @@
   .chip.on { color: var(--ok); border-color: var(--ok-border); }
   .chip.on::before { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-glow); }
 
+  /* ---------- 顶栏状态胶囊 + 账号菜单 ---------- */
+  .status-capsule { display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px;
+                    background: var(--card); border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
+  .cap-seg { padding: 2px 9px; border-radius: 999px; color: var(--muted); white-space: nowrap;
+             font-variant-numeric: tabular-nums; }
+  .cap-seg.cap-on { color: var(--ok); }
+  .cap-seg.cap-warn { color: var(--danger, #e5484d); }
+  .acct { position: relative; }
+  .acct-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+              border: 1px solid var(--border); border-radius: 50%; background: var(--card);
+              cursor: pointer; padding: 0; transition: border-color .12s ease; }
+  .acct-btn:hover { border-color: var(--accent); }
+  .acct-avatar { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+                 border-radius: 50%; background: var(--accent-soft); color: var(--accent-strong);
+                 font-size: 12px; font-weight: 700; }
+  .acct-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 210px; z-index: 60;
+               background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+               box-shadow: var(--shadow); padding: 6px; animation: acctIn .14s ease; }
+  @keyframes acctIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .acct-head { padding: 8px 10px; border-bottom: 1px solid var(--border); margin-bottom: 5px; }
+  .acct-name { font-size: 13px; font-weight: 600; }
+  .acct-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .acct-item { display: block; width: 100%; text-align: left; padding: 8px 10px; font-size: 13px;
+               border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; }
+  .acct-item:hover { background: var(--accent-soft); color: var(--accent-strong); }
+  .acct-item.acct-danger { color: var(--danger, #e5484d); }
+  .acct-item.acct-danger:hover { background: rgba(229, 72, 77, .12); color: var(--danger, #e5484d); }
+
   /* ---------- 卡片与工具条 ---------- */
   .pane { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
           padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow); }
@@ -426,7 +454,26 @@
   <div class="main">
     <header class="topbar">
       <h1 class="page-title" id="pageTitle">网盘</h1>
-      <span class="chip" id="authLine">未登录</span>
+      <span style="flex:1"></span>
+      <span class="status-capsule" id="statusCapsule" hidden>
+        <span class="cap-seg cap-on" id="capWatch" hidden></span>
+        <span class="cap-seg" id="capUpload" hidden></span>
+        <span class="cap-seg cap-warn" id="capRisk" hidden></span>
+      </span>
+      <div class="acct" id="acctBox">
+        <button class="acct-btn" id="acctBtn" onclick="toggleAcctMenu(event)" aria-haspopup="true" aria-expanded="false" title="账号">
+          <span class="acct-avatar" id="acctAvatar">?</span>
+        </button>
+        <div class="acct-menu" id="acctMenu" hidden>
+          <div class="acct-head">
+            <div class="acct-name" id="acctName">未登录</div>
+            <div class="acct-sub" id="acctSub">115 网盘助手</div>
+          </div>
+          <button class="acct-item" onclick="acctLogin()">登录 / 切换账号</button>
+          <button class="acct-item acct-danger" onclick="acctLogout()">退出登录</button>
+          <button class="acct-item" id="acctForget" style="display:none" onclick="acctForget()">清除 fnOS 凭据</button>
+        </div>
+      </div>
     </header>
     <div class="content">
 
@@ -917,6 +964,9 @@
           </table>
         </div>
         <p class="empty" id="historyEmpty">暂无执行记录</p>
+        <div style="text-align:center;margin-top:8px">
+          <button class="btn" id="historyMoreBtn" onclick="renderHistoryPage()" hidden>加载更多</button>
+        </div>
       </section>
 
     </div>
@@ -3239,19 +3289,75 @@ function refreshAuth(){ /* 授权刷新由宿主选择器提供；独立页面�
 
 /* ---- 通用 ---- */
 const TITLES = { drive:"网盘", upload:"上传", signin:"签到", link:"STRM", ledger:"媒体库", settings:"设置", log:"日志", history:"历史" };
-function setAuth(text, on){
-  const c = el("authLine");
-  c.textContent = text;
-  c.classList.toggle("on", !!on);
+
+/* ---- 顶栏账号菜单（人性化交互：右上角账号 → 信息/切换/退出/清凭据） ---- */
+function confirmDanger(msg){ return window.confirm(msg); }
+function closeAcct(){ const m=el("acctMenu"); if(m && !m.hidden){ m.hidden=true; const b=el("acctBtn"); if(b) b.setAttribute("aria-expanded","false"); } }
+// 点击菜单外关闭 / Esc 关闭
+document.addEventListener("click", (ev)=>{ const box=el("acctBox"); if(box && !box.contains(ev.target)) closeAcct(); });
+document.addEventListener("keydown", (ev)=>{ if(ev.key==="Escape") closeAcct(); });
+function toggleAcctMenu(ev){ if(ev) ev.stopPropagation(); const m=el("acctMenu"), b=el("acctBtn"); const show = m.hidden; m.hidden = !show; if(b) b.setAttribute("aria-expanded", String(show)); }
+function renderAccount(d){
+  const av=el("acctAvatar"), nm=el("acctName"), sub=el("acctSub"), fg=el("acctForget");
+  if (!d || !d.authenticated){
+    av.textContent="?"; nm.textContent="未登录";
+    sub.textContent="115 网盘助手 · 点击登录"; fg.style.display="none";
+    return;
+  }
+  const uid = d.user_id || "";
+  av.textContent = uid ? uid.slice(0,2) : "115";
+  nm.textContent = uid ? "用户 "+uid : "已登录";
+  const mode = d.auth_mode==="open" ? "令牌登录" : d.auth_mode==="cookie" ? "扫码登录" : d.client_type||"已登录";
+  sub.textContent = "115 网盘助手 · "+mode;
+  // fnOS 凭据已配置时才展示「清除凭据」
+  call("get_config").then((r)=>{ if(r.success && r.data) fg.style.display = r.data.fnos_configured ? "" : "none"; }).catch(()=>{});
 }
+function acctLogin(){ closeAcct(); openQr(); }
+async function acctLogout(){
+  if(!confirmDanger("确定退出登录？\n将清除 115 登录 Cookie/令牌，上传与 STRM 需要重新登录。")) return;
+  const r=await call("logout","POST",{});
+  alert(r.message || (r.success ? "已退出登录" : "退出失败"));
+  closeAcct(); renderAccount(null); refreshDrive();
+}
+async function acctForget(){
+  if(!confirmDanger("清除 fnOS 凭据？\n用于自动安装预检与功能热更新的系统登录信息将被删除。")) return;
+  const r=await call("fnos_forget","POST",{});
+  alert(r.message || "已清除");
+  closeAcct(); renderAccount(null);
+}
+
+/* ---- 顶栏全局状态胶囊（监听/上传/风控） ---- */
+async function updateStatusCapsule(){
+  const cap=el("statusCapsule"); if(!cap) return;
+  const [w, u] = await Promise.all([
+    call("watcher_status").catch(()=>null),
+    call("upload_status").catch(()=>null),
+  ]);
+  let segs=0;
+  const wr = !!(w && w.success && w.data && w.data.running);
+  const cw=el("capWatch"); cw.textContent = wr ? "● 监听中" : ""; cw.hidden = !wr; if(wr) segs++;
+  const ud = (u && u.success) ? u.data : null;
+  const act = ud ? (Number(ud.active)||0) : 0, pend = ud ? (Number(ud.pending)||0) : 0;
+  const cu=el("capUpload"); cu.textContent = (act+pend)>0 ? `⇧ 上传 ${act}${pend>0?`+${pend}`:""}` : ""; cu.hidden = (act+pend)===0; if((act+pend)>0) segs++;
+  const rk = (ud && ud.risk) || (w && w.success && w.data && w.data.risk) || null;
+  const cr=el("capRisk");
+  if(rk && rk.limited){ const min=Math.ceil((rk.remaining_ms||0)/60000); cr.textContent=`🛡 风控暂停 ${min}分`; cr.hidden=false; segs++; }
+  else { cr.textContent=""; cr.hidden=true; }
+  cap.hidden = segs===0;
+}
+function setAuth(text, on){
+  // 兼容旧调用：由 renderAccount 接管；不涉及 authLine（已移除）
+  renderAccount(on ? { authenticated:true, user_id: String(text||"").replace(/^已登录（用户 |）$/g,"") } : null);
+}
+
 async function boot(){
   await refreshDrive();
   const s = await call("status");
-  if (s.success && s.data){
-    if (s.data.auth_mode==="none"){ setAuth("未登录", false); }
-    else { setAuth(s.data.user_id ? "已登录（用户 "+s.data.user_id+"）" : "已登录", true); }
-  }
+  if (s.success && s.data){ renderAccount(s.data); }
+  else { renderAccount(null); }
   await loadSettings();
+  updateStatusCapsule();
+  setInterval(updateStatusCapsule, 8000);
   pollLog();
   setInterval(pollLog, 4000);
 }
@@ -3281,7 +3387,7 @@ async function refreshDrive(){
   const r = await call("disk_list?cid="+encodeURIComponent(cid));
   const tb = el("driveTable").querySelector("tbody");
   tb.innerHTML="";
-  if (!r.success){ el("driveEmpty").textContent=r.message||"加载失败"; el("driveTable").hidden=true; return; }
+  if (!r.success){ el("driveEmpty").innerHTML = (r.message||"加载失败")+" · <a href=\"javascript:void(0)\" onclick=\"refreshDrive()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>"; el("driveTable").hidden=true; return; }
   el("driveTable").hidden=false;
   el("driveEmpty").textContent = r.data.items && r.data.items.length ? "" : "空目录";
   el("upBtn").disabled = (stack.length===0);
@@ -3777,7 +3883,7 @@ function targetConfirm(){
 }
 
 /* ---- 签到 ---- */
-async function checkinNow(){ const r=await call("checkin_now","POST",{}); el("signinResult").textContent=r.message||(r.success?"完成":"失败"); }
+async function checkinNow(){ const btn=el("signinNowBtn")||document.querySelector("#tab-signin .btn.primary"); if(btn){ btn.disabled=true; btn.style.opacity=".6"; } el("signinResult").textContent="签到中…"; try { const r=await call("checkin_now","POST",{}); el("signinResult").textContent=r.message||(r.success?"完成":"失败"); } finally { if(btn){ btn.disabled=false; btn.style.opacity=""; } } }
 // 签到时段显示跟随「应用中心 → 运行设置」配置（配置项已迁移；2026-09-17）
 async function refreshSigninRange(){
   const r=await call("get_config");
@@ -4160,6 +4266,9 @@ document.addEventListener("click", (e)=>{
 
 /* ---- 历史 ---- */
 const HISTORY_TYPES = { upload:"上传", checkin:"签到", link:"取链", strm:"STRM", other:"其他" };
+let historyAll = [];
+let historyIdx = 0;
+const HISTORY_PAGE = 50;
 async function refreshConflicts(){
   const tb = el("conflictTable").querySelector("tbody");
   tb.innerHTML="";
@@ -4211,12 +4320,29 @@ async function refreshHistory(){
   const r = await call("history");
   const tb = el("historyTable").querySelector("tbody");
   const empty = el("historyEmpty");
+  const more = el("historyMoreBtn");
   tb.innerHTML="";
-  if (!r.success){ empty.textContent = r.message || "读取失败"; empty.hidden=false; el("historyTable").hidden=true; return; }
+  if (!r.success){
+    empty.innerHTML = (r.message || "读取失败") + " · <a href=\"javascript:void(0)\" onclick=\"refreshHistory()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>";
+    empty.hidden=false; el("historyTable").hidden=true; if(more) more.hidden=true;
+    historyAll = [];
+    return;
+  }
   const items = r.data.items || [];
+  historyAll = items;
+  historyIdx = 0;
   empty.hidden = items.length > 0;
   el("historyTable").hidden = items.length === 0;
-  for (const it of items){
+  if (more) more.hidden = items.length <= HISTORY_PAGE;
+  renderHistoryPage();
+}
+function renderHistoryPage(){
+  const tb = el("historyTable").querySelector("tbody");
+  const slice = historyAll.slice(historyIdx, historyIdx + HISTORY_PAGE);
+  historyIdx += slice.length;
+  const more = el("historyMoreBtn");
+  if (more) more.hidden = historyIdx >= historyAll.length;
+  for (const it of slice){
     const tr = document.createElement("tr");
     const d = new Date(Number(it.ts) || 0);
     const time = isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12: false });
