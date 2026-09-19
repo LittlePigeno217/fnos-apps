@@ -1,14 +1,7 @@
 #!/bin/sh
-# 115网盘助手 配置变更回调：应用中心「应用设置 → 运行设置」保存后，
-# fnOS 把 wizard/config 字段值作为同名环境变量传入（无 TRIM_ 前缀）。
-#
-# 本脚本把字段值通过后端 save_config API 写回配置存储（p115assistant_config.json，
-# 由 store.updateConfig 统一加密落盘——与前端共用同一写入逻辑，单一事实源）。
-# 后端 getConfig() 每次读盘无缓存，落盘即生效，无需重启进程。
-#
-# 约定：
-#   - 布尔字段（switch）：环境变量为 "true"/"false" 字符串，转为 JSON true/false
-#   - 空字符串字段：跳过（避免覆盖已保存值；webhook 留空表示不修改）
+# 115网盘助手 配置变更回调：应用中心「应用设置」已无可配置业务字段
+# （全部配置已迁移到应用内页面：登录 / 上传 / STRM / 签到 / 设置）。
+# 保留回调框架以兼容 fnOS 生命周期调用；收到字段直接忽略并记录。
 set -u
 
 APP_DIR="${TRIM_APPDEST:-/vol1/@appcenter/p115assistant}"
@@ -24,115 +17,6 @@ log_msg() {
 }
 
 log_msg "=== config_callback start ==="
-
-# 收集 wizard 字段（POSIX sh 用 case 逐字段读取环境变量）
-# 布尔字段：switch 提交值为 true/false
-_json=""
-_set_field() { # $1=json键 $2=原值 $3=类型(text|bool)
-    _v="$2"
-    [ -n "$_v" ] || return 0          # 空值跳过
-    _is_bool=0
-    if [ "$3" = "bool" ]; then
-        case "$_v" in
-            true|True|TRUE|1|on|yes) _jv="true"; _is_bool=1 ;;
-            false|False|FALSE|0|off|no) _jv="false"; _is_bool=1 ;;
-            *) return 0 ;;             # 未知值跳过，不覆盖
-        esac
-    else
-        _jv="$(printf '%s' "$_v" | sed 's/"/\\"/g')"
-    fi
-    if [ "$_is_bool" = "1" ]; then
-        if [ -z "$_json" ]; then
-            _json="\"$1\":$_jv"
-        else
-            _json="$_json,\"$1\":$_jv"
-        fi
-    else
-        if [ -z "$_json" ]; then
-            _json="\"$1\":\"$_jv\""
-        else
-            _json="$_json,\"$1\":\"$_jv\""
-        fi
-    fi
-}
-
-case "${enabled:-}" in
-    true|True|TRUE|1|on|yes) _set_field enabled true bool ;;
-    false|False|FALSE|0|off|no) _set_field enabled false bool ;;
-esac
-case "${rate_limit_profile:-}" in
-    conservative|balanced|fast|aggressive) _set_field rate_limit_profile "$rate_limit_profile" text ;;
-esac
-case "${upload_generate_strm:-}" in
-    true|True|TRUE|1|on|yes) _set_field upload_generate_strm true bool ;;
-    false|False|FALSE|0|off|no) _set_field upload_generate_strm false bool ;;
-esac
-case "${upload_delete_source:-}" in
-    true|True|TRUE|1|on|yes) _set_field upload_delete_source true bool ;;
-    false|False|FALSE|0|off|no) _set_field upload_delete_source false bool ;;
-esac
-case "${upload_conflict_policy:-}" in
-    ask|adopt|reupload) _set_field upload_conflict_policy "$upload_conflict_policy" text ;;
-esac
-case "${upload_risk_profile:-}" in
-    conservative|balanced|aggressive) _set_field upload_risk_profile "$upload_risk_profile" text ;;
-esac
-case "${checkin_enabled:-}" in
-    true|True|TRUE|1|on|yes) _set_field checkin_enabled true bool ;;
-    false|False|FALSE|0|off|no) _set_field checkin_enabled false bool ;;
-esac
-case "${checkin_time_range:-}" in
-    ??:??-??:??) _set_field checkin_time_range "$checkin_time_range" text ;;
-esac
-case "${checkin_notify:-}" in
-    true|True|TRUE|1|on|yes) _set_field checkin_notify true bool ;;
-    false|False|FALSE|0|off|no) _set_field checkin_notify false bool ;;
-esac
-case "${feishu_enabled:-}" in
-    true|True|TRUE|1|on|yes) _set_field feishu_enabled true bool ;;
-    false|False|FALSE|0|off|no) _set_field feishu_enabled false bool ;;
-esac
-[ -n "${feishu_webhook:-}" ] && _set_field feishu_webhook "$feishu_webhook" text
-case "${relay_port:-}" in
-    [0-9]|[0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9])
-        _set_field relay_port "$relay_port" text ;;
-esac
-
-if [ -z "$_json" ]; then
-    log_msg "无有效字段提交，跳过"
-    log_msg "=== config_callback end (no-op) ==="
-    exit 0
-fi
-
-# 检查 socket 是否存在
-if [ ! -S "$SOCKET_FILE" ]; then
-    log_msg "后端 socket 不存在（$SOCKET_FILE），配置未应用"
-    log_msg "=== config_callback end (socket missing) ==="
-    exit 1
-fi
-
-_payload="{$_json}"
-log_msg "payload keys: $(printf '%s' "$_payload" | grep -o '"[a-z_]*":' | tr -d '":' | tr '\n' ',')"
-
-_resp="$(curl -s --max-time 10 --unix-socket "$SOCKET_FILE" \
-    -X POST "http://localhost/action/save_config" \
-    -H 'Content-Type: application/json' \
-    -d "$_payload" 2>&1)" || {
-    log_msg "调用 save_config 失败: $_resp"
-    log_msg "=== config_callback end (curl error) ==="
-    exit 1
-}
-
-case "$_resp" in
-    *'"success":true'*)
-        log_msg "配置已应用成功"
-        ;;
-    *)
-        log_msg "配置应用失败: $_resp"
-        log_msg "=== config_callback end (api error) ==="
-        exit 1
-        ;;
-esac
-
-log_msg "=== config_callback end ==="
+log_msg "配置已全部迁移到应用内页面，忽略应用设置回调"
+log_msg "=== config_callback end (no-op) ==="
 exit 0
