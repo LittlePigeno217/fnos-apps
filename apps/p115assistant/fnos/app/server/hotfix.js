@@ -42,7 +42,7 @@ function sha256File(filePath) {
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const req = https.get(u, { headers: { "User-Agent": "p115assistant-hotfix/1.0" }, timeout: 30000 }, (res) => {
+    const req = https.get(u, { headers: { "User-Agent": "p115assistant-hotfix/1.0", "Cache-Control": "no-cache" }, timeout: 30000 }, (res) => {
       if (res.statusCode >= 400) {
         res.resume();
         reject(new Error(`HTTP ${res.statusCode}`));
@@ -58,12 +58,17 @@ function httpsGet(url) {
 }
 
 async function fetchManifest() {
-  const buf = await httpsGet(MANIFEST_URL);
+  const buf = await httpsGet(bust(MANIFEST_URL));
   const m = JSON.parse(buf.toString("utf8"));
   if (!m || typeof m.version !== "string" || !m.files || typeof m.files !== "object") {
     throw new Error("清单格式错误");
   }
   return m;
+}
+
+/** 缓存破坏：raw.githubusercontent.com CDN 可能强缓存，加时间戳参数绕过 */
+function bust(url) {
+  return url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
 }
 
 /** 检查差异：返回 { version, has_update, changed: [{rel, size}] } */
@@ -122,8 +127,8 @@ async function applyHotfix(appDir, dataDir, creds) {
     } catch {
       /* 原文件不存在则不备份 */
     }
-    // 下载新文件（raw 直链，安装路径→仓库路径）
-    const rawUrl = `${RAW_BASE}/${rawRel(rel)}`;
+    // 下载新文件（raw 直链，安装路径→仓库路径；带缓存破坏参数）
+    const rawUrl = bust(`${RAW_BASE}/${rawRel(rel)}`);
     const buf = await httpsGet(rawUrl);
     if (sha256Hex(buf) !== String(info.sha256 || "")) {
       try { fs.unlinkSync(bak); } catch { /* ignore */ }
