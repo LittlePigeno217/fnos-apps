@@ -112,29 +112,43 @@ function bust(url) {
 }
 
 /** 检查差异：返回 { version, has_update, changed: [{rel, size}] } */
+let hotfixCache = null; // { ts, payload } — 检查结果缓存（10 分钟），避免每次点击都等待 raw
+const HOTFIX_CACHE_TTL = 10 * 60 * 1000;
+
 async function checkHotfix(appDir) {
-  const manifest = await fetchManifest();
-  const changed = [];
-  for (const [rel0, info] of Object.entries(manifest.files)) {
-    const rel = safeRel(rel0); // 白名单校验（防路径穿越）
-    // 安装目录文件哈希对比
-    const p = path.join(appDir, rel);
-    let current = "";
-    try {
-      current = await sha256File(p);
-    } catch {
-      /* 文件缺失视为待更新 */
-    }
-    if (current !== String(info.sha256 || "")) {
-      changed.push({ rel, size: Number(info.size) || 0 });
-    }
+  if (hotfixCache && Date.now() - hotfixCache.ts < HOTFIX_CACHE_TTL) {
+    return hotfixCache.payload;
   }
-  return {
-    version: manifest.version,
-    generated_at: manifest.generated_at || "",
-    has_update: changed.length > 0,
-    changed,
-  };
+  try {
+    const manifest = await fetchManifest();
+    const changed = [];
+    for (const [rel0, info] of Object.entries(manifest.files)) {
+      const rel = safeRel(rel0); // 白名单校验（防路径穿越）
+      // 安装目录文件哈希对比
+      const p = path.join(appDir, rel);
+      let current = "";
+      try {
+        current = await sha256File(p);
+      } catch {
+        /* 文件缺失视为待更新 */
+      }
+      if (current !== String(info.sha256 || "")) {
+        changed.push({ rel, size: Number(info.size) || 0 });
+      }
+    }
+    const payload = {
+      version: manifest.version,
+      generated_at: manifest.generated_at || "",
+      has_update: changed.length > 0,
+      changed,
+    };
+    hotfixCache = { ts: Date.now(), payload };
+    return payload;
+  } catch (err) {
+    // raw 拉取失败时兜底返回最近一次检查结果（陈旧可用），避免前端解析失败
+    if (hotfixCache) return hotfixCache.payload;
+    throw err;
+  }
 }
 
 /** 应用热更新：下载差异 → sha256 校验 → 替换（备份旧文件）→ 记录 → 重启 */

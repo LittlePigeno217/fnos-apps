@@ -222,11 +222,19 @@ section[hidden]{display:none}
 
 <script>
 const $ = (id) => document.getElementById(id);
-async function call(path, method = "GET", body = null) {
-  const opt = { method, headers: {} };
-  if (body) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
-  const r = await fetch(path, opt);
-  try { return await r.json(); } catch { return { success: false, message: "响应解析失败" }; }
+async function call(path, method = "GET", body = null, timeoutMs = 15000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const opt = { method, headers: {}, signal: ctrl.signal };
+    if (body) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+    const r = await fetch(path, opt);
+    try { return await r.json(); } catch { return { success: false, message: "响应解析失败" }; }
+  } catch (e) {
+    return { success: false, message: "请求超时或网络异常" };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const TITLES = { sites: "站点签到", settings: "运行设置", history: "签到历史" };
@@ -446,11 +454,11 @@ async function hotfixMiniClick() {
 async function hotfixMiniCheck() {
   const btn = $("hotfixMiniBtn"), st = $("hotfixStatus");
   btn.disabled = true; st.textContent = "检查中…";
-  const r = await call("check_hotfix");
+  const r = await call("check_hotfix", "GET", null, 20000);
   const d = r.data || {};
   hotfixState.has_update = !!d.has_update;
   hotfixState.version = d.version || "";
-  if (!r.success) { st.textContent = (r.message || "检查失败") + "（稍后重试）"; btn.disabled = false; return; }
+  if (!r.success) { st.textContent = (r.message || "检查失败") + "，稍后重试"; btn.disabled = false; return; }
   if (!d.has_update) {
     st.textContent = "功能已是最新（v" + (d.version || "?") + "）";
     btn.disabled = false;
@@ -465,7 +473,7 @@ async function hotfixMiniApply() {
   const btn = $("hotfixMiniBtn"), st = $("hotfixStatus");
   if (!confirm("应用功能热更新？\n将下载并替换运行时代码，完成后自动重启应用。")) return;
   btn.disabled = true; st.textContent = "正在下载并应用，完成后自动重启…";
-  const r = await call("apply_hotfix", "POST", {});
+  const r = await call("apply_hotfix", "POST", {}, 30000);
   st.textContent = (r.data && r.data.message) || r.message || "完成";
   if (r.success && r.data && r.data.restarting) { setTimeout(() => location.reload(), 12000); return; }
   btn.disabled = false;
