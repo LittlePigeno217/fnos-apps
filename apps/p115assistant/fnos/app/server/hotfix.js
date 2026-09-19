@@ -53,7 +53,7 @@ function sha256File(filePath) {
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const req = https.get(u, { headers: { "User-Agent": "p115assistant-hotfix/1.0", "Cache-Control": "no-cache" }, timeout: 30000 }, (res) => {
+    const req = https.get(u, { headers: { "User-Agent": "p115assistant-hotfix/1.0", "Cache-Control": "no-cache" }, timeout: 20000 }, (res) => {
       if (res.statusCode >= 400) {
         res.resume();
         reject(new Error(`HTTP ${res.statusCode}`));
@@ -68,8 +68,37 @@ function httpsGet(url) {
   });
 }
 
+/** 带重试的 GET：瞬时网络抖动自动重试（最多 2 次，间隔 1.2s） */
+async function httpsGetRetry(url, tries) {
+  let last;
+  for (let i = 0; i < (tries || 2); i++) {
+    try {
+      return await httpsGet(url);
+    } catch (err) {
+      last = err;
+      if (i < (tries || 2) - 1) await new Promise((r) => setTimeout(r, 1200));
+    }
+  }
+  throw last;
+}
+
+/** 双源拉取：raw 为主，失败依次回退 GitHub 代理镜像（仅公开只读清单/代码，无敏感） */
+const GH_PROXIES = ["https://ghproxy.net/", "https://ghproxy.com/"];
+async function fetchWithMirror(primaryUrl) {
+  try {
+    return await httpsGetRetry(primaryUrl, 2);
+  } catch (err) {
+    for (const p of GH_PROXIES) {
+      try {
+        return await httpsGetRetry(p + primaryUrl, 1);
+      } catch { /* 尝试下一个镜像 */ }
+    }
+    throw err;
+  }
+}
+
 async function fetchManifest() {
-  const buf = await httpsGet(bust(MANIFEST_URL));
+  const buf = await fetchWithMirror(bust(MANIFEST_URL));
   const m = JSON.parse(buf.toString("utf8"));
   if (!m || typeof m.version !== "string" || !m.files || typeof m.files !== "object") {
     throw new Error("清单格式错误");
@@ -140,9 +169,9 @@ async function applyHotfix(appDir, dataDir, creds) {
     } catch {
       /* 原文件不存在则不备份 */
     }
-    // 下载新文件（raw 直链，安装路径→仓库路径；带缓存破坏参数）
+    // 下载新文件（raw 直链，安装路径→仓库路径；带缓存破坏参数；raw 失败回退镜像）
     const rawUrl = bust(`${RAW_BASE}/${rawRel(rel)}`);
-    const buf = await httpsGet(rawUrl);
+    const buf = await fetchWithMirror(rawUrl);
     if (sha256Hex(buf) !== String(info.sha256 || "")) {
       try { fs.unlinkSync(bak); } catch { /* ignore */ }
       throw new Error(`SHA-256 校验失败：${rel}`);
