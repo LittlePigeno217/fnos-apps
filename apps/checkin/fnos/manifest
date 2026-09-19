@@ -13,7 +13,6 @@ service_port    = 0
 checkport       = false
 ctl_stop        = true
 micro_app       = true
-install_dep_apps= nodejs_v24
 desc            = 自用站点统一签到：FLZT / 恩山无线论坛 / 易破解。每日定时自动签到、漏签补跑、历史记录与飞书通知。核心能力移植自 MoviePilot-Plugins 自用签到工具。
 source          = thirdparty
 checksum        =
