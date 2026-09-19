@@ -485,6 +485,17 @@ class Server {
   }
 
   // ── 配置 ──
+  // fpk 安装版本：读 fnOS 构建注入的 config/bootstrap/p115assistant-version.env
+  _fpkVersion() {
+    try {
+      const envPath = path.join(__dirname, "..", "config", "bootstrap", "p115assistant-version.env");
+      const txt = fs.readFileSync(envPath, "utf8");
+      const m = txt.match(/P115ASSISTANT_VERSION=([0-9.]+)/);
+      if (m) return m[1];
+    } catch { /* 读不到则回退 config.version */ }
+    return "";
+  }
+
   getConfig() {
     try {
       const config = this.store.getConfig();
@@ -494,6 +505,8 @@ class Server {
       }
       // fnos 凭据仅通过 fnos_status 告知「是否已配置」，不暴露值
       publicConfig.fnos_configured = !!(config.fnos_username && config.fnos_password);
+      // fpk 安装版本（fnOS 构建注入 env；与热更新功能版本区分）
+      publicConfig.fpk_version = this._fpkVersion() || publicConfig.version || "";
       if (publicConfig.feishu_webhook) {
         publicConfig.feishu_webhook = mask(publicConfig.feishu_webhook);
       }
