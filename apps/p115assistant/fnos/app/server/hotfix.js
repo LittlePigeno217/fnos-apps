@@ -28,6 +28,17 @@ function rawRel(installRel) {
   return installRel;
 }
 
+/** 白名单校验：仅允许 server/ 与 www/ 下的相对路径，杜绝路径穿越（rel 完全来自远程清单） */
+function safeRel(rel) {
+  const r = String(rel || "");
+  if (!r.startsWith("server/") && !r.startsWith("www/")) throw new Error(`非法热更路径（不在白名单内）：${r}`);
+  for (const seg of r.split("/")) {
+    if (seg === ".." || seg === "." || seg.includes("\u0000")) throw new Error(`非法热更路径（含危险片段）：${r}`);
+  }
+  if (path.isAbsolute(r)) throw new Error(`非法热更路径（绝对路径）：${r}`);
+  return r;
+}
+
 /** sha256（流式） */
 function sha256File(filePath) {
   return new Promise((resolve, reject) => {
@@ -75,7 +86,8 @@ function bust(url) {
 async function checkHotfix(appDir) {
   const manifest = await fetchManifest();
   const changed = [];
-  for (const [rel, info] of Object.entries(manifest.files)) {
+  for (const [rel0, info] of Object.entries(manifest.files)) {
+    const rel = safeRel(rel0); // 白名单校验（防路径穿越）
     // 安装目录文件哈希对比
     const p = path.join(appDir, rel);
     let current = "";
@@ -100,7 +112,8 @@ async function checkHotfix(appDir) {
 async function applyHotfix(appDir, dataDir, creds) {
   const manifest = await fetchManifest();
   const changedAll = [];
-  for (const [rel, info] of Object.entries(manifest.files)) {
+  for (const [rel0, info] of Object.entries(manifest.files)) {
+    const rel = safeRel(rel0); // 白名单校验（防路径穿越）
     const p = path.join(appDir, rel);
     let current = "";
     try {

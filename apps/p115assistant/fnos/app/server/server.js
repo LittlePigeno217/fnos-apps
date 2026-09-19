@@ -1451,6 +1451,10 @@ class Server {
   }
 
   async applyHotfix() {
+    if (this._hotfixBusy) {
+      return error("功能更新正在执行中，请稍候");
+    }
+    this._hotfixBusy = true;
     try {
       const hotfix = require("./hotfix");
       const cfg = this.store.getConfig();
@@ -1469,6 +1473,8 @@ class Server {
     } catch (err) {
       console.error(`功能热更新失败：${err.message}`);
       return error(`功能热更新失败: ${err.message}`);
+    } finally {
+      this._hotfixBusy = false;
     }
   }
 

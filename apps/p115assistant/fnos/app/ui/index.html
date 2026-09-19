@@ -4108,7 +4108,7 @@ async function applyHotfix(){
   const msg = (r.data && r.data.message) || r.message || "完成";
   el("hotfixResult").textContent = msg;
   if (r.success && r.data && r.data.applied && r.data.applied.length && r.data.restarting){
-    setTimeout(()=>location.reload(), 3500);
+    setTimeout(()=>location.reload(), 12000); // trim-cli 重启约 8-10s，等就绪再刷新
     return;
   }
   if (r.success && r.data && r.data.applied && !r.data.restarting){
