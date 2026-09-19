@@ -334,9 +334,13 @@ function collectSitePatch(key) {
 }
 
 /* ── 加载/保存 ─────────────────────────────────── */
-async function loadAll() {
+async function loadAll(attempt = 1) {
   const r = await call("get_config");
-  if (!r.success) return;
+  if (!r.success) {
+    // 网关瞬时故障时自动重试一次，避免页面一直「加载中…」
+    if (attempt < 2) { setTimeout(() => loadAll(attempt + 1), 1500); return; }
+    return;
+  }
   const d = r.data;
   $("cfgEnabled").checked = !!d.enabled;
   $("cfgCron").value = d.cron || "08:10";
