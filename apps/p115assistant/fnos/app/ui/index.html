@@ -645,39 +645,43 @@
           <div class="pane" style="padding:12px 16px;margin-top:6px">
             <div class="field-row" style="align-items:center;gap:8px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="uploadIncludeSidecars" onchange="toggleUploadSidecars()">
+                <input type="checkbox" id="uploadIncludeSidecars" onchange="markDirty('upload')">
                 <span class="muted">上传附属文件（nfo/jpg/srt/ass 等随主文件一起上传）</span>
               </label>
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="upGenStrm" onchange="saveCfgBool('upGenStrm','upload_generate_strm')">
+                <input type="checkbox" id="upGenStrm" onchange="markDirty('upload')">
                 <span class="muted">上传后生成 STRM（在目标目录旁生成 .strm 占位）</span>
               </label>
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="upDelSrc" onchange="saveCfgBool('upDelSrc','upload_delete_source')">
+                <input type="checkbox" id="upDelSrc" onchange="markDirty('upload')">
                 <span class="muted">上传后删除源文件</span>
               </label>
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">身份冲突</span>
-              <select id="upConflict" onchange="saveCfgSelect('upConflict','upload_conflict_policy')">
+              <select id="upConflict" onchange="markDirty('upload')">
                 <option value="ask">先询问（挂清单）</option>
                 <option value="adopt">采用远端</option>
                 <option value="reupload">重传覆盖</option>
               </select>
               <span class="muted" style="width:96px;flex:none">上传风控</span>
-              <select id="upRisk" onchange="saveCfgSelect('upRisk','upload_risk_profile')">
+              <select id="upRisk" onchange="markDirty('upload')">
                 <option value="conservative">保守（每文件6s/每批5个）</option>
                 <option value="balanced">平衡（每文件3s/每批10个）</option>
                 <option value="aggressive">激进（每文件1.5s/每批20个）</option>
               </select>
               <span class="muted" style="width:96px;flex:none">115 限流档位</span>
-              <select id="rateLimit" onchange="saveCfgSelect('rateLimit','rate_limit_profile')">
+              <select id="rateLimit" onchange="markDirty('upload')">
                 <option value="conservative">保守</option>
                 <option value="balanced">均衡（推荐）</option>
                 <option value="fast">激进</option>
               </select>
+            </div>
+            <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+              <span class="muted" id="uploadCfgStatus"></span>
+              <button class="btn primary" id="uploadSaveBtn" onclick="saveUploadCfg()">保存设置</button>
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">媒体扩展名</span>
@@ -724,17 +728,21 @@
           <div class="pane" style="padding:12px 16px;margin-top:6px">
             <div class="field-row" style="align-items:center;gap:8px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="checkinEnabled" onchange="saveCfgBool('checkinEnabled','checkin_enabled')">
+                <input type="checkbox" id="checkinEnabled" onchange="markDirty('signin')">
                 <span class="muted">每日自动签到（时段内自动执行）</span>
               </label>
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="checkinNotify" onchange="saveCfgBool('checkinNotify','checkin_notify')">
+                <input type="checkbox" id="checkinNotify" onchange="markDirty('signin')">
                 <span class="muted">签到结果通知</span>
               </label>
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">签到时段</span>
-              <input class="input mono grow" type="text" id="checkinTimeRange" placeholder="06:00-09:00" onchange="saveCfgText('checkinTimeRange','checkin_time_range',/^\\d{2}:\\d{2}-\\d{2}:\\d{2}$/,'格式：HH:MM-HH:MM')">
+              <input class="input mono grow" type="text" id="checkinTimeRange" placeholder="06:00-09:00" onchange="markDirty('signin')">
+            </div>
+            <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
+              <span class="muted" id="signinCfgStatus"></span>
+              <button class="btn primary" id="signinSaveBtn" onclick="saveSigninCfg()">保存设置</button>
             </div>
           </div>
         </details>
@@ -743,14 +751,14 @@
       <!-- STRM -->
       <section id="tab-link" class="pane" hidden>
         <div class="field-row" style="margin-bottom:6px">
-          <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测，或手动填写基础地址（如 http://192.168.1.100）" title="STRM 基础地址：手动填写后自动补充播放中转端口；留空自动检测宿主机 IP">
+          <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测，或手动填写基础地址（如 http://192.168.1.100）" title="STRM 基础地址：手动填写后自动补充播放中转端口；留空自动检测宿主机 IP" onchange="markDirty('strm')">
         </div>
         <div class="field-row" style="margin-bottom:10px">
           <span class="muted" id="strmRelayHint" style="font-size:13px"></span>
         </div>
         <div class="field-row" style="margin-bottom:10px;align-items:center;gap:8px">
           <span class="muted" style="width:88px;flex:none">中转端口</span>
-          <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:120px" onchange="saveCfgText('relayPortInput','relay_port',/^\d{2,5}$/,'端口为数字，如 3667')">
+          <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:120px" onchange="markDirty('strm')">
           <span class="muted" style="font-size:12px">302 播放中转端口（STRM 直连端口）</span>
         </div>
         <div class="field-row" style="margin-bottom:6px">
@@ -758,13 +766,17 @@
         </div>
         <div class="field-row" style="margin-bottom:10px;align-items:center;gap:8px">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="strmIncremental" onchange="toggleStrmIncremental()">
+            <input type="checkbox" id="strmIncremental" onchange="markDirty('strm')">
             <span class="muted" style="font-size:13px">增量生成（仅生成新增/更新的 STRM）</span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="strmAddSubtitles" onchange="toggleStrmAddSubtitles()">
+            <input type="checkbox" id="strmAddSubtitles" onchange="markDirty('strm')">
             <span class="muted" style="font-size:13px">附带云端同名字幕</span>
           </label>
+        </div>
+        <div class="field-row" style="margin-bottom:10px;justify-content:flex-end;gap:8px">
+          <span class="muted" id="strmCfgStatus"></span>
+          <button class="btn primary" id="strmSaveBtn" onclick="saveStrmCfg()">保存设置</button>
         </div>
         <div class="toolbar">
           <button class="btn" onclick="addStrmCard()">
@@ -846,7 +858,7 @@
             <div class="setting-desc">总开关：关闭后停止登录、上传、签到与文件监听</div>
           </div>
           <label class="switch" title="应用启用">
-            <input type="checkbox" id="cfgEnabled" onchange="saveCfgBool('cfgEnabled','enabled')">
+            <input type="checkbox" id="cfgEnabled" onchange="markDirty('settings')">
             <span class="track"></span>
           </label>
         </div>
@@ -856,7 +868,7 @@
             <div class="setting-desc">上传/签到/风控等事件推送到飞书机器人</div>
           </div>
           <label class="switch" title="飞书通知">
-            <input type="checkbox" id="cfgFeishuEnabled" onchange="saveCfgBool('cfgFeishuEnabled','feishu_enabled')">
+            <input type="checkbox" id="cfgFeishuEnabled" onchange="markDirty('settings')">
             <span class="track"></span>
           </label>
         </div>
@@ -865,7 +877,11 @@
             <div class="setting-label">飞书 Webhook</div>
             <div class="setting-desc">机器人 Webhook 地址；已配置时留空保存不修改</div>
           </div>
-          <input type="password" id="feishuWebhook" placeholder="已配置请留空" style="max-width:240px" onchange="saveFeishuWebhook()">
+          <input type="password" id="feishuWebhook" placeholder="已配置请留空" style="max-width:240px" onchange="markDirty('settings')">
+        </div>
+        <div class="setting-row" style="justify-content:flex-end">
+          <span class="muted" id="appCfgStatus" style="margin-right:8px"></span>
+          <button class="btn primary" id="appSaveBtn" onclick="saveAppCfg()">保存设置</button>
         </div>
       </div>
     </section>
@@ -3525,12 +3541,71 @@ async function loadExtensions(){
   el("sidecarExtensions").value = d.upload_sidecar_extensions || "";
 }
 // 上传附属文件开关：即时保存（upload_include_sidecars 由本页唯一持有）
-async function toggleUploadSidecars() {
-  const checked = el("uploadIncludeSidecars").checked === true;
-  const r = await call("save_config", "POST", { upload_include_sidecars: checked });
-  if (!r.success) {
-    el("uploadIncludeSidecars").checked = !checked;
-  }
+/* 手动保存模式：控件 onchange 只标记，页面底部「保存设置」统一提交 */
+const DIRTY_BTN = { upload:"uploadSaveBtn", signin:"signinSaveBtn", strm:"strmSaveBtn", settings:"appSaveBtn" };
+const DIRTY_STATUS = { upload:"uploadCfgStatus", signin:"signinCfgStatus", strm:"strmCfgStatus", settings:"appCfgStatus" };
+function markDirty(area){
+  const btn = el(DIRTY_BTN[area]), st = el(DIRTY_STATUS[area]);
+  if (btn) btn.textContent = "保存设置（有更改）";
+  if (st) st.textContent = "有未保存的更改";
+}
+function clearDirty(area){
+  const btn = el(DIRTY_BTN[area]), st = el(DIRTY_STATUS[area]);
+  if (btn) btn.textContent = "保存设置";
+  if (st) st.textContent = "";
+}
+async function saveUploadCfg(){
+  const updates = {
+    upload_include_sidecars: el("uploadIncludeSidecars").checked === true,
+    upload_generate_strm: el("upGenStrm").checked === true,
+    upload_delete_source: el("upDelSrc").checked === true,
+    upload_conflict_policy: el("upConflict").value,
+    upload_risk_profile: el("upRisk").value,
+    rate_limit_profile: el("rateLimit").value,
+  };
+  const r = await call("save_config", "POST", updates);
+  const st = el("uploadCfgStatus");
+  if (st) st.textContent = r.success ? "已保存 ✓" : "保存失败：" + (r.message || "");
+  if (r.success) clearDirty("upload");
+}
+async function saveSigninCfg(){
+  const range = el("checkinTimeRange").value.trim();
+  if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(range)) { el("signinCfgStatus").textContent = "时段格式应为 HH:MM-HH:MM"; return; }
+  const updates = {
+    checkin_enabled: el("checkinEnabled").checked === true,
+    checkin_notify: el("checkinNotify").checked === true,
+    checkin_time_range: range,
+  };
+  const r = await call("save_config", "POST", updates);
+  const st = el("signinCfgStatus");
+  if (st) st.textContent = r.success ? "已保存 ✓" : "保存失败：" + (r.message || "");
+  if (r.success){ clearDirty("signin"); refreshSigninRange(); }
+}
+async function saveStrmCfg(){
+  const port = el("relayPortInput").value.trim();
+  if (port && !/^\d{2,5}$/.test(port)) { el("strmCfgStatus").textContent = "中转端口应为数字（如 3667）"; return; }
+  const updates = {
+    strm_base_url: el("strmBaseUrl").value.trim(),
+    relay_port: port,
+    strm_incremental: el("strmIncremental").checked === true,
+    strm_add_subtitles: el("strmAddSubtitles").checked === true,
+  };
+  const r = await call("save_config", "POST", updates);
+  const st = el("strmCfgStatus");
+  if (st) st.textContent = r.success ? "已保存 ✓" : "保存失败：" + (r.message || "");
+  if (r.success){ clearDirty("strm"); saveStrmBase && saveStrmBase(); }
+}
+async function saveAppCfg(){
+  const updates = {
+    enabled: el("cfgEnabled").checked === true,
+    feishu_enabled: el("cfgFeishuEnabled").checked === true,
+  };
+  const hook = el("feishuWebhook").value.trim();
+  if (hook) updates.feishu_webhook = hook; // 留空=保持当前
+  const r = await call("save_config", "POST", updates);
+  const st = el("appCfgStatus");
+  if (st) st.textContent = r.success ? "已保存 ✓" : "保存失败：" + (r.message || "");
+  if (r.success){ clearDirty("settings"); el("feishuWebhook").value = ""; }
 }
 async function saveExtensions(){
   const media = el("mediaExtensions").value.trim();
@@ -3875,7 +3950,7 @@ async function saveStrmBase(){
   // 回填输入框：手动配置过则显示配置原值，否则显示自动推导的基础地址
   el("strmBaseUrl").value = d.manual_base_url || d.base_url || "";
   el("strmRelayHint").textContent =
-    `中转端口 ${d.relay_port}（应用设置 → 运行设置 中修改）→ 实际 STRM 地址 ${d.base_url || "未确定"}`;
+    `中转端口 ${d.relay_port}（本页「保存设置」生效）→ 实际 STRM 地址 ${d.base_url || "未确定"}`;
   // 外网提示：手动填写公网可达地址 + 路由器映射中转端口，否则外网播放器无法访问
   const extHint = el("strmOutboundHint");
   if (extHint) {
@@ -3889,16 +3964,7 @@ function bindStrmBaseEdit(){
   const input = el("strmBaseUrl");
   if (!input || input.dataset.bound) return;
   input.dataset.bound = "1";
-  input.addEventListener("change", async (e)=>{
-    const v = e.target.value.trim();
-    const r = await call("save_config", "POST", { strm_base_url: v });
-    const hint = el("strmRelayHint");
-    if (!r.success){
-      if (hint) hint.textContent = "保存失败：" + (r.message || "未知错误");
-      return;
-    }
-    await saveStrmBase();
-  });
+  input.addEventListener("change", () => { markDirty("strm"); }); // 手动保存模式：只标记，由「保存设置」提交
 }
 async function loadStrmMappings(){
   const r = await call("strm_mappings");
@@ -3921,22 +3987,8 @@ async function loadStrmMappings(){
     return r;
   }
   // 增量生成开关：即时保存到配置（save_config 白名单含 strm_incremental）
-  async function toggleStrmIncremental() {
-    const checked = el("strmIncremental").checked === true;
-    const r = await call("save_config", "POST", { strm_incremental: checked });
-    if (!r.success) {
-      el("strmIncremental").checked = !checked;
-    }
-  }
-  // 附带云端同名字幕开关：生成 STRM 时下载同目录同名 .srt/.ass 等（save_config 白名单含 strm_add_subtitles）
-  async function toggleStrmAddSubtitles() {
-    const checked = el("strmAddSubtitles").checked === true;
-    const r = await call("save_config", "POST", { strm_add_subtitles: checked });
-    if (!r.success) {
-      el("strmAddSubtitles").checked = !checked;
-    }
-  }
-function renderStrmCards(){
+  // 附带云端同名字幕开关：由页级「保存设置」统一提交（strm_add_subtitles）
+  function renderStrmCards(){
   const box = el("strmList");
   box.innerHTML = "";
   el("strmEmpty").hidden = strmCards.length > 0;
@@ -4053,27 +4105,10 @@ async function loadAppSettings(d){
   if (el("relayPortInput")) el("relayPortInput").value = d.relay_port || 3667;
 }
 async function saveCfgBool(ctlId, key){
+  // 兼容旧调用（不再有 onchange 引用）；新逻辑走 saveXxxCfg 页级保存
   const checked = el(ctlId).checked === true;
   const r = await call("save_config", "POST", { [key]: checked });
   if (!r.success) el(ctlId).checked = !checked;
-}
-async function saveCfgSelect(ctlId, key){
-  const v = el(ctlId).value;
-  await call("save_config", "POST", { [key]: v });
-}
-async function saveCfgText(ctlId, key, pattern, tip){
-  const v = el(ctlId).value.trim();
-  if (pattern && !pattern.test(v)) { alert(tip || "格式不正确"); el(ctlId).value = ""; return; }
-  if (!v) return;
-  const r = await call("save_config", "POST", { [key]: v });
-  if (!r.success) alert(r.message || "保存失败");
-}
-async function saveFeishuWebhook(){
-  const v = el("feishuWebhook").value.trim();
-  if (!v) return; // 留空保持当前
-  const r = await call("save_config", "POST", { feishu_webhook: v });
-  if (r.success) el("feishuWebhook").value = "";
-  else alert(r.message || "保存失败");
 }
 /* ---- 功能热更新（左下角入口，免 fpk） ---- */
 let hotfixState = { has_update: false, version: "" };
