@@ -743,38 +743,7 @@
       <!-- STRM -->
       <section id="tab-link" class="pane" hidden>
         <p class="muted" style="font-size:13px;margin-bottom:10px">STRM：媒体文件留在 115 云端，本地只生成轻量占位 .strm，播放时经中转端口 302 拉流。</p>
-        <details class="adv-block" style="margin-bottom:12px;font-size:13px">
-          <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">STRM 设置 <span class="muted">（播放地址/中转端口/生成选项）</span></summary>
-          <div class="pane" style="padding:12px 16px;margin-top:6px">
-            <div class="field-row" style="align-items:center;gap:8px">
-              <span class="muted" style="width:66px;flex:none">播放地址</span>
-              <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测" title="留空自动检测宿主机 IP；或填公网可达地址并在路由器映射中转端口" onchange="markDirty('strm')">
-              <span class="muted" style="flex:none;font-size:12px">中转端口</span>
-              <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:88px" onchange="markDirty('strm')">
-            </div>
-            <div class="field-row" style="margin-top:6px">
-              <span class="muted" id="strmRelayHint" style="font-size:12px"></span>
-            </div>
-            <div class="field-row">
-              <span class="muted" id="strmOutboundHint" style="font-size:12px"></span>
-            </div>
-          </div>
-          <div class="pane" style="padding:12px 16px;margin-top:6px">
-            <div class="field-row" style="align-items:center;gap:8px">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="strmIncremental" onchange="markDirty('strm')">
-                <span class="muted" style="font-size:13px">增量生成（只处理新增/变动的文件）</span>
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                <input type="checkbox" id="strmAddSubtitles" onchange="markDirty('strm')">
-                <span class="muted" style="font-size:13px">附带云端同名字幕</span>
-              </label>
-            </div>
-            <div class="field-row" style="margin-top:4px">
-              <span class="muted" style="font-size:12px">提示：增量适合长期同步；首次使用建议先全量生成一次，再开启增量。</span>
-            </div>
-          </div>
-        </details>
+        
         <div class="toolbar">
           <button class="btn" onclick="addStrmCard()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -813,6 +782,39 @@
         <div id="strmList"></div>
         <p class="empty" id="strmEmpty">暂无 STRM 映射。
 第一步：点击「添加映射」→ 选 115 源目录 → 选本地输出目录 → 点「立即同步」。</p>
+        <details class="adv-block" style="margin-bottom:12px;font-size:13px">
+          <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">STRM 设置 <span class="muted">（播放地址/中转端口/生成选项）</span></summary>
+          <div class="pane" style="padding:12px 16px;margin-top:6px">
+            <div class="field-row" style="align-items:center;gap:8px">
+              <span class="muted" style="width:66px;flex:none">播放地址</span>
+              <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测" title="留空自动检测宿主机 IP；或填公网可达地址并在路由器映射中转端口" onchange="markDirty('strm')">
+              <span class="muted" style="flex:none;font-size:12px">中转端口</span>
+              <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:88px" onchange="markDirty('strm')">
+            </div>
+            <div class="field-row" style="margin-top:6px">
+              <span class="muted" id="strmRelayHint" style="font-size:12px"></span>
+            </div>
+            <div class="field-row">
+              <span class="muted" id="strmOutboundHint" style="font-size:12px"></span>
+            </div>
+          </div>
+          <div class="pane" style="padding:12px 16px;margin-top:6px">
+            <div class="field-row" style="align-items:center;gap:8px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="strmIncremental" onchange="markDirty('strm')">
+                <span class="muted" style="font-size:13px">增量生成（只处理新增/变动的文件）</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="strmAddSubtitles" onchange="markDirty('strm')">
+                <span class="muted" style="font-size:13px">附带云端同名字幕</span>
+              </label>
+            </div>
+            <div class="field-row" style="margin-top:4px">
+              <span class="muted" style="font-size:12px">提示：增量适合长期同步；首次使用建议先全量生成一次，再开启增量。</span>
+            </div>
+          </div>
+        </details>
+
       </section>
 
       <!-- 媒体库：一部电影一行、一季剧一行 -->
