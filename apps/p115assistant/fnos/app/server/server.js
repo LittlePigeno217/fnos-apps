@@ -1068,9 +1068,6 @@ class Server {
           } else {
             continue;
           }
-          if (!records.hasChanged(filePath, targetCid)) {
-            unchanged += 1;
-          }
         }
       };
       walk(source);
@@ -1558,6 +1555,15 @@ class Server {
       } catch { /* 非法配置忽略，回退自动检测 */ }
     }
     const ifaces = require("node:os").networkInterfaces();
+    // 优先真实网卡：跳过虚拟/容器/隧道网卡（docker0/bridge/tailscale 等），
+    // 避免自动检测选中 docker0 等导致 STRM 地址不可达（2026-09-19 优化）
+    const skip = /^(docker|veth|br-|virbr|kube|tailscale|tun|utun|tap|vnic|lo)/i;
+    for (const name of Object.keys(ifaces)) {
+      for (const info of ifaces[name] || []) {
+        if (info.family === "IPv4" && !info.internal && !skip.test(name)) return info.address;
+      }
+    }
+    // 兜底：全是虚拟网卡时退回到任意非内网 IPv4
     for (const name of Object.keys(ifaces)) {
       for (const info of ifaces[name] || []) {
         if (info.family === "IPv4" && !info.internal) return info.address;
@@ -2503,9 +2509,6 @@ class Server {
       return;
     }
     if (!inCheckinWindow(String(config.checkin_time_range || "06:00-09:00"))) {
-      return;
-    }
-    if (this._checkinCheckedDate === dateKey && this._checkinToday !== null) {
       return;
     }
     this._checkinCheckedDate = dateKey;
