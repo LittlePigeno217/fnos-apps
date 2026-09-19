@@ -43,3 +43,12 @@ else
     echo "[${APP_NAME}] ERROR: build-fpk.sh 未产出 fpk" >&2
     exit 1
 fi
+
+# 4. 同步生成热更新清单（与 fpk 同版本发布；发布时随 fpk 一起推送）
+GEN_SCRIPT="${REPO_ROOT}/scripts/apps/${APP_NAME}/gen_runtime_manifest.py"
+if [ -f "${GEN_SCRIPT}" ]; then
+    python3 "${GEN_SCRIPT}" "${VERSION}"
+    echo "[${APP_NAME}] 热更新清单已生成: apps/${APP_NAME}/runtime-manifest.json（v${VERSION}）"
+else
+    echo "[${APP_NAME}] WARNING: 未找到 gen_runtime_manifest.py，跳过热更新清单生成" >&2
+fi
