@@ -17,7 +17,7 @@ const { trimHasSession, trimCliLogin } = require("./update");
 
 const REPO_OWNER = "LittlePigeno217";
 const REPO_NAME = "fnos-apps";
-const MANIFEST_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/runtime-manifest.json`;
+const MANIFEST_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/apps/p115assistant/runtime-manifest.json`;
 const RAW_BASE = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/apps/p115assistant/fnos`;
 const APP_NAME = "p115assistant";
 
