@@ -150,11 +150,19 @@ def load_version(slug):
 
 
 def bump_version(v):
-    """补丁号递增：1.0.0 → 1.0.1（功能热更发布用）。"""
+    """补丁号递增（功能热更发布用），遵守项目版本线：永不出现 .10+，
+    1.0.9 的下个版本跳 1.1.0（patch 达 9 进位 minor；minor 达 9 进位 major）。
+    1.0.0 → 1.0.1 → … → 1.0.9 → 1.1.0 → … → 1.9.9 → 2.0.0"""
     parts = [int(x) for x in str(v).split(".")]
     if len(parts) < 3:
         parts += [0] * (3 - len(parts))
-    parts[-1] += 1
+    parts[2] += 1
+    if parts[2] >= 10:
+        parts[2] = 0
+        parts[1] += 1
+    if parts[1] >= 10:
+        parts[1] = 0
+        parts[0] += 1
     return ".".join(str(x) for x in parts)
 
 
