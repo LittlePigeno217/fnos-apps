@@ -206,12 +206,18 @@ async function applyHotfix(appDir, dataDir, creds) {
     JSON.stringify({ version: manifest.version, applied_at: new Date().toISOString(), files: applied }, null, 2)
   );
 
-  // 重启：trim-cli（登录 session）请求系统重启应用
-  const restart = await restartApp(dataDir, creds);
-  if (!restart.ok) {
-    return { success: true, applied, message: `文件已更新，但自动重启失败：${restart.err}（请手动重启应用）`, need_manual_restart: true };
+  // 重启：优先 trim-cli（登录 session）请求系统级重启；
+  // 无凭据/失败时降级为本进程退出、由 fnOS 进程管理器拉起（适配所有 fnOS，无需配置凭据）
+  let restart = { ok: false, err: "trim-cli 不可用" };
+  try {
+    restart = await restartApp(dataDir, creds);
+  } catch (e) {
+    restart = { ok: false, err: e.message };
   }
-  return { success: true, applied, message: `功能已更新并自动重启（v${manifest.version}，${applied.length} 文件）`, restarting: true };
+  if (restart.ok) {
+    return { success: true, applied, message: `功能已更新并自动重启（v${manifest.version}，${applied.length} 文件）`, restarting: true };
+  }
+  return { success: true, applied, message: `功能已更新，进程自动重启中（v${manifest.version}，${applied.length} 文件）`, restarting: true, via_self_exit: true };
 }
 
 function sha256Hex(buf) {

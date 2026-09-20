@@ -1542,6 +1542,10 @@ class Server {
       if (res && res.applied && res.applied.length) {
         this.recordLog(`功能热更新：应用 ${res.applied.length} 个文件（v${res.version || ""}）`, "INFO", "SYSTEM");
       }
+      if (res && res.restarting) {
+        // 由 fnOS 进程管理器拉起（trim-cli 重启失败也走此路径，无需配置 fnOS 凭据）
+        setTimeout(() => process.exit(0), 2500);
+      }
       return ok(res, (res && res.message) || "");
     } catch (err) {
       console.error(`功能热更新失败：${err.message}`);
