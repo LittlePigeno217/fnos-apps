@@ -1,0 +1,118 @@
+#!/bin/sh
+# 115网盘助手 升级回调：新版本应用文件写入后执行。
+#
+# 策略参考 hermes-agent v0.21.96 升级脚本（2026-09-17 对齐）：
+#   1. 读取目标版本（config/bootstrap/p115assistant-version.env，由构建注入）。
+#   2. 数据自查：config/secrets 必须存在且非空——升级永不触碰用户数据，
+#      只验证完整性；缺失即告警（不阻断，避免误删重装后无法启动）。
+#   3. 权限修复：覆盖安装后文件属主可能变为 root，统一 chown 到
+#      TRIM_USERNAME，保证应用写权限与访问权限保留（用户 2026-09-17 要求）。
+#   4. 版本记录：写入 VAR_DIR/p115assistant_version + info.log，供
+#      update.js 自更新检测使用；同时清理旧版本缓存文件。
+#   5. 全程 info.log 记录，升级失败可追溯。
+set -u
+
+APP_DIR="${TRIM_APPDEST:-/vol1/@appcenter/p115assistant}"
+VAR_DIR="${TRIM_PKGVAR:-/vol1/@appdata/p115assistant}"
+LOG_FILE="${VAR_DIR}/info.log"
+VERSION_ENV="${APP_DIR}/config/bootstrap/p115assistant-version.env"
+
+mkdir -p "$VAR_DIR"
+
+log_msg() {
+    local msg="$(date '+%Y-%m-%d %H:%M:%S') - [upgrade_callback] $1"
+    echo "$msg"
+    echo "$msg" >> "${LOG_FILE}" 2>/dev/null || true
+}
+
+toast_err() {
+    echo "$*" > "${TRIM_TEMP_LOGFILE:-/tmp/p115assistant-upgrade.err}"
+}
+
+log_msg "=== upgrade_callback start ==="
+log_msg "TRIM_APPDEST=${APP_DIR}"
+log_msg "TRIM_PKGVAR=${VAR_DIR}"
+log_msg "TRIM_USERNAME=${TRIM_USERNAME:-<empty>}"
+
+# ---------------------------------------------------------------------------
+# 1. 读取目标版本号（版本 env 随包部署；manifest 不部署到设备）
+# ---------------------------------------------------------------------------
+TARGET_VERSION=""
+if [ -f "${VERSION_ENV}" ]; then
+    # shellcheck disable=SC1090
+    . "${VERSION_ENV}"
+    TARGET_VERSION="${P115ASSISTANT_VERSION:-}"
+fi
+if [ -z "${TARGET_VERSION}" ]; then
+    log_msg "WARNING: p115assistant-version.env 不存在或版本为空（${VERSION_ENV}），跳过版本记录"
+    TARGET_VERSION="unknown"
+fi
+log_msg "p115assistant target version: ${TARGET_VERSION}"
+
+# ---------------------------------------------------------------------------
+# 2. 数据自查（只读，不触碰用户数据）
+# ---------------------------------------------------------------------------
+log_msg "--- 数据完整性自查 ---"
+for f in "p115assistant_config.json" "p115liteassistant_redirect_secret.json"; do
+    if [ -f "${VAR_DIR}/${f}" ] && [ -s "${VAR_DIR}/${f}" ]; then
+        log_msg "OK: ${f} ($(wc -c < "${VAR_DIR}/${f}" 2>/dev/null || echo 0) bytes)"
+    else
+        msg="WARNING: ${f} 缺失或为空（${VAR_DIR}/${f}）——升级未删除用户数据；若为全新安装属正常，若为升级且此前有数据请检查。"
+        log_msg "${msg}"
+        echo "${msg}" >> "${TRIM_TEMP_LOGFILE:-/tmp/p115assistant-upgrade.err}" 2>/dev/null || true
+    fi
+done
+log_msg "--- 数据自查完成 ---"
+
+# ---------------------------------------------------------------------------
+# 3. 权限修复：覆盖安装后文件属主可能被重置为 root，统一修复
+# ---------------------------------------------------------------------------
+# 先删除可能属主异常的旧版本文件（模拟/历史残留可能为 root 属主，
+# 会导致 chown -R VAR_DIR 失败）；版本记录在第 4 节重新创建。
+rm -f "${VAR_DIR}/p115assistant_version" 2>/dev/null || true
+if [ -n "${TRIM_USERNAME:-}" ]; then
+    log_msg "=== 修复权限 ==="
+    log_msg "APP_DIR=${APP_DIR} owner=$(stat -c '%U:%G' "${APP_DIR}" 2>/dev/null || echo 'N/A') perms=$(stat -c '%a' "${APP_DIR}" 2>/dev/null || echo 'N/A')"
+    log_msg "VAR_DIR=${VAR_DIR} owner=$(stat -c '%U:%G' "${VAR_DIR}" 2>/dev/null || echo 'N/A') perms=$(stat -c '%a' "${VAR_DIR}" 2>/dev/null || echo 'N/A')"
+
+    if chown -R "${TRIM_USERNAME}:${TRIM_USERNAME}" "${APP_DIR}" 2>>"${LOG_FILE}"; then
+        log_msg "chown -R ${TRIM_USERNAME}:${TRIM_USERNAME} ${APP_DIR} -> OK"
+    else
+        log_msg "chown -R ${TRIM_USERNAME}:${TRIM_USERNAME} ${APP_DIR} -> FAILED (exit=$?)"
+    fi
+    if chmod 775 "${APP_DIR}" 2>>"${LOG_FILE}"; then
+        log_msg "chmod 775 ${APP_DIR} -> OK"
+    else
+        log_msg "chmod 775 ${APP_DIR} -> FAILED (exit=$?)"
+    fi
+    # 数据目录权限：属主修复 + 750（与 hermes-agent 一致；用户数据保留属主）
+    if chown -R "${TRIM_USERNAME}:${TRIM_USERNAME}" "${VAR_DIR}" 2>>"${LOG_FILE}"; then
+        log_msg "chown -R ${TRIM_USERNAME}:${TRIM_USERNAME} ${VAR_DIR} -> OK"
+    else
+        log_msg "chown -R ${TRIM_USERNAME}:${TRIM_USERNAME} ${VAR_DIR} -> FAILED (exit=$?)"
+    fi
+    if chmod -R 750 "${VAR_DIR}" 2>>"${LOG_FILE}"; then
+        log_msg "chmod -R 750 ${VAR_DIR} -> OK"
+    else
+        log_msg "chmod -R 750 ${VAR_DIR} -> FAILED (exit=$?)"
+    fi
+
+    log_msg "--- 权限修复后目录状态 ---"
+    ls -la "${APP_DIR}" 2>&1 | while IFS= read -r line; do log_msg "  $line"; done
+else
+    log_msg "TRIM_USERNAME 为空，跳过权限修复"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. 版本记录 + 缓存清理
+# ---------------------------------------------------------------------------
+echo "${TARGET_VERSION}" > "${VAR_DIR}/p115assistant_version" 2>/dev/null || true
+log_msg "版本已记录: ${VAR_DIR}/p115assistant_version = ${TARGET_VERSION}"
+
+# 清理旧版本可能遗留的缓存/临时文件（保留用户数据）
+rm -f "${VAR_DIR}/p115assistant.pid" 2>/dev/null || true
+rm -f "${APP_DIR}/app.sock" 2>/dev/null || true
+log_msg "旧 pid/socket 缓存已清理"
+
+log_msg "=== upgrade_callback end (target=${TARGET_VERSION}) ==="
+exit 0

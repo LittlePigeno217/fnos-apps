@@ -1,0 +1,7 @@
+{
+  "defaults": {
+    "run-as": "package"
+  },
+  "username": "p115assistant",
+  "groupname": "p115assistant"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "checkin-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "自用签到应用后端（fnOS nodejs_v24，零依赖）",
+  "main": "main.js"
+}

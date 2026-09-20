@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "checkin.main": {
+      "title": "签到工具",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "",
+      "gatewayPrefix": "/app/checkin",
+      "gatewaySocket": "app.sock",
+      "url": "/app/checkin",
+      "allUsers": true
+    }
+  }
+}

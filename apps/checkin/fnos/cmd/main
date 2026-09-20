@@ -1,0 +1,116 @@
+#!/bin/sh
+# 自用签到 生命周期脚本（Node.js 版）
+set -u
+
+# 服务是 node 脚本。解释器由 install_dep_apps=nodejs_v24 提供，但不同 fnOS
+# 版本可能把 node 放进不同 PATH；这里按依赖顺序探测常见位置。
+find_node() {
+  if command -v node >/dev/null 2>&1; then
+    printf '%s' "node"
+    return
+  fi
+  # nodejs_v24 依赖应用装好的典型路径（含 fnOS 应用中心目录）
+  for cand in \
+    "$TRIM_APPDEST/.runtime/nodejs_v24/bin/node" \
+    /vol*/@appcenter/nodejs_v24/bin/node \
+    /opt/nodejs_v24/bin/node \
+    /usr/lib/nodejs_v24/bin/node \
+    /usr/local/lib/nodejs_v24/bin/node; do
+    if [ -x "$cand" ]; then
+      printf '%s' "$cand"
+      return
+    fi
+  done
+  return 1
+}
+
+NODE_BIN="${NODE_BIN:-}"
+if [ -z "$NODE_BIN" ]; then
+  NODE_BIN="$(find_node 2>/dev/null)" || NODE_BIN=""
+fi
+
+APP_DIR="${TRIM_APPDEST:-.}"
+SERVER_DIR="$APP_DIR/server"
+SERVER_JS="$SERVER_DIR/main.js"
+VAR_DIR="${TRIM_PKGVAR:-/tmp/checkin_data}"
+PID_FILE="$VAR_DIR/checkin.pid"
+LOG_FILE="$VAR_DIR/app.log"
+SOCKET_FILE="$APP_DIR/app.sock"
+
+mkdir -p "$VAR_DIR"
+
+is_running() {
+  [ -f "$PID_FILE" ] || return 1
+  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+start_serve() {
+  if is_running; then
+    return 0
+  fi
+  if [ -z "$NODE_BIN" ] || [ ! -f "$SERVER_JS" ]; then
+    echo "自用签到启动失败：找不到 node（依赖 nodejs_v24）或后端入口缺失。" > "${TRIM_TEMP_LOGFILE:-/tmp/checkin-start.err}"
+    return 1
+  fi
+  # 上一次异常退出可能遗留 pid/socket
+  rm -f "$PID_FILE" "$SOCKET_FILE"
+  nohup "$NODE_BIN" "$SERVER_JS" \
+    --socket "$SOCKET_FILE" \
+    --data "$VAR_DIR" \
+    --log "$LOG_FILE" \
+    >> "$LOG_FILE" 2>&1 &
+  pid=$!
+  echo "$pid" > "$PID_FILE"
+  # 等待 socket 出现，最多约 5 秒
+  i=0
+  while [ ! -S "$SOCKET_FILE" ] 2>/dev/null && [ "$i" -lt 25 ]; do
+    sleep 0.2
+    i=$((i + 1))
+  done
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$PID_FILE" "$SOCKET_FILE"
+    echo "自用签到启动失败：进程未存活，见 $LOG_FILE" > "${TRIM_TEMP_LOGFILE:-/tmp/checkin-start.err}"
+    return 1
+  fi
+  return 0
+}
+
+stop_serve() {
+  if ! is_running; then
+    rm -f "$PID_FILE" "$SOCKET_FILE"
+    return 0
+  fi
+  pid="$(cat "$PID_FILE")"
+  kill "$pid" 2>/dev/null || true
+  count=0
+  while kill -0 "$pid" 2>/dev/null && [ "$count" -lt 20 ]; do
+    sleep 0.5
+    count=$((count + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE" "$SOCKET_FILE"
+}
+
+case "${1:-}" in
+  start)
+    start_serve
+    ;;
+  stop)
+    stop_serve
+    ;;
+  status)
+    if is_running; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  *)
+    echo "用法: $0 {start|stop|status}" >&2
+    exit 1
+    ;;
+esac
+exit 0

@@ -1,0 +1,62 @@
+#!/bin/sh
+# 115网盘助手 升级初始化：新版本应用文件写入前执行。
+#
+# 策略参考 hermes-agent v0.21.96 升级脚本（2026-09-17 对齐）：
+#   1. 强杀残留 node 进程并等待完全退出——fnOS 升级前会停服务，但子进程
+#      可能残留，导致新文件解压/权限设置失败（文件句柄占用）。
+#   2. 兜底删除 socket/pid，避免新版本启动时误判旧实例仍在运行。
+#   3. 记录升级前目录状态到 info.log，便于排查升级失败。
+#   4. 数据（TRIM_PKGVAR 下 config/records/secrets）永不删除，由系统保留。
+set -u
+
+APP_DIR="${TRIM_APPDEST:-/vol1/@appcenter/p115assistant}"
+VAR_DIR="${TRIM_PKGVAR:-/vol1/@appdata/p115assistant}"
+LOG_FILE="${VAR_DIR}/info.log"
+
+mkdir -p "$VAR_DIR"
+
+log_msg() {
+    local msg="$(date '+%Y-%m-%d %H:%M:%S') - [upgrade_init] $1"
+    echo "$msg"
+    echo "$msg" >> "${LOG_FILE}" 2>/dev/null || true
+}
+
+log_msg "=== upgrade_init start ==="
+log_msg "TRIM_APPDEST=${APP_DIR}"
+log_msg "TRIM_PKGVAR=${VAR_DIR}"
+log_msg "TRIM_USERNAME=${TRIM_USERNAME:-<empty>}"
+
+# 记录升级前目录状态（排查升级失败用）
+log_msg "--- 目录状态 (升级前) ---"
+ls -la "${APP_DIR}" 2>&1 | while IFS= read -r line; do log_msg "  $line"; done
+
+# 强杀残留 node 后端进程（cmd/main 以 node server/main.js 启动）
+pkill -9 -f "node.*p115assistant.*main\.js" 2>/dev/null || true
+pkill -9 -f "node.*/server/main\.js" 2>/dev/null || true
+
+# 等待进程完全退出（最多 10 秒），避免文件句柄残留导致 fnOS 解压/权限失败
+_wait=0
+while [ "${_wait}" -lt 10 ]; do
+    if ! pgrep -f "node.*p115assistant.*main\.js" >/dev/null 2>&1 \
+       && ! pgrep -f "node.*/server/main\.js" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+    _wait=$((_wait + 1))
+done
+log_msg "进程清理完成 (等待 ${_wait}s)"
+
+# 兜底删除残留 socket/pid
+rm -f "${APP_DIR}/app.sock" 2>/dev/null || true
+rm -f "${VAR_DIR}/p115assistant.pid" 2>/dev/null || true
+log_msg "socket/pid 清理完成"
+
+# 额外等待 2 秒，确保文件系统释放所有句柄
+sleep 2
+
+# 记录清理后目录状态
+log_msg "--- 目录状态 (清理后) ---"
+ls -la "${APP_DIR}" 2>&1 | while IFS= read -r line; do log_msg "  $line"; done
+
+log_msg "=== upgrade_init end ==="
+exit 0

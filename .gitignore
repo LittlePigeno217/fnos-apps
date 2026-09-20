@@ -1,0 +1,21 @@
+# 构建产物
+dist/
+*.fpk
+app.tgz
+
+# 应用数据（可能含敏感配置）
+*.env
+.env*
+!*.env.example
+# meta.env 是构建合约/应用注册文件（非敏感），必须入库
+!**/meta.env
+
+# 备份
+Backups/
+backups/
+
+# 系统/IDE
+.DS_Store
+*.swp
+__pycache__/
+node_modules/
