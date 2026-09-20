@@ -41,7 +41,7 @@ TARGET_VERSION=""
 if [ -f "${VERSION_ENV}" ]; then
     # shellcheck disable=SC1090
     . "${VERSION_ENV}"
-    TARGET_VERSION="${P115ASSISTANT_VERSION:-}"
+    TARGET_VERSION="${CHECKIN_VERSION:-}"
 fi
 if [ -z "${TARGET_VERSION}" ]; then
     log_msg "WARNING: checkin-version.env 不存在或版本为空（${VERSION_ENV}），跳过版本记录"
