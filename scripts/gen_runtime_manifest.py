@@ -72,6 +72,11 @@ def sync_source_literals(version, slug, version_env):
             re.compile(rf'(const CURRENT_VERSION = process\.env\.{version_env} \|\| )"[0-9.]*"'),
             rf'\g<1>"{version}"',
         ),
+        (
+            "app/ui/index.html",
+            re.compile(r'id="appVersion">v[0-9.]*</span>'),
+            f'id="appVersion">v{version}</span>',
+        ),
     ]
     for rel, rule, repl in targets:
         fp = os.path.join(root, rel)
