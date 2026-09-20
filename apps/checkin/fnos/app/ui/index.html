@@ -410,19 +410,14 @@ function renderSiteCards(serverSites) {
   box.innerHTML = "";
   for (const [key, info] of Object.entries(SITES)) {
     const st = (serverSites && serverSites[key]) || {};
+    const accs = (st.accounts || []).map((a) => ({ ...a, key }));
+    const cfgCount = accs.filter((a) => a.configured).length;
     const badge = st.configured
-      ? '<span class="badge ok">已配置</span>'
+      ? `<span class="badge ok">${cfgCount} 个账号</span>`
       : '<span class="badge warn">⚠ 未配置凭据</span>';
-    // 已配置站点：凭据配置区折叠，头部给出「修改配置」入口
     const toggleBtn = st.configured
-      ? `<button class="site-toggle ready" id="tg_${key}" onclick="toggleSite('${key}')">${st.enabled ? "已启用" : "已配置"} · 点击展开修改</button>`
+      ? `<button class="site-toggle ready" id="tg_${key}" onclick="toggleSite('${key}')">${st.enabled ? "已启用" : "已配置"} · 管理账号</button>`
       : `<button class="site-toggle" id="tg_${key}" onclick="toggleSite('${key}')">展开配置</button>`;
-    const fields = info.fields.map((f) => `
-      <div class="field-row" style="margin-top:7px">
-        <span style="width:78px;flex:none;font-size:12.5px;color:var(--muted)">${f.label}</span>
-        <input class="input mono" type="${f.type}" id="site_${key}_${f.key}" placeholder="${f.ph}">
-      </div>`).join("");
-    const bodyHidden = st.configured ? " hidden" : "";
     box.insertAdjacentHTML("beforeend", `
       <div class="site" id="card_${key}">
         <div class="site-head">
@@ -432,28 +427,36 @@ function renderSiteCards(serverSites) {
             <div class="site-desc">${esc(info.desc)}</div>
           </div>
           <span class="muted" style="border:1px solid var(--border);border-radius:4px;padding:0 6px;font-size:11px">${info.mode}</span>
-          ${toggleBtn}
-          <span style="flex:1"></span>
           ${badge}
           <label class="switch" title="启用本站点"><input type="checkbox" id="sw_${key}" onchange="siteDirty('${key}')"><span class="track"></span></label>
         </div>
-        <div class="site-body" id="body_${key}"${bodyHidden}>
-          <div class="creds-title">站点凭据 <span class="hint">· 仅存本机，留空保存 = 保持当前</span></div>
-          ${fields}
+        <div class="site-body" id="body_${key}" hidden>
+          <div class="creds-title">站点账号 <span class="hint">· 每个账号独立签到；凭据留空保存 = 保持当前</span></div>
+          <div id="accs_${key}"></div>
           <div class="field-row" style="margin-top:8px">
             <span style="width:78px;flex:none;font-size:12.5px;color:var(--muted)">代理访问</span>
             <label class="switch"><input type="checkbox" id="px_${key}" onchange="siteDirty('${key}')"><span class="track"></span></label>
             <span class="muted">经系统代理（https_proxy / all_proxy）</span>
           </div>
           <div class="site-ops">
-            <button class="btn" onclick="testSite('${key}')">测试连接</button>
+            <button class="btn" onclick="addAccount('${key}')">＋ 添加账号</button>
+            <button class="btn" onclick="testSite('${key}')">测试全部</button>
             <button class="btn primary" onclick="runSite('${key}')">立即签到</button>
             <span class="res-line muted" id="res_${key}" style="margin-top:0"></span>
           </div>
         </div>
+        <div class="site-head-foot" style="margin-top:6px;display:flex;gap:6px;align-items:center;justify-content:flex-end">
+          ${toggleBtn}
+        </div>
       </div>`);
     $("sw_" + key).checked = !!st.enabled;
     $("px_" + key).checked = !!st.use_proxy;
+    const accBox = $("accs_" + key);
+    if (!accs.length) {
+      accBox.innerHTML = '<div class="muted" style="font-size:12px;margin:6px 0">暂无账号，点击「添加账号」开始配置</div>';
+    } else {
+      for (const a of accs) accBox.appendChild(accountRowEl(key, info, a));
+    }
   }
   // 引导横幅
   const unconfigured = Object.entries(SITES)
@@ -466,26 +469,77 @@ function renderSiteCards(serverSites) {
   }
 }
 
-/** 展开/折叠站点凭据配置区 */
+/** 单个账号编辑区块（备注 + 启用 + 测试 + 删除 + 站点类型对应凭据字段） */
+function accountRowEl(key, info, acc) {
+  const div = document.createElement("div");
+  div.className = "account-box";
+  div.style.cssText = "border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-top:8px;background:rgba(127,127,127,.04)";
+  div.dataset.aid = acc.id || "";
+  div.dataset.key = key;
+  const fields = info.fields.map((f) => `
+      <div class="field-row" style="margin-top:7px">
+        <span style="width:78px;flex:none;font-size:12.5px;color:var(--muted)">${f.label}</span>
+        <input class="input mono" type="${f.type}" data-f="${f.key}" placeholder="${f.ph}" value="${esc(acc[f.key] || "")}">
+      </div>`).join("");
+  div.innerHTML = `
+      <div class="field-row" style="align-items:center;gap:8px">
+        <input class="input" style="flex:1;min-width:120px" data-f="remark" placeholder="备注（如：主账号 / 小号）" value="${esc(acc.remark || "")}">
+        <span class="muted" style="font-size:11px">启用</span>
+        <label class="switch"><input type="checkbox" data-f="enabled" ${acc.enabled === false ? "" : "checked"}><span class="track"></span></label>
+        <button class="btn btn-mini" onclick="testAccount('${key}','${esc(acc.id || "")}')">测试</button>
+        <button class="btn btn-mini" style="color:var(--danger,#f85149);border-color:var(--danger,#f85149)" onclick="removeAccount(this)">删除</button>
+      </div>
+      ${fields}`;
+  return div;
+}
+
+/** 展开/折叠站点账号配置区 */
 function toggleSite(key) {
   const body = $("body_" + key);
   if (!body) return;
   body.hidden = !body.hidden;
   const tg = $("tg_" + key);
-  if (tg) tg.textContent = body.hidden ? "已配置 · 点击展开修改" : "收起配置";
+  if (tg) tg.textContent = body.hidden ? (($("sw_" + key) && $("sw_" + key).checked) ? "已启用 · 管理账号" : "已配置 · 管理账号") : "收起配置";
 }
 
 function siteDirty(key) {
   const el = $("res_" + key);
   if (el) { el.textContent = ""; el.className = "res-line muted"; }
 }
+
+function addAccount(key) {
+  const box = $("accs_" + key);
+  if (!box) return;
+  box.appendChild(accountRowEl(key, SITES[key], { id: "", remark: "", enabled: true }));
+  siteDirty(key);
+}
+function removeAccount(btn) {
+  const row = btn.closest(".account-box");
+  if (!row) return;
+  if (!confirm("删除该账号？")) return;
+  row.remove();
+  siteDirty(row.dataset.key);
+}
+/** 收集某站点全部账号（含备注/启用/凭据；密码留空由后端保留原值） */
+function collectSiteAccounts(key) {
+  const rows = document.querySelectorAll("#accs_" + key + " .account-box");
+  const accs = [];
+  rows.forEach((row) => {
+    const a = { id: row.dataset.aid || "" };
+    const en = row.querySelector('[data-f="enabled"]');
+    a.enabled = en ? en.checked === true : true;
+    const rm = row.querySelector('[data-f="remark"]');
+    a.remark = rm ? rm.value.trim() : "";
+    for (const f of SITES[key].fields) {
+      const inp = row.querySelector('[data-f="' + f.key + '"]');
+      if (inp) a[f.key] = inp.value.trim();
+    }
+    accs.push(a);
+  });
+  return accs;
+}
 function collectSitePatch(key) {
-  const p = { enabled: $("sw_" + key).checked, use_proxy: $("px_" + key).checked };
-  for (const f of SITES[key].fields) {
-    const v = $("site_" + key + "_" + f.key).value.trim();
-    if (v) p[f.key] = v;
-  }
-  return p;
+  return { enabled: $("sw_" + key).checked === true, use_proxy: $("px_" + key).checked === true, accounts: collectSiteAccounts(key) };
 }
 
 /* ── 加载 / 保存 ── */
@@ -545,22 +599,27 @@ async function runSite(key) {
   const saved = await call("save_config", "POST", { sites: { [key]: collectSitePatch(key) } });
   if (!saved.success) { line.textContent = "✗ 配置保存失败：" + (saved.message || ""); line.className = "res-line err"; return; }
   const r = await call("run", "POST", { sites: [key] });
-  const item = ((r.data || {}).results || []).find((x) => x.site_key === key);
-  if (item && item.error) { line.textContent = "✗ " + item.error; line.className = "res-line err"; }
-  else if (item) { line.textContent = (item.status === "签到成功" ? "✓ " : "○ ") + item.message; line.className = "res-line " + (item.status === "签到成功" ? "ok" : ""); }
-  else { line.textContent = r.message || "无结果"; line.className = "res-line err"; }
-  // 签到执行成功同样视为已配置，重渲染折叠
-  if (item && !item.error && item.status !== "执行失败") setTimeout(() => loadAll(), 600);
+  const items = ((r.data || {}).results || []).filter((x) => x.site_key === key);
+  if (items.length === 0) { line.textContent = r.message || "无结果（可能没有启用的账号）"; line.className = "res-line err"; }
+  else {
+    line.innerHTML = items.map((x) =>
+      x.error ? "✗ " + ((x.account ? x.account + " " : "") + x.error)
+      : (x.status === "签到成功" ? "✓ " : "○ ") + (x.account ? x.account + " " : "") + x.message).join("<br>");
+    line.className = "res-line " + (items.every((x) => !x.error && x.status !== "执行失败") ? "ok" : "err");
+  }
   logPoll();
+  setTimeout(() => loadAll(), 800);
 }
 async function runAll() {
   $("runStatus").textContent = "执行中…";
   $("runResult").textContent = "";
   const r = await call("run", "POST", {});
   const data = r.data || {};
-  const lines = (data.results || []).map((x) =>
-    x.error ? "✗ " + x.site_name + "：" + x.error
-    : (x.status === "签到成功" ? "✓ " : "○ ") + x.site_name + "：" + x.message);
+  const lines = (data.results || []).map((x) => {
+    const who = x.account ? `（${x.account}）` : "";
+    return x.error ? "✗ " + x.site_name + who + "：" + x.error
+      : (x.status === "签到成功" ? "✓ " : "○ ") + x.site_name + who + "：" + x.message;
+  });
   const allOk = (data.results || []).length > 0 && (data.results || []).every((x) => x.status !== "执行失败");
   $("runResult").textContent = lines.join("\n") || (r.message || "未执行");
   $("runResult").style.color = allOk ? "var(--ok)" : (lines.length ? "var(--err)" : "var(--muted)");
@@ -570,17 +629,30 @@ async function runAll() {
 }
 async function testSite(key) {
   const line = $("res_" + key);
-  line.textContent = "保存配置并测试中…"; line.className = "res-line muted";
+  line.textContent = "保存并测试中…"; line.className = "res-line muted";
   const saved = await call("save_config", "POST", { sites: { [key]: collectSitePatch(key) } });
   if (!saved.success) { line.textContent = "✗ 配置保存失败：" + (saved.message || ""); line.className = "res-line err"; return; }
-  const r = await call("test_login", "POST", { site: key });
-  line.textContent = r.success ? "✓ " + (r.data.message || "测试成功") : "✗ " + (r.message || "测试失败");
-  line.className = "res-line " + (r.success ? "ok" : "err");
-  if (r.success) {
-    // 测试通过 = 已自动保存该站点；重新渲染为「已配置」并折叠
-    line.textContent = "✓ 测试通过，配置已自动保存";
-    setTimeout(() => loadAll(), 400);
+  await loadAll();
+  const rows = document.querySelectorAll("#accs_" + key + " .account-box");
+  const out = [];
+  for (const row of rows) {
+    const id = row.dataset.aid;
+    const rm = row.querySelector('[data-f="remark"]');
+    const remark = rm ? rm.value.trim() : "";
+    const who = remark || "账号 " + (id || "");
+    if (!id) { out.push("○ " + who + "：未保存（新账号请先保存）"); continue; }
+    const r = await call("test_login", "POST", { site: key, account_id: id });
+    out.push((r.success ? "✓ " : "✗ ") + who + "：" + ((r.data && r.data.message) || r.message || (r.success ? "测试成功" : "测试失败")));
   }
+  line.innerHTML = out.join("<br>") || "该站点没有账号";
+  line.className = "res-line " + (out.length && out.every((x) => x.startsWith("✓")) ? "ok" : "");
+}
+async function testAccount(key, accountId) {
+  const line = $("res_" + key);
+  if (!accountId) { line.textContent = "请先保存配置后再测试新账号"; line.className = "res-line err"; return; }
+  const r = await call("test_login", "POST", { site: key, account_id: accountId });
+  line.textContent = r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败");
+  line.className = "res-line " + (r.success ? "ok" : "err");
 }
 
 /* ── 实时运行日志 ── */

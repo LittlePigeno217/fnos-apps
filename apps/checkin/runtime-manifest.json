@@ -1,6 +1,6 @@
 {
-  "version": "1.0.7",
-  "generated_at": "2026-09-20T13:36:28Z",
+  "version": "1.0.8",
+  "generated_at": "2026-09-20T13:52:39Z",
   "files": {
     "server/hotfix.js": {
       "sha256": "952ce6860495138173c1d288b29413e757b76866f880131f35df02b1fc0be829",
@@ -11,32 +11,32 @@
       "size": 7026
     },
     "server/main.js": {
-      "sha256": "8acebe2c3b9b1d67cf20ce5506caf22ea7f903521dc65a8741fb3a74e2db1608",
-      "size": 10001
+      "sha256": "e9dacca23f8a6d415e9008882b14aebc10f898f069bd8b798b9f0bff3ae6cf86",
+      "size": 10018
     },
     "server/notify.js": {
       "sha256": "fbbf8bee81cc15627a0f677f26983887089dd6538c43303e4873cb9b3a8ac2ac",
       "size": 1630
     },
     "server/server.js": {
-      "sha256": "864fd33242c644b9839c19940f4cf437d8707d3b2783726abf4f253070c8fd39",
-      "size": 5311
+      "sha256": "4ed1de72b4516d0e8e0a5b7f6044eeff5b97182ad2dc97c1f1b60905a05f2bf5",
+      "size": 6743
     },
     "server/sites.js": {
       "sha256": "919ab0114c876341cd648b89098727b6a34969c653f4099667b626d960bcd187",
       "size": 22823
     },
     "server/store.js": {
-      "sha256": "a60232baa02a0101e10ce3abd601cebb343a6d99376e942fd500c387e189ef20",
-      "size": 5208
+      "sha256": "a63c00d3358c344a1296471be75758daba13c14943c17b7eb2689abd4286aa68",
+      "size": 6943
     },
     "server/update.js": {
-      "sha256": "fe347dfc7f12df8e8a84bd21c14c91c78668807cdcd0e7e7a1dd69e3af69bb30",
+      "sha256": "a36a8b2444b5681d04e1a614bfaa31eb4523528c196c6df7658c946a7d8b9c0c",
       "size": 19825
     },
     "www/index.html": {
-      "sha256": "28e97e1d7d710177c6cd073126df4b4072aef7d7f3084419d66efc8993d35752",
-      "size": 36434
+      "sha256": "bd41f8c60124b9ff0888da21e9b97023cc97c7076059b2c221048fcb24c8602e",
+      "size": 40136
     }
   }
 }

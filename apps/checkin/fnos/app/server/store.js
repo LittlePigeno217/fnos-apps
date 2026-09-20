@@ -10,16 +10,15 @@ const { FLZT, RIGHT_FORUM, YPOJIE, ANYROUTER } = require("./sites");
 const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER };
 const SITE_KEYS = Object.keys(ADAPTERS);
 
-// 站点默认配置单一事实源：来自每个 adapter 的 defaultConfig()（内部补 use_proxy: false）
+// 站点默认配置单一事实源：每站点 { enabled, use_proxy, accounts: [] }（多账号模型）
 const DEFAULT_SITES = {};
 for (const key of SITE_KEYS) {
-  const adapter = ADAPTERS[key];
-  DEFAULT_SITES[key] = { use_proxy: false, ...(adapter.defaultConfig ? adapter.defaultConfig() : {}) };
+  DEFAULT_SITES[key] = { enabled: false, use_proxy: false, accounts: [] };
 }
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.0.7",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.0.8",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -46,11 +45,45 @@ class Store {
 
   _mergeDefaults(raw) {
     const cfg = { ...DEFAULT_CONFIG, ...raw };
-    cfg.sites = { ...DEFAULT_CONFIG.sites };
+    cfg.sites = {};
     for (const k of SITE_KEYS) {
-      cfg.sites[k] = { ...DEFAULT_CONFIG.sites[k], ...((raw.sites || {})[k] || {}) };
+      const rawSite = (raw.sites || {})[k] || {};
+      cfg.sites[k] = { enabled: !!rawSite.enabled, use_proxy: !!rawSite.use_proxy, accounts: this._migrateAccounts(rawSite) };
     }
     return cfg;
+  }
+
+  /** 旧版单账号格式 → 多账号 accounts[0]（顶层 email/password/cookie/... 迁移，登录信息不丢） */
+  _migrateAccounts(rawSite) {
+    const accs = Array.isArray(rawSite.accounts) ? rawSite.accounts.slice() : [];
+    if (accs.length === 0) {
+      const legacy = {};
+      let has = false;
+      for (const f of ["email", "password", "cookie", "username", "api_user", "base_url"]) {
+        if (rawSite[f] !== undefined && rawSite[f] !== "") {
+          legacy[f] = rawSite[f];
+          has = true;
+        }
+      }
+      if (has) accs.push({ id: this._nextAccountId([]), enabled: true, remark: "", ...legacy });
+    }
+    return accs.map((a) => ({
+      id: a.id || this._nextAccountId(accs),
+      enabled: a.enabled !== false,
+      remark: String(a.remark || ""),
+      email: String(a.email || ""),
+      password: String(a.password || ""),
+      cookie: String(a.cookie || ""),
+      username: String(a.username || ""),
+      api_user: String(a.api_user || ""),
+      base_url: String(a.base_url || ""),
+    }));
+  }
+
+  /** 生成下一个账号 id（a1/a2/...） */
+  _nextAccountId(accs) {
+    const n = (accs || []).reduce((m, a) => Math.max(m, parseInt(String((a && a.id) || "").replace(/\D/g, ""), 10) || 0), 0) + 1;
+    return "a" + n;
   }
 
   save() {
@@ -85,26 +118,27 @@ class Store {
         const cur = cfg.sites[k];
         if (site.enabled !== undefined) cur.enabled = !!site.enabled;
         if (site.use_proxy !== undefined) cur.use_proxy = !!site.use_proxy;
-        if (site.email !== undefined) cur.email = String(site.email || "").trim();
-        if (site.password !== undefined) {
-          const v = String(site.password || "");
-          if (v) cur.password = v; // 留空 = 不修改
-        }
-        if (site.cookie !== undefined) {
-          const v = String(site.cookie || "").trim();
-          if (v) cur.cookie = v; // 留空 = 不修改
-        }
-        if (site.base_url !== undefined) {
-          const v = String(site.base_url || "").trim();
-          if (v) cur.base_url = v; // 留空 = 不修改
-        }
-        if (site.username !== undefined) {
-          const v = String(site.username || "").trim();
-          if (v) cur.username = v; // 留空 = 不修改
-        }
-        if (site.api_user !== undefined) {
-          const v = String(site.api_user || "").trim();
-          if (v) cur.api_user = v; // 留空 = 不修改
+        if (Array.isArray(site.accounts)) {
+          const next = site.accounts
+            .map((a) => {
+              if (!a || typeof a !== "object") return null;
+              const id = String(a.id || this._nextAccountId(cur.accounts));
+              const prev = cur.accounts.find((x) => String(x.id) === id) || {};
+              // 敏感值留空 = 保留原值
+              return {
+                id,
+                enabled: a.enabled !== false,
+                remark: String(a.remark !== undefined ? a.remark : (prev.remark || "")).trim(),
+                email: String(a.email !== undefined ? a.email : (prev.email || "")).trim(),
+                password: String(a.password !== undefined && a.password !== "" ? a.password : (prev.password || "")),
+                cookie: String(a.cookie !== undefined && a.cookie !== "" ? a.cookie : (prev.cookie || "")).trim(),
+                username: String(a.username !== undefined && a.username !== "" ? a.username : (prev.username || "")).trim(),
+                api_user: String(a.api_user !== undefined && a.api_user !== "" ? a.api_user : (prev.api_user || "")).trim(),
+                base_url: String(a.base_url !== undefined && a.base_url !== "" ? a.base_url : (prev.base_url || "")).trim(),
+              };
+            })
+            .filter(Boolean);
+          cur.accounts = next;
         }
       }
     }

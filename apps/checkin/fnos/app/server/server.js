@@ -35,15 +35,22 @@ class Server {
       sites: {},
     };
     for (const key of Object.keys(ADAPTERS)) {
-      const site = cfg.sites[key];
+      const site = cfg.sites[key] || {};
       const adapter = ADAPTERS[key];
+      const accs = Array.isArray(site.accounts) ? site.accounts : [];
       publicCfg.sites[key] = {
         name: adapter.name,
         mode: adapter.mode,
         enabled: !!site.enabled,
         use_proxy: !!site.use_proxy,
-        account: adapter.getAccountLabel(site),
-        configured: adapter.isConfigured(site),
+        configured: accs.some((a) => adapter.isConfigured(a)),
+        accounts: accs.map((a) => ({
+          id: a.id,
+          enabled: a.enabled !== false,
+          remark: a.remark || "",
+          label: adapter.getAccountLabel(a),
+          configured: adapter.isConfigured(a),
+        })),
       };
     }
     return ok(publicCfg);
@@ -58,13 +65,21 @@ class Server {
     const cfg = this._store.getConfig();
     const sites = {};
     for (const key of Object.keys(ADAPTERS)) {
-      const site = cfg.sites[key];
+      const site = cfg.sites[key] || {};
       const adapter = ADAPTERS[key];
+      const accs = Array.isArray(site.accounts) ? site.accounts : [];
       sites[key] = {
         name: adapter.name,
         enabled: !!site.enabled,
-        configured: adapter.isConfigured(site),
-        account: adapter.getAccountLabel(site),
+        configured: accs.some((a) => adapter.isConfigured(a)),
+        account_count: accs.length,
+        accounts: accs.map((a) => ({
+          id: a.id,
+          enabled: a.enabled !== false,
+          remark: a.remark || "",
+          label: adapter.getAccountLabel(a),
+          configured: adapter.isConfigured(a),
+        })),
       };
     }
     return ok({ enabled: cfg.enabled, cron: cfg.cron, version: cfg.version, sites });
@@ -87,20 +102,26 @@ class Server {
       for (const key of Object.keys(ADAPTERS)) {
         if (wanted && !wanted.includes(key)) continue;
         const site = cfg.sites[key];
-        if (!site.enabled) continue;
+        if (!site || !site.enabled) continue;
         const adapter = ADAPTERS[key];
-        this._log(`签到 ${adapter.name}…`);
-        try {
-          if (!adapter.isConfigured(site)) throw new Error("尚未配置凭据");
-          const r = await adapter.runCheckin(site);
-          results.push({ site_key: key, ...r });
-          history.push({ time: r.time, site: key, site_name: r.site_name, status: r.status, message: r.message, error: "" });
-          this._log(`签到 ${adapter.name} → ${r.status}`);
-        } catch (err) {
-          const msg = err.message || String(err);
-          results.push({ site_key: key, site_name: adapter.name, status: "执行失败", error: msg });
-          history.push({ time: new Date().toLocaleString("zh-CN", { hour12: false }), site: key, site_name: adapter.name, status: "执行失败", message: "", error: msg });
-          this._log(`签到 ${adapter.name} 失败：${msg}`);
+        const accs = (Array.isArray(site.accounts) ? site.accounts : []).filter((a) => a.enabled !== false);
+        if (!accs.length) continue;
+        for (const acc of accs) {
+          const accLabel = adapter.getAccountLabel(acc);
+          const who = accLabel ? `（${accLabel}）` : "";
+          this._log(`签到 ${adapter.name}${who}…`);
+          try {
+            if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
+            const r = await adapter.runCheckin(acc);
+            results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
+            history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, error: "" });
+            this._log(`签到 ${adapter.name} → ${r.status}`);
+          } catch (err) {
+            const msg = err.message || String(err);
+            results.push({ site_key: key, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "执行失败", error: msg });
+            history.push({ time: new Date().toLocaleString("zh-CN", { hour12: false }), site: key, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", error: msg });
+            this._log(`签到 ${adapter.name}${who} 失败：${msg}`);
+          }
         }
       }
       for (const h of history.reverse()) this._store.appendHistory(h);
@@ -117,15 +138,17 @@ class Server {
     }
   }
 
-  async testLogin(siteKey) {
+  async testLogin(siteKey, accountId) {
     const adapter = ADAPTERS[siteKey];
     if (!adapter) return fail(`未知站点：${siteKey}`);
     const cfg = this._store.getConfig();
     const site = cfg.sites[siteKey];
-    if (!site || !adapter.isConfigured(site)) return fail("该站点尚未配置凭据");
+    const accs = (site && Array.isArray(site.accounts) ? site.accounts : []).filter((a) => a.enabled !== false);
+    const acc = accountId ? accs.find((a) => String(a.id) === String(accountId)) : accs[0];
+    if (!acc || !adapter.isConfigured(acc)) return fail(accountId ? "该账号尚未配置凭据" : "该站点没有可用账号");
     try {
-      const r = await adapter.testConnection(site);
-      return ok(r);
+      const r = await adapter.testConnection(acc);
+      return ok({ ...r, account_id: acc.id, account: adapter.getAccountLabel(acc) });
     } catch (err) {
       return fail(err.message || "测试失败");
     }
