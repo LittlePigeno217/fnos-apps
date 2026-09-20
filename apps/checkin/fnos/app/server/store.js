@@ -5,10 +5,15 @@
  */
 const fs = require("fs");
 const path = require("path");
-const { FLZT, RIGHT_FORUM, YPOJIE, ANYROUTER } = require("./sites");
+const { ADAPTERS } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
 
-const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER };
 const SITE_KEYS = Object.keys(ADAPTERS);
+
+/** 某站点账号字段 key 集：来自 adapter.fields（前端表单与后端白名单同源） */
+function accountFieldKeys(slug) {
+  const adapter = ADAPTERS[slug];
+  return Array.isArray(adapter && adapter.fields) ? adapter.fields.map((f) => f.key) : [];
+}
 
 // 站点默认配置单一事实源：每站点 { enabled, use_proxy, accounts: [] }（多账号模型）
 const DEFAULT_SITES = {};
@@ -18,7 +23,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.1.3",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.1.4",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -52,18 +57,18 @@ class Store {
     cfg.sites = {};
     for (const k of SITE_KEYS) {
       const rawSite = (raw.sites || {})[k] || {};
-      cfg.sites[k] = { enabled: !!rawSite.enabled, use_proxy: !!rawSite.use_proxy, accounts: this._migrateAccounts(rawSite) };
+      cfg.sites[k] = { enabled: !!rawSite.enabled, use_proxy: !!rawSite.use_proxy, accounts: this._migrateAccounts(rawSite, k) };
     }
     return cfg;
   }
 
-  /** 旧版单账号格式 → 多账号 accounts[0]（顶层 email/password/cookie/... 迁移，登录信息不丢） */
-  _migrateAccounts(rawSite) {
+  /** 旧版单账号格式 → 多账号 accounts[0]（顶层凭据字段迁移，登录信息不丢） */
+  _migrateAccounts(rawSite, slug) {
     const accs = Array.isArray(rawSite.accounts) ? rawSite.accounts.slice() : [];
     if (accs.length === 0) {
       const legacy = {};
       let has = false;
-      for (const f of ["email", "password", "cookie", "username", "api_user", "base_url"]) {
+      for (const f of accountFieldKeys(slug)) {
         if (rawSite[f] !== undefined && rawSite[f] !== "") {
           legacy[f] = rawSite[f];
           has = true;
@@ -71,17 +76,18 @@ class Store {
       }
       if (has) accs.push({ id: this._nextAccountId([]), enabled: true, remark: "", ...legacy });
     }
-    return accs.map((a) => ({
-      id: a.id || this._nextAccountId(accs),
-      enabled: a.enabled !== false,
-      remark: String(a.remark || ""),
-      email: String(a.email || ""),
-      password: String(a.password || ""),
-      cookie: String(a.cookie || ""),
-      username: String(a.username || ""),
-      api_user: String(a.api_user || ""),
-      base_url: String(a.base_url || ""),
-    }));
+    return accs.map((a) => {
+      const base = {
+        id: a.id || this._nextAccountId(accs),
+        enabled: a.enabled !== false,
+        remark: String(a.remark || ""),
+      };
+      // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）
+      for (const f of accountFieldKeys(slug)) {
+        base[f] = String(a[f] || "");
+      }
+      return base;
+    });
   }
 
   /** 生成下一个账号 id（a1/a2/...） */
@@ -128,18 +134,25 @@ class Store {
               if (!a || typeof a !== "object") return null;
               const id = String(a.id || this._nextAccountId(cur.accounts));
               const prev = cur.accounts.find((x) => String(x.id) === id) || {};
-              // 敏感值留空 = 保留原值
-              return {
+              // 敏感值留空 = 保留原值（password/cookie 等由 adapter 字段驱动；规则统一）
+              const merged = {
                 id,
                 enabled: a.enabled !== false,
                 remark: String(a.remark !== undefined ? a.remark : (prev.remark || "")).trim(),
-                email: String(a.email !== undefined ? a.email : (prev.email || "")).trim(),
-                password: String(a.password !== undefined && a.password !== "" ? a.password : (prev.password || "")),
-                cookie: String(a.cookie !== undefined && a.cookie !== "" ? a.cookie : (prev.cookie || "")).trim(),
-                username: String(a.username !== undefined && a.username !== "" ? a.username : (prev.username || "")).trim(),
-                api_user: String(a.api_user !== undefined && a.api_user !== "" ? a.api_user : (prev.api_user || "")).trim(),
-                base_url: String(a.base_url !== undefined && a.base_url !== "" ? a.base_url : (prev.base_url || "")).trim(),
               };
+              for (const f of accountFieldKeys(k)) {
+                const rawV = a[f];
+                const prevV = prev[f] || "";
+                if (rawV === undefined) {
+                  merged[f] = prevV;
+                } else if (rawV === "") {
+                  // 留空 = 保留原值（对 password/cookie 等敏感字段语义一致）
+                  merged[f] = prevV;
+                } else {
+                  merged[f] = String(rawV).trim();
+                }
+              }
+              return merged;
             })
             .filter(Boolean);
           cur.accounts = next;

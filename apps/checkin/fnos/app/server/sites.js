@@ -39,7 +39,13 @@ function now() {
 const FLZT = {
   key: "flzt",
   name: "FLZT",
+  short: "FL",
   mode: "账号密码",
+  desc: "flzt.club · 账号密码登录后调用签到 API",
+  fields: [
+    { key: "email", label: "账号 / 邮箱", type: "text", ph: "name@example.com" },
+    { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
+  ],
   base: "https://flzt.club",
   loginPath: "/api/v1/passport/auth/login",
   checkinPath: "/api/v1/user/checkIn",
@@ -103,7 +109,12 @@ const FLZT = {
 const RIGHT_FORUM = {
   key: "right_forum",
   name: "恩山无线论坛",
+  short: "恩",
   mode: "Cookie",
+  desc: "right.com.cn · Cookie 签到（formhash + 人机验证识别）",
+  fields: [
+    { key: "cookie", label: "Cookie", type: "password", ph: "粘贴浏览器 Cookie（留空不改）" },
+  ],
   base: "https://www.right.com.cn/forum",
   signPages: ["/plugin.php?id=erling_qd:sign_in", "/erling_qd-sign_in.html"],
   signAction: "/plugin.php?id=erling_qd:action&action=sign",
@@ -231,7 +242,13 @@ const RIGHT_FORUM = {
 const YPOJIE = {
   key: "ypojie",
   name: "易破解",
+  short: "易",
   mode: "账号密码",
+  desc: "ypojie.com · WordPress 登录后 AJAX 签到",
+  fields: [
+    { key: "email", label: "账号 / 邮箱", type: "text", ph: "name@example.com" },
+    { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
+  ],
   base: "https://www.ypojie.com",
   vipPath: "/vip?pd=money",
   loginPath: "/wp-login.php",
@@ -385,7 +402,16 @@ const YPOJIE = {
 const ANYROUTER = {
   key: "anyrouter",
   name: "AnyRouter / NewAPI 通用",
+  short: "AR",
   mode: "Cookie / 账号",
+  desc: "anyrouter.top 及 NewAPI/OneAPI 平台 · Cookie 或账号密码签到",
+  fields: [
+    { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（自建 NewAPI 填内网地址）" },
+    { key: "username", label: "账号", type: "text", ph: "账号密码方式（二选一，无 WAF 平台可用）" },
+    { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
+    { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（二选一，WAF 站点用这个）" },
+    { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
+  ],
   base: "https://anyrouter.top",
   loginPath: "/api/user/login",
   signInPath: "/api/user/sign_in",
@@ -535,4 +561,13 @@ const ANYROUTER = {
   },
 };
 
-module.exports = { FLZT, RIGHT_FORUM, YPOJIE, ANYROUTER, isAlreadyCheckedIn, maskEmail };
+module.exports = {
+  FLZT,
+  RIGHT_FORUM,
+  YPOJIE,
+  ANYROUTER,
+  isAlreadyCheckedIn,
+  maskEmail,
+  // ADAPTERS 单一事实源：store.js / server.js 均从这里导入，禁止各自维护拷贝
+  ADAPTERS: { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER },
+};

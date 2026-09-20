@@ -4,9 +4,7 @@
  * 方法：getConfig / saveConfig / status / runOnce / testLogin / getHistory / clearHistory
  * 统一返回 { success, message, data }。
  */
-const { FLZT, RIGHT_FORUM, YPOJIE, ANYROUTER } = require("./sites");
-
-const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER };
+const { ADAPTERS } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
 
 function ok(data, message = "") {
   return { success: true, message, data };
@@ -44,6 +42,15 @@ class Server {
         enabled: !!site.enabled,
         use_proxy: !!site.use_proxy,
         configured: accs.some((a) => adapter.isConfigured(a)),
+        // meta：站点元数据单一事实源（前端据此渲染，新增站点前端零改动）
+        meta: {
+          key: adapter.key,
+          name: adapter.name,
+          short: adapter.short || "",
+          mode: adapter.mode,
+          desc: adapter.desc || "",
+          fields: Array.isArray(adapter.fields) ? adapter.fields : [],
+        },
         accounts: accs.map((a) => ({
           id: a.id,
           enabled: a.enabled !== false,
@@ -63,16 +70,26 @@ class Server {
 
   status() {
     const cfg = this._store.getConfig();
+    const history = this._store.getHistory(500);
     const sites = {};
     for (const key of Object.keys(ADAPTERS)) {
       const site = cfg.sites[key] || {};
       const adapter = ADAPTERS[key];
       const accs = Array.isArray(site.accounts) ? site.accounts : [];
+      const last = (history || []).find((h) => h && h.site === key) || null;
       sites[key] = {
         name: adapter.name,
         enabled: !!site.enabled,
         configured: accs.some((a) => adapter.isConfigured(a)),
         account_count: accs.length,
+        meta: {
+          key: adapter.key,
+          name: adapter.name,
+          short: adapter.short || "",
+          mode: adapter.mode,
+          desc: adapter.desc || "",
+          fields: Array.isArray(adapter.fields) ? adapter.fields : [],
+        },
         accounts: accs.map((a) => ({
           id: a.id,
           enabled: a.enabled !== false,
@@ -80,9 +97,23 @@ class Server {
           label: adapter.getAccountLabel(a),
           configured: adapter.isConfigured(a),
         })),
+        last: last ? { time: last.time, status: last.status, message: last.message, account: last.account || "" } : null,
+        today_ok: last ? last.status !== "执行失败" && sameDayStr(last.time) : false,
       };
     }
-    return ok({ enabled: cfg.enabled, cron: cfg.cron, version: cfg.version, sites });
+    const enabledKeys = Object.keys(ADAPTERS).filter((k) => sites[k].enabled && sites[k].configured);
+    const done = enabledKeys.filter((k) => sites[k].today_ok).length;
+    const failed = enabledKeys.filter((k) => {
+      const l = sites[k].last;
+      return l && l.status === "执行失败" && sameDayStr(l.time);
+    });
+    return ok({
+      enabled: cfg.enabled,
+      cron: cfg.cron,
+      version: cfg.version,
+      sites,
+      today: { done, total: enabledKeys.length, failed },
+    });
   }
 
   /** 立即执行签到：全部启用的站点；sites 参数可选（仅执行指定站点） */
@@ -162,6 +193,13 @@ class Server {
     this._store.clearHistory();
     return ok({ cleared: true });
   }
+}
+
+/** 判断 history 时间字符串（'2026/9/20 23:40:15'）是否为今天 */
+function sameDayStr(t) {
+  if (!t) return false;
+  const todayPrefix = new Date().toLocaleDateString("zh-CN", { hour12: false });
+  return String(t).startsWith(todayPrefix);
 }
 
 module.exports = { Server, ADAPTERS };
