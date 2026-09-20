@@ -206,8 +206,10 @@ async function applyHotfix(appDir, dataDir, creds) {
     JSON.stringify({ version: manifest.version, applied_at: new Date().toISOString(), files: applied }, null, 2)
   );
 
-  // 重启：优先 trim-cli（登录 session）请求系统级重启；
-  // 无凭据/失败时降级为本进程退出、由 fnOS 进程管理器拉起（适配所有 fnOS，无需配置凭据）
+  // 重启：优先 trim-cli（登录 session）请求系统级重启。
+  // ⚠️ fnOS 采用 cmd/main 脚本进程管理模式，进程退出后不会被自动拉起——
+  // 严禁使用「进程自杀」方案（真机验证：checkin 自杀后应用停止）。
+  // trim-cli 失败/无凭据时提示手动重启。
   let restart = { ok: false, err: "trim-cli 不可用" };
   try {
     restart = await restartApp(dataDir, creds);
@@ -215,9 +217,9 @@ async function applyHotfix(appDir, dataDir, creds) {
     restart = { ok: false, err: e.message };
   }
   if (restart.ok) {
-    return { success: true, applied, message: `功能已更新并自动重启（v${manifest.version}，${applied.length} 文件）`, restarting: true };
+    return { success: true, applied, message: `功能已更新并自动重启（v${manifest.version}，${applied.length} 文件）`, restarting: true, version: manifest.version };
   }
-  return { success: true, applied, message: `功能已更新，进程自动重启中（v${manifest.version}，${applied.length} 文件）`, restarting: true, via_self_exit: true };
+  return { success: true, applied, message: `功能已更新，自动重启未生效（未配置 fnOS 凭据；请在应用中心重启应用）`, need_manual_restart: true, version: manifest.version };
 }
 
 function sha256Hex(buf) {
