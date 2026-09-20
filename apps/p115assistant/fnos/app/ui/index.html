@@ -678,16 +678,15 @@
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">媒体扩展名</span>
-              <input class="input mono grow" type="text" id="mediaExtensions" placeholder=".mp4,.mkv,.ts,.iso,…">
+              <input class="input mono grow" type="text" id="mediaExtensions" placeholder=".mp4,.mkv,.ts,.iso,…" onchange="markDirty('upload')">
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">附属文件扩展名</span>
-              <input class="input mono grow" type="text" id="sidecarExtensions" placeholder=".nfo,.jpg,.jpeg,.png,.srt,.ass,…">
+              <input class="input mono grow" type="text" id="sidecarExtensions" placeholder=".nfo,.jpg,.jpeg,.png,.srt,.ass,…" onchange="markDirty('upload')">
             </div>
             <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
               <span class="muted" id="advExtResult"></span>
               <button class="btn" onclick="restoreDefaultExtensions()">恢复默认</button>
-              <button class="btn primary" onclick="saveExtensions()">保存</button>
             </div>
             <p class="muted" style="margin-top:6px;font-size:12px">上传与 STRM 生成都会按媒体扩展名判定文件；附属文件扩展名在「上传附属文件」开启时生效。</p>
           </div>
@@ -3540,6 +3539,8 @@ async function saveUploadCfg(){
     upload_conflict_policy: el("upConflict").value,
     upload_risk_profile: el("upRisk").value,
     rate_limit_profile: el("rateLimit").value,
+    upload_media_extensions: el("mediaExtensions").value.trim(),
+    upload_sidecar_extensions: el("sidecarExtensions").value.trim(),
   };
   const r = await call("save_config", "POST", updates);
   if (r.success){ clearDirty("upload"); return; }
@@ -3580,13 +3581,6 @@ async function saveAppCfg(){
   const r = await call("save_config", "POST", updates);
   if (r.success){ clearDirty("settings"); el("feishuWebhook").value = ""; return; }
   alert("保存失败：" + (r.message || ""));
-}
-async function saveExtensions(){
-  const media = el("mediaExtensions").value.trim();
-  const sidecar = el("sidecarExtensions").value.trim();
-  const r = await call("save_config","POST",{ upload_media_extensions: media, upload_sidecar_extensions: sidecar });
-  el("advExtResult").textContent = r.success ? "已保存" : (r.message || "保存失败");
-  el("advExtResult").style.color = r.success ? "var(--ok,#3fb950)" : "var(--danger,#f85149)";
 }
 async function restoreDefaultExtensions(){
   const defaults = {
