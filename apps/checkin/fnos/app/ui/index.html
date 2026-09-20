@@ -69,6 +69,16 @@
   .row-badge .dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
   .dot-ok { background:var(--ok); } .dot-warn { background:var(--warn); }
   .dot-err { background:var(--err); } .dot-mute { background:var(--border); }
+  /* 弹窗凭据折叠区：label 上行小字 + 输入框全宽，竖排整洁 */
+  .creds { margin-top:4px; }
+  .creds summary { font-size:11.5px; color:var(--muted); cursor:pointer; padding:2px 0; user-select:none; list-style:none; }
+  .creds summary::before { content:"▸ "; font-size:10px; }
+  .creds[open] summary::before { content:"▾ "; }
+  .creds[open] summary { color:var(--ink); font-weight:600; }
+  .creds-body { border-top:1px dashed var(--border); margin-top:6px; padding-top:9px; }
+  .cred-row { display:flex; flex-direction:column; gap:4px; margin-bottom:9px; }
+  .cred-row .cred-label { font-size:11px; color:var(--muted); }
+  .cred-row input { width:100%; }
   details.fail-detail summary { cursor:pointer; font-size:11.5px; color:var(--err); }
   @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important } }
   html, body { height: 100%; }
@@ -279,7 +289,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.1.5</span>
+      <span class="ver" id="appVersion">v1.1.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -628,19 +638,21 @@ function accountRowEl(key, acc) {
   div.style.cssText = "border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-top:8px;background:rgba(127,127,127,.04)";
   div.dataset.aid = acc.id || "";
   const fields = siteFields(key).map((f) => `
-      <div class="field-row" style="margin-top:7px">
-        <span style="width:78px;flex:none;font-size:12.5px;color:var(--muted)">${esc(f.label)}</span>
+      <div class="cred-row">
+        <div class="cred-label">${esc(f.label)}</div>
         <input class="input mono" type="${f.type}" data-f="${f.key}" placeholder="${esc(f.ph || "")}" value="${esc(acc[f.key] || "")}">
       </div>`).join("");
   const label = acc.remark || acc.label || ("账号 " + (acc.id || ""));
   div.innerHTML = `
       <div class="field-row" style="align-items:center;gap:8px">
         <span class="muted" style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}">${esc(label)}</span>
-        <details style="margin-left:auto"><summary class="muted" style="font-size:11px;cursor:pointer">凭据</summary>
-          ${fields}
-          <div class="field-row" style="margin-top:8px;align-items:center;gap:6px">
-            <span class="muted" style="font-size:11px">启用</span>
-            <label class="switch"><input type="checkbox" data-f="enabled" ${acc.enabled === false ? "" : "checked"}><span class="track"></span></label>
+        <details class="creds" style="margin-left:auto"><summary>凭据</summary>
+          <div class="creds-body">
+            ${fields}
+            <div class="field-row" style="margin-top:2px;align-items:center;gap:6px">
+              <span class="muted" style="font-size:11px">启用</span>
+              <label class="switch"><input type="checkbox" data-f="enabled" ${acc.enabled === false ? "" : "checked"}><span class="track"></span></label>
+            </div>
           </div>
         </details>
         <input class="input" style="flex:1;min-width:110px" data-f="remark" placeholder="备注" value="${esc(acc.remark || "")}">
