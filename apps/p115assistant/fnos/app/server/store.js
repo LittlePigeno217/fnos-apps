@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.0.3",
+  version: "1.0.4",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -298,6 +298,26 @@ class Store {
   getHistory() {
     const items = this._readJson(HISTORY_KEY);
     return Array.isArray(items) ? items : [];
+  }
+
+  // 清空执行历史：保留今日签到成功记录（scheduler 以 history 为「今日已签到」持久化判据，
+  // 全清会导致清空后重启在签到窗口内重复签到）。返回删除条数。
+  clearHistory() {
+    const items = this.getHistory();
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
+    const kept = items.filter(
+      (it) =>
+        it &&
+        it.type === "checkin" &&
+        it.ok === true &&
+        typeof it.ts === "number" &&
+        it.ts >= startOfDay &&
+        it.ts < endOfDay
+    );
+    this._writeJson(HISTORY_KEY, kept);
+    return items.length - kept.length;
   }
 
   appendHistory(item) {

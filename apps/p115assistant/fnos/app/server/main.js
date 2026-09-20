@@ -85,6 +85,7 @@ const ACTIONS = new Map([
   ["apply_hotfix", ["POST", "applyHotfix"]],
   ["link", ["GET", "link"]],
   ["history", ["GET", "history"]],
+  ["history_clear", ["POST", "clearHistory"]],
   ["browse_local", ["GET", "browseLocal"]],
   ["log_tail", ["GET", "logTail"]],
   ["test_notify", ["POST", "testNotify"]],

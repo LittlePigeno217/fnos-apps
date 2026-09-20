@@ -901,6 +901,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
             刷新
           </button>
+          <button class="btn" style="color:var(--danger,#f85149);border-color:var(--danger,#f85149)" onclick="clearHistory()" title="清空历史执行记录（保留今日签到状态）">清空历史</button>
         </div>
         <div class="termline" aria-label="上传身份冲突" id="conflictBlock" hidden>
           <span class="term-prompt">❯</span>
@@ -3330,6 +3331,7 @@ document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll("section").forEach(s=>s.hidden=true);
   el("tab-"+b.dataset.tab).hidden=false;
   if (b.dataset.tab === "history"){ refreshHistory(); refreshConflicts(); }
+  if (b.dataset.tab === "log"){ pollLog(); const lb = el("logBox"); if (lb) lb.scrollTop = lb.scrollHeight; }
   if (b.dataset.tab === "upload"){ loadMappings(); loadExtensions(); startWatchPolling(); }
   if (b.dataset.tab === "link"){ loadStrmMappings(); }
   if (b.dataset.tab === "signin"){ refreshSigninRange(); }
@@ -4255,6 +4257,18 @@ function renderHistoryPage(){
       `<td class="ops ${ok ? "ok" : "err"}">${ok ? "成功" : "失败"}</td>`;
     tb.appendChild(tr);
   }
+}
+
+async function clearHistory(){
+  if(!confirm("确定清空全部历史记录？\n（今日签到状态会保留，避免重复签到）")) return;
+  const r = await call("history_clear", "POST", {});
+  if (r.success) {
+    const n = r.data && r.data.removed != null ? " " + r.data.removed + " 条" : "";
+    alert("已清空" + n + "记录");
+  } else {
+    alert("清空失败：" + (r.message || ""));
+  }
+  refreshHistory();
 }
 
 /* ---- 一次性任务台 ---- */

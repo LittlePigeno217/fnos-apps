@@ -2606,6 +2606,17 @@ class Server {
     }
   }
 
+  // ── 清空执行历史（保留今日签到成功记录，防止重启后签到窗口内重复签到）──
+  clearHistory() {
+    try {
+      const removed = this.store.clearHistory();
+      return ok({ removed });
+    } catch (err) {
+      console.error(`清空执行历史失败：${err.message}`);
+      return error(`清空执行历史失败: ${err.message}`);
+    }
+  }
+
   // ── 日志 ──
   // 结构化日志：每条 {t:时间, l:等级, y:类型, x:文本}。前端按等级/类型筛选着色。
   // 等级: INFO | WARN | ERROR；类型: UPLOAD | STRM | WATCH | CHECKIN | RISK | CONFIG | LINK | SYSTEM
