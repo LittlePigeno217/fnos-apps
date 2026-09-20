@@ -18,7 +18,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.1.0",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.1.1",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -45,6 +45,10 @@ class Store {
 
   _mergeDefaults(raw) {
     const cfg = { ...DEFAULT_CONFIG, ...raw };
+    // 版本永远反映当前代码常量（DEFAULT_CONFIG.version，由 --bump 同步）：
+    // 不参与持久化合并，避免 config 文件旧版本号在「fpk 升级 / 热更未回写」时
+    // 覆盖新字面量，导致重启后版本号不变（对齐 p115assistant 已验证机制）。
+    cfg.version = DEFAULT_CONFIG.version;
     cfg.sites = {};
     for (const k of SITE_KEYS) {
       const rawSite = (raw.sites || {})[k] || {};
