@@ -76,10 +76,22 @@ class Server {
       const site = cfg.sites[key] || {};
       const adapter = ADAPTERS[key];
       const accs = Array.isArray(site.accounts) ? site.accounts : [];
-      const last = (history || []).find((h) => h && h.site === key) || null;
+      // per-site 聚合：扫描该站全部历史记录（最新在前），避免「最后一条是成功」掩盖早前失败：
+      // 任一「执行失败」→ today_failed；否则存在今日成功/已签到 → today_ok。
+      const siteHist = (history || []).filter((h) => h && h.site === key);
+      const last = siteHist[0] || null;
+      let today_ok = false;
+      let today_failed = false;
+      for (const h of siteHist) {
+        if (!sameDayStr(h.time)) continue;
+        if (h.status === "执行失败") { today_failed = true; break; }
+        today_ok = true;
+      }
+      if (today_failed) today_ok = false;
       sites[key] = {
         name: adapter.name,
         enabled: !!site.enabled,
+        use_proxy: !!site.use_proxy, // status 结构对齐 get_config：前端 renderSiteCards 后 SITE_DATA 据此渲染编辑弹窗
         configured: accs.some((a) => adapter.isConfigured(a)),
         account_count: accs.length,
         meta: {
@@ -98,15 +110,13 @@ class Server {
           configured: adapter.isConfigured(a),
         })),
         last: last ? { time: last.time, status: last.status, message: last.message, account: last.account || "" } : null,
-        today_ok: last ? last.status !== "执行失败" && sameDayStr(last.time) : false,
+        today_ok,
+        today_failed,
       };
     }
     const enabledKeys = Object.keys(ADAPTERS).filter((k) => sites[k].enabled && sites[k].configured);
     const done = enabledKeys.filter((k) => sites[k].today_ok).length;
-    const failed = enabledKeys.filter((k) => {
-      const l = sites[k].last;
-      return l && l.status === "执行失败" && sameDayStr(l.time);
-    });
+    const failed = enabledKeys.filter((k) => sites[k].today_failed);
     return ok({
       enabled: cfg.enabled,
       cron: cfg.cron,

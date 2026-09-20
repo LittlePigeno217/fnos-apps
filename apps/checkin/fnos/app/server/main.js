@@ -19,8 +19,9 @@ const api = new Server(store, notify, (msg) => {
   console.log(`${new Date().toISOString()} ${msg}`);
 });
 
-/* ── 调度：每日定时 + 30 分钟补签巡检 ─────────────────────── */
-let lastSignDate = "";      // 上一次成功「全部签到完成」的日期
+/* ── 调度：每日定时首跑 + 30 分钟漏签补跑 ─────────────────────── */
+let lastSignDate = "";      // 今日已全部签到成功的日期（达到后当日不再触发任何路径）
+let fullRunDate = "";       // 今日已执行过「定时首跑」全量的日期（当日只一次全量）
 let catchupCount = 0;       // 当天补签次数（上限 5）
 let catchupDate = "";
 
@@ -47,38 +48,73 @@ function resetDailyIfNeeded() {
   }
 }
 
-async function runScheduled(kind) {
+/** 今日是否已全部签到成功（status 派生：启用且已配置的站点全部 today_ok） */
+function allSitesDoneToday(status) {
+  const entries = Object.entries((status && status.sites) || {}).filter(([, st]) => st.enabled && st.configured);
+  return entries.length > 0 && entries.every(([, st]) => st.today_ok);
+}
+
+/** 启用且已配置、但今日尚未成功的站点（定时首跑与漏签补跑的目标集） */
+function todoSiteKeys(status) {
+  return Object.entries((status && status.sites) || {})
+    .filter(([, st]) => st.enabled && st.configured && !st.today_ok)
+    .map(([k]) => k);
+}
+
+/**
+ * 两个独立触发（由 tickEveryMinute 在 cron 时刻已过后调用，cron 之前绝不触发任何签到）：
+ *  1) 定时首跑：今日尚未全量、且今日有未完成站点 → 全量一次（当日只一次，fullRunDate 兜底）。
+ *  2) 漏签补跑：仍有失败/未签站点、未达每日 5 次上限 → 仅补跑失败/未签站点
+ *     （不重跑已成功站点，避免站点负载与重复「已签到」历史）。
+ */
+async function runScheduled() {
   const cfg = store.getConfig();
   if (!cfg.enabled) return;
   resetDailyIfNeeded();
   const t = todayStr();
-  // 今天已全部签到成功就不再跑
+  // 今日已全部签到成功：任何路径都不再触发
   if (lastSignDate === t) return;
+  // 重启后同理：cron 时刻之前不触发
+  if (hhmmNow() < (cfg.cron || "08:10")) return;
 
-  const r = await api.runOnce();
-  const data = r.data || {};
-  const ok = r.success && data.success_count > 0 && data.results.every((x) => x.status !== "执行失败");
-  if (ok) lastSignDate = t;
-  else if (kind === "catchup") {
+  const status = api.status().data || {};
+  const allDone = allSitesDoneToday(status);
+  const todoKeys = todoSiteKeys(status);
+
+  // 定时首跑：到达/越过 cron 时刻、今日未全成、当日尚未全量 → 全量一次
+  if (!allDone && fullRunDate !== t && todoKeys.length) {
+    fullRunDate = t;
+    api._log(`每日签到时刻 ${cfg.cron} 已到，执行全量签到`);
+    const r = await api.runOnce();
+    const data = r.data || {};
+    if (r.success && data.success_count > 0 && data.results.every((x) => x.status !== "执行失败")) {
+      lastSignDate = t;
+    }
+    return; // 全量已触发，本次 tick 不再叠加补跑
+  }
+
+  // 漏签补跑：仅补跑失败/未签站点，维持每 30 分钟节奏与每日 5 次上限
+  if (todoKeys.length && catchupCount < 5) {
     catchupCount += 1;
-    api._log(`补签第 ${catchupCount} 次（当天上限 5）`);
-    if (catchupCount >= 5) lastSignDate = t; // 今天不再无限重试
+    api._log(`补签第 ${catchupCount} 次（当天上限 5）：${todoKeys.join("、")}`);
+    const r = await api.runOnce(todoKeys);
+    const data = r.data || {};
+    if (r.success && data.success_count > 0 && data.results.every((x) => x.status !== "执行失败")) {
+      if (allSitesDoneToday(api.status().data || {})) lastSignDate = t;
+    }
+    if (catchupCount >= 5) api._log("补签次数已达当日上限（5 次），今日不再补签");
   }
 }
 
 function tickEveryMinute() {
-  const minute = hhmmNow();
   const cfg = store.getConfig();
-  if (cfg.enabled) {
-    // 每日定时：到点触发
-    if (minute === (cfg.cron || "08:10")) {
-      api._log("每日签到时刻到达，执行签到");
-      runScheduled("cron").catch((err) => api._log(`定时签到异常：${err.message}`));
-    }
-    // 补签巡检：每 30 分钟（整点与半点）
-    if (minute.endsWith(":00") || minute.endsWith(":30")) {
-      runScheduled("catchup").catch((err) => api._log(`补签巡检异常：${err.message}`));
-    }
+  if (!cfg.enabled) return;
+  const minute = hhmmNow();
+  const cron = cfg.cron || "08:10";
+  if (minute < cron) return; // cron 时刻之前不触发任何签到（重启后同理）
+  // 触发节奏：cron 准点（如 08:10 不在整点/半点时仍准点）+ 每整点/半点（补签巡检）
+  if (minute === cron || minute.endsWith(":00") || minute.endsWith(":30")) {
+    runScheduled().catch((err) => api._log(`定时签到异常：${err.message}`));
   }
 }
 

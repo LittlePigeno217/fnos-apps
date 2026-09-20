@@ -214,6 +214,8 @@
   .site-tag.t2 { background: linear-gradient(135deg,#F5A623,#C77C0A); }
   .site-tag.t3 { background: linear-gradient(135deg,#20B08A,#0C7A5F); }
   .site-tag.t4 { background: linear-gradient(135deg,#7B4FE0,#4A2B9E); }
+  .site-tag.t5 { background: linear-gradient(135deg,#AB47BC,#6A1B9A); }
+  .site-tag.t6 { background: linear-gradient(135deg,#00ACC1,#00695C); }
   .site-name { font-weight: 700; font-size: 14.5px; }
   .site-desc { font-size: 11.5px; color: var(--muted); }
   .badge { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
@@ -289,7 +291,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.1.6</span>
+      <span class="ver" id="appVersion">v1.1.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -469,10 +471,11 @@ function siteName(key) {
 function siteTagClass(key) {
   const m = getSiteMeta(key);
   const palette = ["t1", "t2", "t3", "t4", "t5", "t6"];
-  if (m.tag) return "st-" + m.tag;
+  // 返回 t1…t6（无 st- 前缀），与下方 .site-tag.t1…t6 色块规则一一对应
+  if (m.tag) return m.tag;
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return "st-" + palette[h % palette.length];
+  return palette[h % palette.length];
 }
 function siteMode(key) {
   const m = getSiteMeta(key);
@@ -513,7 +516,9 @@ async function refreshOverview() {
   } else {
     ov.hidden = true;
   }
-  renderSiteCards(SITE_DATA);
+  // status 返回的 sites 含 last/today_ok（徽标数据源）；get_config 的 sites 仅含配置。
+  // 必须传 r.data.sites，否则站点行徽标恒显「未签」。
+  renderSiteCards(r.data.sites || SITE_DATA);
 }
 
 let SITE_DATA = {};

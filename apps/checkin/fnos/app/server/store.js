@@ -23,7 +23,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.1.6",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.1.7",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -64,7 +64,7 @@ class Store {
 
   /** 旧版单账号格式 → 多账号 accounts[0]（顶层凭据字段迁移，登录信息不丢） */
   _migrateAccounts(rawSite, slug) {
-    const accs = Array.isArray(rawSite.accounts) ? rawSite.accounts.slice() : [];
+    let accs = Array.isArray(rawSite.accounts) ? rawSite.accounts.slice() : [];
     if (accs.length === 0) {
       const legacy = {};
       let has = false;
@@ -74,11 +74,12 @@ class Store {
           has = true;
         }
       }
-      if (has) accs.push({ id: this._nextAccountId([]), enabled: true, remark: "", ...legacy });
+      if (has) accs = [{ enabled: true, remark: "", ...legacy }];
     }
+    const allocId = this._createIdAllocator(accs);
     return accs.map((a) => {
       const base = {
-        id: a.id || this._nextAccountId(accs),
+        id: String(a.id || allocId()),
         enabled: a.enabled !== false,
         remark: String(a.remark || ""),
       };
@@ -90,10 +91,21 @@ class Store {
     });
   }
 
-  /** 生成下一个账号 id（a1/a2/...） */
-  _nextAccountId(accs) {
-    const n = (accs || []).reduce((m, a) => Math.max(m, parseInt(String((a && a.id) || "").replace(/\D/g, ""), 10) || 0), 0) + 1;
-    return "a" + n;
+  /** 批量分配账号 id 的游标：seed 为已占用的 id 列表（对象数组或字符串数组）。
+   *  返回「生成并登记一个新 id」的闭包；同一次保存的多个新账号共享同一游标，
+   *  保证 id 互不相同且递增（a1/a2/…），避免多个新账号拿到相同 id（下次编辑凭据串号）。 */
+  _createIdAllocator(seed) {
+    const used = new Set((seed || []).map((a) => String((a && a.id) || "")).filter(Boolean));
+    return () => {
+      let max = 0;
+      for (const id of used) {
+        const m = parseInt(String(id).replace(/\D/g, ""), 10);
+        if (Number.isFinite(m) && m > max) max = m;
+      }
+      const id = "a" + (max + 1);
+      used.add(id);
+      return id;
+    };
   }
 
   save() {
@@ -129,10 +141,13 @@ class Store {
         if (site.enabled !== undefined) cur.enabled = !!site.enabled;
         if (site.use_proxy !== undefined) cur.use_proxy = !!site.use_proxy;
         if (Array.isArray(site.accounts)) {
+          // 同一次保存的多个新账号共享 id 游标：seed 自旧列表全部 id，
+          // 每生成一个新 id 即登记，避免多个新账号拿到相同 id（下次编辑凭据串号）。
+          const allocId = this._createIdAllocator(cur.accounts);
           const next = site.accounts
             .map((a) => {
               if (!a || typeof a !== "object") return null;
-              const id = String(a.id || this._nextAccountId(cur.accounts));
+              const id = String(a.id || allocId());
               const prev = cur.accounts.find((x) => String(x.id) === id) || {};
               // 敏感值留空 = 保留原值（password/cookie 等由 adapter 字段驱动；规则统一）
               const merged = {
