@@ -178,7 +178,13 @@ const ACTION_HANDLERS = {
 
 async function handle(req, res) {
   const send = (obj) => {
-    res.writeHead(200, { "Content-Type": "application/json" });
+    // 禁止缓存 API 响应：否则网关/浏览器可能命中旧的 get_config 等 JSON，
+    // 热更/升级后版本号仍显示旧值（用户反馈「当前版本号不对」）
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
+    });
     res.end(JSON.stringify(obj));
   };
   const sendFile = (filePath, forUrl) => {
