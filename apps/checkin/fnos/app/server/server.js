@@ -4,9 +4,9 @@
  * 方法：getConfig / saveConfig / status / runOnce / testLogin / getHistory / clearHistory
  * 统一返回 { success, message, data }。
  */
-const { FLZT, RIGHT_FORUM, YPOJIE } = require("./sites");
+const { FLZT, RIGHT_FORUM, YPOJIE, ANYROUTER } = require("./sites");
 
-const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE };
+const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER };
 
 function ok(data, message = "") {
   return { success: true, message, data };

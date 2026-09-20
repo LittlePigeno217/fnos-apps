@@ -175,6 +175,7 @@
   .site-tag.t1 { background: linear-gradient(135deg,#1E88E5,#0D4FA8); }
   .site-tag.t2 { background: linear-gradient(135deg,#F5A623,#C77C0A); }
   .site-tag.t3 { background: linear-gradient(135deg,#20B08A,#0C7A5F); }
+  .site-tag.t4 { background: linear-gradient(135deg,#7B4FE0,#4A2B9E); }
   .site-name { font-weight: 700; font-size: 14.5px; }
   .site-desc { font-size: 11.5px; color: var(--muted); }
   .badge { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
@@ -387,6 +388,17 @@ const SITES = {
     fields: [
       { key: "email", label: "账号 / 邮箱", type: "text", ph: "name@example.com" },
       { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
+    ],
+  },
+  anyrouter: {
+    name: "AnyRouter / NewAPI 通用", tag: "t4", short: "AR", mode: "Cookie / 账号",
+    desc: "anyrouter.top 及 NewAPI/OneAPI 平台 · Cookie 或账号密码签到",
+    fields: [
+      { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（自建 NewAPI 填内网地址）" },
+      { key: "username", label: "账号", type: "text", ph: "账号密码方式（二选一，无 WAF 平台可用）" },
+      { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
+      { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（二选一，WAF 站点用这个）" },
+      { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
     ],
   },
 };

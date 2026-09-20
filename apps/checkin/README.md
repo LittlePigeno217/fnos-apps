@@ -1,13 +1,13 @@
 # 自用签到（checkin）— fnOS 应用
 
-自用站点统一签到：**FLZT**（账号密码）、**恩山无线论坛**（Cookie）、**易破解**（账号密码）。
-核心能力移植自 [MoviePilot-Plugins/plugins/checkin](https://github.com/LittlePigeno217/MoviePilot-Plugins) v1.7.0。
+自用站点统一签到：**FLZT**（账号密码）、**恩山无线论坛**（Cookie）、**易破解**（账号密码）、**AnyRouter / NewAPI 通用**（Cookie / 账号，兼容 NewAPI、OneAPI 平台）。
+核心能力移植自 [MoviePilot-Plugins/plugins/checkin](https://github.com/LittlePigeno217/MoviePilot-Plugins) v1.7.0 与 [anyrouter-check-in](https://github.com/LittlePigeno217/anyrouter-check-in)。
 
 仓库路径：`apps/checkin/`（结构对齐 p115assistant，热更新机制同源）。
 
 ## 功能
 
-- 三个站点独立启用 / 配置凭据 / 测试连接 / 手动签到
+- 四个站点独立启用 / 配置凭据 / 测试连接 / 手动签到
 - 每日定时自动签到（`HH:MM`）+ 每 30 分钟补签巡检（当天最多 5 次，防漏签）
 - 签到结果飞书机器人通知（可选）
 - 签到历史记录（最近 500 条，前端展示最近 20 条）

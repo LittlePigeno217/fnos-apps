@@ -5,9 +5,9 @@
  */
 const fs = require("fs");
 const path = require("path");
-const { FLZT, RIGHT_FORUM, YPOJIE } = require("./sites");
+const { FLZT, RIGHT_FORUM, YPOJIE, ANYROUTER } = require("./sites");
 
-const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE };
+const ADAPTERS = { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER };
 const SITE_KEYS = Object.keys(ADAPTERS);
 
 // 站点默认配置单一事实源：来自每个 adapter 的 defaultConfig()（内部补 use_proxy: false）
@@ -19,7 +19,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.0.5",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.0.6",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -93,6 +93,18 @@ class Store {
         if (site.cookie !== undefined) {
           const v = String(site.cookie || "").trim();
           if (v) cur.cookie = v; // 留空 = 不修改
+        }
+        if (site.base_url !== undefined) {
+          const v = String(site.base_url || "").trim();
+          if (v) cur.base_url = v; // 留空 = 不修改
+        }
+        if (site.username !== undefined) {
+          const v = String(site.username || "").trim();
+          if (v) cur.username = v; // 留空 = 不修改
+        }
+        if (site.api_user !== undefined) {
+          const v = String(site.api_user || "").trim();
+          if (v) cur.api_user = v; // 留空 = 不修改
         }
       }
     }

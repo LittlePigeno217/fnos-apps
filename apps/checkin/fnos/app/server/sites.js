@@ -381,4 +381,158 @@ const YPOJIE = {
   },
 };
 
-module.exports = { FLZT, RIGHT_FORUM, YPOJIE, isAlreadyCheckedIn, maskEmail };
+/* ── AnyRouter / NewAPI 通用（anyrouter-check-in 移植）────────────── */
+const ANYROUTER = {
+  key: "anyrouter",
+  name: "AnyRouter / NewAPI 通用",
+  mode: "Cookie / 账号",
+  base: "https://anyrouter.top",
+  loginPath: "/api/user/login",
+  signInPath: "/api/user/sign_in",
+  fallbackSignInPath: "/api/user/checkin", // OneAPI 平台
+  userInfoPath: "/api/user/self",
+  WAF_MARKERS: ["acw_sc__v2", "var arg1=", "cdn_sec_tc"],
+
+  defaultConfig() {
+    return {
+      enabled: false, use_proxy: false,
+      base_url: "https://anyrouter.top",
+      username: "", password: "", cookie: "", api_user: "",
+    };
+  },
+  isConfigured(cfg) {
+    if (!cfg) return false;
+    if (cfg.username && cfg.password) return true;         // 账号密码方式
+    if (cfg.cookie && String(cfg.cookie).trim()) return true; // Cookie 方式
+    return false;
+  },
+  getAccountLabel(cfg) {
+    if (cfg && cfg.username) return maskEmail(cfg.username);
+    if (cfg && cfg.api_user) return "User " + cfg.api_user;
+    return "Cookie";
+  },
+
+  _base(cfg) {
+    return String((cfg && cfg.base_url) || this.base || "").trim().replace(/\/+$/, "");
+  },
+  /** 阿里云盾 WAF JS 挑战页识别（anyrouter.top 无 WAF cookie 时被拦） */
+  _isWafChallenge(text) {
+    const t = String(text || "").toLowerCase();
+    return this.WAF_MARKERS.some((m) => t.includes(m.toLowerCase()));
+  },
+  _isLoginExpired(status, text) {
+    if (status === 401) return true;
+    const t = String(text || "").toLowerCase();
+    return /session.*(invalid|expired)|token.*(invalid|expired)|未登录|登录已过期|invalid session/i.test(t);
+  },
+  _headers(auth, extra) {
+    const h = { Accept: "application/json, text/plain, */*", ...(extra || {}) };
+    if (auth.type === "token") h.Authorization = "Bearer " + auth.token;
+    else Object.assign(h, auth.headers);
+    return h;
+  },
+
+  /** 构造认证：账号密码 → /api/user/login 拿 token；Cookie → 直接带 Cookie（+new-api-user） */
+  async _authHeaders(cfg) {
+    const base = this._base(cfg);
+    if (!base) throw new Error("请先配置平台地址（base_url）");
+    if (cfg.username && cfg.password) {
+      const s = new Session();
+      const r = await s.postJson(base + this.loginPath, { username: cfg.username, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
+      if (this._isWafChallenge(r.text)) {
+        throw new Error(`平台有 WAF 人机验证，账号密码方式被拦截：请在浏览器访问 ${base} 后改用「Cookie + api_user」方式配置`);
+      }
+      const j = parseJson(r.text);
+      if (!j || !j.success || !(j.data || {}).access_token) {
+        throw new Error((j && (j.message || j.msg)) || `登录失败（HTTP ${r.status}）`);
+      }
+      return { type: "token", token: j.data.access_token, base };
+    }
+    if (cfg.cookie && String(cfg.cookie).trim()) {
+      const h = { Cookie: String(cfg.cookie).trim() };
+      if (cfg.api_user) h["new-api-user"] = String(cfg.api_user).trim();
+      return { type: "cookie", headers: h, base };
+    }
+    throw new Error("请配置账号密码，或 Cookie + api_user");
+  },
+
+  async _getUserInfo(auth, useProxy) {
+    const s = new Session();
+    const r = await s.get(auth.base + this.userInfoPath, { headers: this._headers(auth), timeout: 15000, useProxy });
+    if (r.status === 401) throw new Error("登录态失效（HTTP 401）：Cookie 过期或 Token 无效，请重新获取（session 约 1 个月有效）");
+    const j = parseJson(r.text);
+    if (!j || !j.success || !(j.data || {}).quota) return null;
+    return { quota: Number(j.data.quota) || 0, used_quota: Number(j.data.used_quota) || 0 };
+  },
+
+  _fmtUsd(quota) {
+    return "$" + (Number(quota || 0) / 500000).toFixed(2); // NewAPI quota：500000 点 = $1
+  },
+
+  async runCheckin(cfg) {
+    const auth = await this._authHeaders(cfg);
+    let before = null;
+    try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
+
+    const doSign = (path) => {
+      const s = new Session();
+      return s.postRaw(path, null, {
+        headers: this._headers(auth, { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }),
+        timeout: 15000, useProxy: cfg.use_proxy,
+      });
+    };
+    let r = await doSign(auth.base + this.signInPath);
+    // OneAPI 平台没有 /api/user/sign_in → fallback /api/user/checkin
+    if (r.status === 404 || /not found|接口不存在|invalid action/i.test(String(r.text || ""))) {
+      r = await doSign(auth.base + this.fallbackSignInPath);
+    }
+
+    if (this._isWafChallenge(r.text)) {
+      throw new Error(`平台 WAF 拦截（Cookie 缺人机验证）：请在浏览器访问 ${auth.base} 通过验证后重新复制完整 Cookie`);
+    }
+    if (this._isLoginExpired(r.status, r.text)) {
+      throw new Error(`登录态失效（HTTP ${r.status}）：Cookie 过期或 Token 无效，请重新获取（session 约 1 个月有效）`);
+    }
+
+    const j = parseJson(r.text);
+    if (!j || typeof j !== "object") {
+      throw new Error(`签到接口没回 JSON：${cleanText(r.text).slice(0, 60) || "空响应"}`);
+    }
+    const msg = String(j.msg || j.message || "").trim();
+    const success = j.ret === 1 || j.code === 0 || j.success === true;
+
+    // 签到后余额（对比奖励）
+    let after = null;
+    try { after = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
+    const balanceMsg = after
+      ? `余额 ${this._fmtUsd(after.quota)}` + (after.used_quota ? `，累计消耗 ${this._fmtUsd(after.used_quota)}` : "")
+      : "";
+    let rewardMsg = "";
+    if (before && after && after.quota > before.quota) {
+      rewardMsg = `本次签到 +${this._fmtUsd(after.quota - before.quota)}`;
+    }
+
+    if (success) {
+      const detail = [rewardMsg, balanceMsg].filter(Boolean).join("；") || msg || "签到成功";
+      return this._ok("签到成功", detail, rewardMsg || "-", balanceMsg || "-", cfg, auth);
+    }
+    if (isAlreadyCheckedIn(msg) || /已经签到|重复签到|already checked|already signed/i.test(msg)) {
+      const detail = [balanceMsg || msg, rewardMsg].filter(Boolean).join("；") || "今日已签到";
+      return this._ok("今日已签到", detail, "-", balanceMsg || "-", cfg, auth);
+    }
+    throw new Error(msg || `签到失败（ret=${j.ret} code=${j.code}）`);
+  },
+
+  async testConnection(cfg) {
+    const auth = await this._authHeaders(cfg);
+    const info = await this._getUserInfo(auth, cfg.use_proxy);
+    if (!info) throw new Error("登录态有效，但用户信息接口未返回 quota");
+    return { site: this.key, site_name: this.name, message: `连接成功，${cfg.username ? maskEmail(cfg.username) : "Cookie"} 有效，余额 ${this._fmtUsd(info.quota)}` };
+  },
+
+  _ok(status, message, reward, total, cfg, auth) {
+    return { site: this.key, site_name: this.name, status, message, reward, total, account: (cfg && cfg.username) ? maskEmail(cfg.username) : (auth && auth.type === "cookie" ? (cfg.api_user ? "User " + cfg.api_user : "Cookie") : "-"), time: now() };
+  },
+};
+
+module.exports = { FLZT, RIGHT_FORUM, YPOJIE, ANYROUTER, isAlreadyCheckedIn, maskEmail };
