@@ -279,7 +279,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.1.4</span>
+      <span class="ver" id="appVersion">v1.1.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -572,14 +572,14 @@ let MODAL_KEY = "";
 function openSiteEditor(key) {
   MODAL_KEY = key;
   const st = SITE_DATA[key] || {};
-  $("#modalTag").textContent = siteShort(key);
-  $("#modalTag").className = "site-tag " + siteTagClass(key);
-  $("#modalTitle").textContent = siteName(key);
-  $("#modalSub").textContent = siteMode(key) + " · " + siteDesc(key);
-  $("#modalEnabled").checked = !!st.enabled;
-  $("#modalProxy").checked = !!st.use_proxy;
-  $("#modalStatus").textContent = "";
-  const box = $("#modalAccounts");
+  $("modalTag").textContent = siteShort(key);
+  $("modalTag").className = "site-tag " + siteTagClass(key);
+  $("modalTitle").textContent = siteName(key);
+  $("modalSub").textContent = siteMode(key) + " · " + siteDesc(key);
+  $("modalEnabled").checked = !!st.enabled;
+  $("modalProxy").checked = !!st.use_proxy;
+  $("modalStatus").textContent = "";
+  const box = $("modalAccounts");
   box.innerHTML = "";
   const accs = Array.isArray(st.accounts) ? st.accounts : [];
   if (!accs.length) {
@@ -587,10 +587,10 @@ function openSiteEditor(key) {
   } else {
     for (const a of accs) box.appendChild(accountRowEl(key, a));
   }
-  $("#modalForm").reset ? 0 : 0; // form 已由 HTML 包裹；此处保留空操作占位（reset 会覆盖开关状态，不用）
+  $("modalForm").reset ? 0 : 0; // form 已由 HTML 包裹；此处保留空操作占位（reset 会覆盖开关状态，不用）
   const first = box.querySelector("input[type=text], input[type=password]");
   if (first) setTimeout(() => first.focus(), 60);
-  $("#siteModal").style.display = "flex";
+  $("siteModal").style.display = "flex";
 }
 
 /** 「＋ 添加站点」：选择未添加的站点（空态直达） */
@@ -601,23 +601,23 @@ function addSiteFlow() {
   }));
   const candidates = Object.keys(SITE_DATA).filter((k) => !addedKeys.has(k));
   if (!candidates.length) { toast("所有站点都已添加", "warn"); return; }
-  $("#modalTag").textContent = "＋";
-  $("#modalTag").className = "site-tag";
-  $("#modalTitle").textContent = "添加站点";
-  $("#modalSub").textContent = "选择站点类型，然后配置登录账号";
-  $("#modalEnabled").checked = true;
-  $("#modalProxy").checked = false;
-  $("#modalStatus").textContent = "";
-  $("#modalAccounts").innerHTML =
+  $("modalTag").textContent = "＋";
+  $("modalTag").className = "site-tag";
+  $("modalTitle").textContent = "添加站点";
+  $("modalSub").textContent = "选择站点类型，然后配置登录账号";
+  $("modalEnabled").checked = true;
+  $("modalProxy").checked = false;
+  $("modalStatus").textContent = "";
+  $("modalAccounts").innerHTML =
     '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:10px 0">' +
     candidates.map((k) =>
       `<button type="button" class="btn" style="min-width:150px" onclick="openSiteEditor('${k}')">${esc(siteName(k))}</button>`).join("") +
     "</div>";
-  $("#siteModal").style.display = "flex";
+  $("siteModal").style.display = "flex";
 }
 
 function closeSiteModal() {
-  $("#siteModal").style.display = "none";
+  $("siteModal").style.display = "none";
   MODAL_KEY = "";
 }
 
@@ -652,18 +652,18 @@ function accountRowEl(key, acc) {
 
 function addModalAccount() {
   if (!MODAL_KEY) return;
-  const box = $("#modalAccounts");
+  const box = $("modalAccounts");
   box.appendChild(accountRowEl(MODAL_KEY, { id: "", remark: "", enabled: true }));
   const inp = box.querySelector(".account-box:last-child input[type=text], .account-box:last-child input[type=password]");
   if (inp) inp.focus();
-  $("#modalStatus").textContent = "新账号请填写凭据后保存";
+  $("modalStatus").textContent = "新账号请填写凭据后保存";
 }
 function removeModalAccount(btn) {
   const row = btn.closest(".account-box");
   if (!row) return;
   if (!confirm("删除该账号？")) return;
   row.remove();
-  $("#modalStatus").textContent = "";
+  $("modalStatus").textContent = "";
   toast("账号已删除", "warn");
 }
 function collectModalAccounts() {
@@ -686,13 +686,13 @@ function collectModalAccounts() {
 async function saveSiteModal() {
   const key = MODAL_KEY;
   if (!key) return;
-  const st = $("#modalStatus");
+  const st = $("modalStatus");
   st.textContent = "保存中…";
   const body = {
     sites: {
       [key]: {
-        enabled: $("#modalEnabled").checked === true,
-        use_proxy: $("#modalProxy").checked === true,
+        enabled: $("modalEnabled").checked === true,
+        use_proxy: $("modalProxy").checked === true,
         accounts: collectModalAccounts(),
       },
     },
@@ -709,7 +709,7 @@ async function saveSiteModal() {
   }
 }
 async function testModalAccount(key, accountId) {
-  const st = $("#modalStatus");
+  const st = $("modalStatus");
   if (!accountId) { st.textContent = "请先保存后再测试新账号"; return; }
   const r = await call("test_login", "POST", { site: key, account_id: accountId });
   st.textContent = r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败");
@@ -842,22 +842,22 @@ function updateChip(on) {
   if (txt) txt.textContent = on ? "自动签到已开启" : "未启用";
 }
 async function saveSettings() {
-  const cron = $("#cfgCron").value.trim();
+  const cron = $("cfgCron").value.trim();
   if (!/^\d{2}:\d{2}$/.test(cron)) { toast("每日时刻格式应为 HH:MM", "err"); return; }
-  const retry = parseInt($("#cfgRetry").value.trim(), 10);
+  const retry = parseInt($("cfgRetry").value.trim(), 10);
   if (!Number.isFinite(retry) || retry < 1 || retry > 10) { toast("失败重试应为 1-10 的数字", "err"); return; }
   const body = {
-    enabled: $("#cfgEnabled").checked === true,
+    enabled: $("cfgEnabled").checked === true,
     cron: cron,
     retry_count: retry,
-    notify_enabled: $("#cfgNotify").checked === true,
+    notify_enabled: $("cfgNotify").checked === true,
   };
-  const w = $("#cfgWebhook").value.trim();
+  const w = $("cfgWebhook").value.trim();
   if (w) body.feishu_webhook = w;
   const r = await call("save_config", "POST", body);
   if (r.success) {
     toast("设置已保存", "ok");
-    $("#cfgWebhook").value = "";
+    $("cfgWebhook").value = "";
     updateChip(body.enabled);
     $("cfgSaveBtn").textContent = "保存设置";
   } else {
