@@ -18,6 +18,8 @@
     --muted: #66757F;
     --border: #D9E0E7;
     --hover: rgba(30,42,50,.045);
+    --surface: #F2F5F8;       /* 浅色卡片底纹（风控横幅 / details 头部） */
+    --danger: #E5484D;        /* 危险动作统一警示色 */
 
     --accent: #E8451C;        /* 115 品牌朱红 */
     --accent-strong: #C93A16;
@@ -37,6 +39,8 @@
       --bg: #0E141B; --card: #151E27; --sidebar: #111B24;
       --ink: #E7EDF2; --muted: #8B98A4; --border: #263140;
       --hover: rgba(231,237,242,.055);
+      --surface: #1A2330;      /* 比 --bg 略亮的卡片底纹 */
+      --danger: #FF6B6B;       /* 暗色下更亮的警示色，保证可读 */
       --accent: #FF6A3D; --accent-strong: #FF7A50;
       --accent-soft: rgba(255,106,61,.13);
       --ok: #34C07B; --ok-glow: rgba(52,192,123,.2); --ok-border: rgba(52,192,123,.45);
@@ -115,7 +119,7 @@
   .cap-seg { padding: 2px 9px; border-radius: 999px; color: var(--muted); white-space: nowrap;
              font-variant-numeric: tabular-nums; }
   .cap-seg.cap-on { color: var(--ok); }
-  .cap-seg.cap-warn { color: var(--danger, #e5484d); }
+  .cap-seg.cap-warn { color: var(--danger); }
   .acct { position: relative; }
   .acct-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;
               border: 1px solid var(--border); border-radius: 50%; background: var(--card);
@@ -134,8 +138,8 @@
   .acct-item { display: block; width: 100%; text-align: left; padding: 8px 10px; font-size: 13px;
                border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; }
   .acct-item:hover { background: var(--accent-soft); color: var(--accent-strong); }
-  .acct-item.acct-danger { color: var(--danger, #e5484d); }
-  .acct-item.acct-danger:hover { background: rgba(229, 72, 77, .12); color: var(--danger, #e5484d); }
+  .acct-item.acct-danger { color: var(--danger); }
+  .acct-item.acct-danger:hover { background: rgba(229, 72, 77, .12); color: var(--danger); }
 
   /* ---------- 卡片与工具条 ---------- */
   .pane { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
@@ -444,7 +448,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.0.9</span>
+      <span class="ver" id="appVersion">v1.1.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -470,7 +474,6 @@
           </div>
           <button class="acct-item" onclick="acctLogin()">登录 / 切换账号</button>
           <button class="acct-item acct-danger" onclick="acctLogout()">退出登录</button>
-          <button class="acct-item" id="acctForget" style="display:none" onclick="acctForget()">清除 fnOS 凭据</button>
         </div>
       </div>
     </header>
@@ -612,6 +615,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m6 9 6-5 6 5"/><path d="M4 20h16"/></svg>
             立即上传全部
           </button>
+          <button class="btn" id="cancelTaskBtn" hidden onclick="cancelTask()" style="color:var(--danger);border-color:var(--danger)" title="取消进行中的上传任务">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            取消任务
+          </button>
         </div>
         <div class="pane" id="uploadOnceCard" hidden style="padding:14px 16px;margin-bottom:12px">
           <div class="field-row" style="align-items:center;gap:8px">
@@ -678,11 +685,11 @@
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">媒体扩展名</span>
-              <input class="input mono grow" type="text" id="mediaExtensions" placeholder=".mp4,.mkv,.ts,.iso,…" onchange="markDirty('upload')">
+              <input class="input mono grow" type="text" id="mediaExtensions" placeholder=".mp4,.mkv,.ts,.iso,…" autofocus onchange="markDirty('upload')">
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">附属文件扩展名</span>
-              <input class="input mono grow" type="text" id="sidecarExtensions" placeholder=".nfo,.jpg,.jpeg,.png,.srt,.ass,…" onchange="markDirty('upload')">
+              <input class="input mono grow" type="text" id="sidecarExtensions" placeholder=".nfo,.jpg,.jpeg,.png,.srt,.ass,…" autofocus onchange="markDirty('upload')">
             </div>
             <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
               <span class="muted" id="advExtResult"></span>
@@ -730,7 +737,7 @@
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <span class="muted" style="width:96px;flex:none">签到时段</span>
-              <input class="input mono grow" type="text" id="checkinTimeRange" placeholder="06:00-09:00" onchange="markDirty('signin')">
+              <input class="input mono grow" type="text" id="checkinTimeRange" placeholder="06:00-09:00" autofocus onchange="markDirty('signin')">
             </div>
             <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
               <span class="muted" id="signinCfgStatus"></span>
@@ -787,9 +794,9 @@
           <div class="pane" style="padding:12px 16px;margin-top:6px">
             <div class="field-row" style="align-items:center;gap:8px">
               <span class="muted" style="width:66px;flex:none">播放地址</span>
-              <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测" title="留空自动检测宿主机 IP；或填公网可达地址并在路由器映射中转端口" onchange="markDirty('strm')">
+              <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测" title="留空自动检测宿主机 IP；或填公网可达地址并在路由器映射中转端口" autofocus onchange="markDirty('strm')">
               <span class="muted" style="flex:none;font-size:12px">中转端口</span>
-              <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:88px" onchange="markDirty('strm')">
+              <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:88px" autofocus onchange="markDirty('strm')">
             </div>
             <div class="field-row" style="margin-top:6px">
               <span class="muted" id="strmRelayHint" style="font-size:12px"></span>
@@ -852,10 +859,11 @@
             <div class="setting-label">飞书 Webhook</div>
             <div class="setting-desc">机器人 Webhook 地址；已配置时留空保存不修改</div>
           </div>
-          <input type="password" id="feishuWebhook" placeholder="已配置请留空" style="max-width:240px" onchange="markDirty('settings')">
+          <input type="password" id="feishuWebhook" placeholder="已配置请留空" style="max-width:240px" autofocus onchange="markDirty('settings')">
         </div>
         <div class="setting-row" style="justify-content:flex-end">
           <span class="muted" id="appCfgStatus" style="margin-right:8px"></span>
+          <button class="btn" id="testNotifyBtn" onclick="testNotify()" style="margin-right:8px">发送测试通知</button>
           <button class="btn primary" id="appSaveBtn" onclick="saveAppCfg()">保存设置</button>
         </div>
       </div>
@@ -900,7 +908,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
             刷新
           </button>
-          <button class="btn" style="color:var(--danger,#f85149);border-color:var(--danger,#f85149)" onclick="clearHistory()" title="清空历史执行记录（保留今日签到状态）">清空历史</button>
+          <button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="clearHistory()" title="清空历史执行记录（保留今日签到状态）">清空历史</button>
         </div>
         <div class="termline" aria-label="上传身份冲突" id="conflictBlock" hidden>
           <span class="term-prompt">❯</span>
@@ -3250,16 +3258,37 @@ const TITLES = { drive:"网盘", upload:"上传", signin:"签到", link:"STRM", 
 
 /* ---- 顶栏账号菜单（人性化交互：右上角账号 → 信息/切换/退出/清凭据） ---- */
 function confirmDanger(msg){ return window.confirm(msg); }
+/* ---- 轻量 toast：T5 测试通知 / 取消任务 的瞬时反馈（不打断当前操作） ---- */
+function showToast(text, ok){
+  const box=document.createElement("div");
+  box.textContent=text;
+  box.style.cssText="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9999;"+
+    "padding:9px 16px;border-radius:10px;font:13px/1.4 var(--font-ui);max-width:78vw;"+
+    "background:var(--card);color:var(--ink);border:1px solid var(--border);box-shadow:var(--shadow);"+
+    (ok===false ? "border-color:var(--danger);" : "");
+  document.body.appendChild(box);
+  setTimeout(()=>{ if(box.parentNode) box.parentNode.removeChild(box); }, 2600);
+}
+/* 测试飞书通知：走后端 test_notify（用已保存配置），带 loading 态 + toast 反馈 */
+async function testNotify(){
+  const btn=el("testNotifyBtn"); if(!btn) return;
+  btn.disabled=true; btn.textContent="发送中…";
+  let r=null;
+  try{ r=await call("test_notify","POST",{}); }catch(e){ r=null; }
+  btn.disabled=false; btn.textContent="发送测试通知";
+  if(r && r.success) showToast(r.message||"测试通知已发送", true);
+  else showToast((r&&r.message)||"发送失败，请检查飞书配置", false);
+}
 function closeAcct(){ const m=el("acctMenu"); if(m && !m.hidden){ m.hidden=true; const b=el("acctBtn"); if(b) b.setAttribute("aria-expanded","false"); } }
 // 点击菜单外关闭 / Esc 关闭
 document.addEventListener("click", (ev)=>{ const box=el("acctBox"); if(box && !box.contains(ev.target)) closeAcct(); });
 document.addEventListener("keydown", (ev)=>{ if(ev.key==="Escape") closeAcct(); });
 function toggleAcctMenu(ev){ if(ev) ev.stopPropagation(); const m=el("acctMenu"), b=el("acctBtn"); const show = m.hidden; m.hidden = !show; if(b) b.setAttribute("aria-expanded", String(show)); }
 function renderAccount(d){
-  const av=el("acctAvatar"), nm=el("acctName"), sub=el("acctSub"), fg=el("acctForget");
+  const av=el("acctAvatar"), nm=el("acctName"), sub=el("acctSub");
   if (!d || !d.authenticated){
     av.textContent="?"; nm.textContent="未登录";
-    sub.textContent="115 网盘助手 · 点击登录"; fg.style.display="none";
+    sub.textContent="115 网盘助手 · 点击登录";
     return;
   }
   const uid = d.user_id || "";
@@ -3267,8 +3296,6 @@ function renderAccount(d){
   nm.textContent = uid ? "用户 "+uid : "已登录";
   const mode = d.auth_mode==="open" ? "令牌登录" : d.auth_mode==="cookie" ? "扫码登录" : d.client_type||"已登录";
   sub.textContent = "115 网盘助手 · "+mode;
-  // fnOS 凭据已配置时才展示「清除凭据」
-  call("get_config").then((r)=>{ if(r.success && r.data) fg.style.display = r.data.fnos_configured ? "" : "none"; }).catch(()=>{});
 }
 function acctLogin(){ closeAcct(); openQr(); }
 async function acctLogout(){
@@ -3277,13 +3304,6 @@ async function acctLogout(){
   alert(r.message || (r.success ? "已退出登录" : "退出失败"));
   closeAcct(); renderAccount(null); refreshDrive();
 }
-async function acctForget(){
-  if(!confirmDanger("清除 fnOS 凭据？\n用于自动安装预检与功能热更新的系统登录信息将被删除。")) return;
-  const r=await call("fnos_forget","POST",{});
-  alert(r.message || "已清除");
-  closeAcct(); renderAccount(null);
-}
-
 /* ---- 顶栏全局状态胶囊（监听/上传/风控） ---- */
 async function updateStatusCapsule(){
   const cap=el("statusCapsule"); if(!cap) return;
@@ -3297,6 +3317,7 @@ async function updateStatusCapsule(){
   const ud = (u && u.success) ? u.data : null;
   const act = ud ? (Number(ud.active)||0) : 0, pend = ud ? (Number(ud.pending)||0) : 0;
   const cu=el("capUpload"); cu.textContent = (act+pend)>0 ? `⇧ 上传 ${act}${pend>0?`+${pend}`:""}` : ""; cu.hidden = (act+pend)===0; if((act+pend)>0) segs++;
+  updateCancelTaskBtn(act, pend);
   const rk = (ud && ud.risk) || (w && w.success && w.data && w.data.risk) || null;
   const cr=el("capRisk");
   if(rk && rk.limited){ const min=Math.ceil((rk.remaining_ms||0)/60000); cr.textContent=`🛡 风控暂停 ${min}分`; cr.hidden=false; segs++; }
@@ -3334,6 +3355,10 @@ document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
   if (b.dataset.tab === "upload"){ loadMappings(); loadExtensions(); startWatchPolling(); }
   if (b.dataset.tab === "link"){ loadStrmMappings(); }
   if (b.dataset.tab === "signin"){ refreshSigninRange(); }
+  // T7：autofocus 只对初始可见元素生效；切到含文本输入的面板时聚焦首个主输入
+  const paneEl = el("tab-"+b.dataset.tab);
+  const firstInput = paneEl ? paneEl.querySelector('input[type="text"], input[type="password"], input[type="search"]') : null;
+  if (firstInput && !firstInput.disabled) firstInput.focus({ preventScroll: true });
 });
 
 /* ---- 网盘 ---- */
@@ -3582,6 +3607,23 @@ async function saveAppCfg(){
   if (r.success){ clearDirty("settings"); el("feishuWebhook").value = ""; return; }
   alert("保存失败：" + (r.message || ""));
 }
+/* ---- T7：关键表单回车提交（Enter 在主输入内触发对应保存）---- */
+const ENTER_SUBMIT = {
+  mediaExtensions: saveUploadCfg,
+  sidecarExtensions: saveUploadCfg,
+  checkinTimeRange: saveSigninCfg,
+  strmBaseUrl: saveStrmCfg,
+  relayPortInput: saveStrmCfg,
+  feishuWebhook: saveAppCfg,
+};
+document.addEventListener("keydown", (ev)=>{
+  if (ev.key !== "Enter") return;
+  const t = ev.target;
+  if (!t || t.tagName !== "INPUT") return;
+  if (t.type === "checkbox" || t.type === "radio" || t.type === "button" || t.type === "submit") return;
+  const fn = ENTER_SUBMIT[t.id];
+  if (fn){ ev.preventDefault(); fn(); }
+});
 async function restoreDefaultExtensions(){
   const defaults = {
     upload_media_extensions: ".mp4,.mkv,.ts,.iso,.rmvb,.avi,.mov,.mpeg,.mpg,.wmv,.3gp,.asf,.m4v,.flv,.m2ts,.tp,.f4v",
@@ -3595,7 +3637,7 @@ async function restoreDefaultExtensions(){
     el("advExtResult").style.color = "var(--ok,#3fb950)";
   } else {
     el("advExtResult").textContent = r.message || "恢复失败";
-    el("advExtResult").style.color = "var(--danger,#f85149)";
+    el("advExtResult").style.color = "var(--danger)";
   }
 }
 function renderMappingCards(){
@@ -3698,8 +3740,22 @@ async function addMappingCard(){
   const first = el("mappingList").querySelector('input[data-field="name"]');
   if (first) first.focus();
 }
-async function sweep(){ el("sweepState").textContent="已入队…"; const r=await call("upload_sweep","POST",{}); el("sweepState").textContent=r.message||"开始上传"; refreshWatchStatus(); }
-async function uploadStatus(){ const r=await call("upload_status"); if(r.success) el("sweepState").textContent=`上传中:${r.data.active}, 待处理:${r.data.pending}`; }
+async function sweep(){ el("sweepState").textContent="已入队…"; const r=await call("upload_sweep","POST",{}); el("sweepState").textContent=r.message||"开始上传"; refreshWatchStatus(); if(r.success) uploadStatus(); }
+async function uploadStatus(){ const r=await call("upload_status"); if(r.success){ el("sweepState").textContent=`上传中:${r.data.active}, 待处理:${r.data.pending}`; updateCancelTaskBtn(r.data.active, r.data.pending); } }
+/* 取消任务按钮：有进行中/待处理上传时显示，否则隐藏（T5 接线 task_cancel） */
+function updateCancelTaskBtn(active, pending){
+  const btn=el("cancelTaskBtn"); if(!btn) return;
+  btn.hidden = (Number(active)||0)+(Number(pending)||0) <= 0;
+}
+async function cancelTask(){
+  if(!confirmDanger("取消当前上传任务？\n已在途的文件会在下一个安全检查点停止，已上传内容不受影响。")) return;
+  const btn=el("cancelTaskBtn"); if(btn){ btn.disabled=true; btn.textContent="取消中…"; }
+  const r=await call("task_cancel","POST",{kind:"upload"});
+  if(btn){ btn.disabled=false; btn.textContent="取消任务"; }
+  if(r && r.success) showToast(r.message||"已请求取消", true);
+  else showToast((r&&r.message)||"取消失败", false);
+  refreshWatchStatus();
+}
 
 // ---- 实时文件监听 + 风控状态 ----
 let watchPollTimer = null;
@@ -3737,7 +3793,7 @@ async function refreshWatchStatus(){
   if(rk.limited){
     const min=Math.ceil((rk.remaining_ms||0)/60000);
     risk.hidden=false;
-    risk.style.color="var(--danger,#e5484d)";
+    risk.style.color="var(--danger)";
     risk.textContent=`🛡️ 风控暂停：${rk.message||"115 访问上限"}，剩余约 ${min} 分钟恢复（${rk.profile_name} 档）`;
   }else if(rk.profile_name && rk.profile_name!=="conservative"){
     risk.hidden=false; risk.style.color="var(--muted,#8a919c)";

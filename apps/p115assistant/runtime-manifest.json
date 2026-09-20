@@ -1,6 +1,6 @@
 {
-  "version": "1.0.9",
-  "generated_at": "2026-09-20T15:19:46Z",
+  "version": "1.1.0",
+  "generated_at": "2026-09-20T18:30:27Z",
   "files": {
     "server/client.js": {
       "sha256": "f79e50a308907ceeaf743c264fd4e8f451985381b739ff5e22a28bd556c048bb",
@@ -14,17 +14,13 @@
       "sha256": "8e27c51a6b6f591d5c6ab5a0daf33d576001a6667bdb8647ec796eb75cae2e45",
       "size": 11858
     },
-    "server/ledger.js": {
-      "sha256": "b738b13ce599772304e34bff94cc840d5c9ead955d01ad4bd915d3955aa2ec13",
-      "size": 14118
-    },
     "server/limiter.js": {
       "sha256": "baeeeae545b3756ea592e43089d30a1d1815b9e5d23ba6f9ff66aa01650597e8",
       "size": 5820
     },
     "server/main.js": {
-      "sha256": "b79c4931ca4eed4f8a95a075992f2117353f94d76e71dc43ea60aecf946d78c7",
-      "size": 23025
+      "sha256": "3939727618fac4190efeb4616d642acbf8237e60fec9b4ca61604bdb9219f112",
+      "size": 23997
     },
     "server/notify.js": {
       "sha256": "c259b045ad4766f4b5ef565d01502a5ac87fa9b55bf1e47f5f7a9e209af32e30",
@@ -39,20 +35,20 @@
       "size": 4781
     },
     "server/server.js": {
-      "sha256": "59eb9a18c10c108d8129195bf0162e7eab06aa8c5c4c40dd58083794d4a416a9",
-      "size": 111593
+      "sha256": "7e2c2fba156d042e229a11415e76d2c0db85918383102370d83a498119d53727",
+      "size": 97767
     },
     "server/store.js": {
-      "sha256": "8e9dadee83613629744c032f417a79c062457729efd739f17222aa14b500e5de",
-      "size": 11229
+      "sha256": "ccb7e311168ba277713edc549370ae92e65afac42a7222a676e5216580534616",
+      "size": 11010
     },
     "server/update.js": {
-      "sha256": "d06d743db9cae75e4bf3c3866982df4db475f25174074b5ea45e2187f7e257ec",
-      "size": 19927
+      "sha256": "9dd9275482b8e8b54ea88cc50a4b4d08d2313d84a997a521b1c8867b204029c3",
+      "size": 2946
     },
     "www/index.html": {
-      "sha256": "2516eacf2af6fdacc7b18493b52e1de4a38109d25b283aa50053dcf917cd73ec",
-      "size": 167710
+      "sha256": "7a0893c5b6913a1695811da25c44d851b27fadb864cee4c6d097715e3d94e96e",
+      "size": 171021
     },
     "www/qrcode.js": {
       "sha256": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",

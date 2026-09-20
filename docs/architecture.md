@@ -122,7 +122,7 @@ FnOS-APP/
 |---|---|---|
 | `appname` | 安装包应用名 | = slug，`^[a-z0-9-]+$` |
 | `display_name` | 桌面显示名 | 人类可读中文名 |
-| `version` | **FPK 版本**（安装包维度） | **恒 `1.0.0`**；功能更新不走 fpk 升级 |
+| `version` | **FPK 版本**（安装包维度） | 随 fpk 发布递增，**非强制 `1.0.0`**（fpk 升级只认「版本号高于已安装」）；功能热更走功能版本，不走 fpk 升级 |
 | `platform` | 目标平台 | `all` |
 | `distributor_url` | 分发渠道 | 本轮为新仓库占位 `https://github.com/LittlePigeno217/FnOS-APP` |
 | `maintainer_url` | 维护者主页 | `https://github.com/LittlePigeno217`（保留） |
@@ -131,7 +131,8 @@ FnOS-APP/
 ### 3.3 fpk 文件名模式
 
 - 由 `build-fpk.sh` 生成：`<appname>_<manifest_version>_<platform>.fpk`
-- 因此固定为：**`<slug>_1.0.0_all.fpk`**
+- `manifest_version` 直接取应用自身 `fnos/manifest` 的 `version`，随 fpk 发布递增，
+  **不强制 `1.0.0`**（`scripts/update.sh` 读 manifest 实值并原样传入 `build-fpk.sh`）。
 - 本仓库 file_prefix 与 slug 一致（`FILE_PREFIX=<slug>`）；若某应用需要不同前缀，
   在 meta.env 的 `FILE_PREFIX` 声明，dist 产物命名遵循 `<file_prefix>_<ver>_all.fpk`。
 
@@ -156,7 +157,7 @@ FnOS-APP/
 apps/<slug>/
 ├── VERSION                  # 初始 0.0.1
 ├── fnos/
-│   ├── manifest             # appname/display_name/version=1.0.0/...（见 3.2）
+│   ├── manifest             # appname/display_name/version=<fpk_version>/...（见 3.2）
 │   ├── app/server/          # 后端运行时（Node 源码，入口 main.js）
 │   ├── app/ui/              # 前端运行时（打包进 www/）
 │   ├── ui/config + images/  # 桌面入口配置
@@ -187,7 +188,7 @@ POST_INSTALL_NOTE="安装后的操作提示"          # 安装完成引导文案
 
 ```text
 appname         = <slug>
-version         = 1.0.0            # FPK 版本，恒 1.0.0
+version         = <fpk_version>    # FPK 版本：随 fpk 发布递增，非强制 1.0.0
 display_name    = <display_name>
 platform        = all
 maintainer      = LittlePigeno
@@ -225,7 +226,7 @@ checksum        =
 
 | 版本 | 来源 | 用途 |
 |---|---|---|
-| FPK 版本 | `apps/<slug>/fnos/manifest` `version` | 构建 fpk，**校验恒为 `1.0.0`**，否则报错拒绝 |
+| FPK 版本 | `apps/<slug>/fnos/manifest` `version` | 构建 fpk 时直接采用 manifest 实值（**非强制 `1.0.0`**） |
 | 功能版本 | `apps/<slug>/VERSION` | 生成热更清单（**不**覆盖 VERSION 文件） |
 
 > 与旧 `update_<app>.sh` 的差异：旧脚本把 manifest 的 FPK 版本（1.0.0）直接传给
@@ -238,7 +239,7 @@ checksum        =
 ```text
 1. 校验应用注册（apps/<slug>/fnos/manifest 存在；scripts/apps/<slug>/meta.env 存在）
 2. 读取 meta.env（FILE_PREFIX 等）
-3. 读取 FPK 版本（manifest version），校验 == 1.0.0
+3. 读取 FPK 版本（manifest version，直接采用，不强制 1.0.0）
 4. 读取功能版本（apps/<slug>/VERSION）
 5. 调 scripts/lib/build-app.sh 的 build_app_tgz()：
       server ← fnos/app/server;  www ← fnos/app/ui
@@ -246,8 +247,8 @@ checksum        =
       写 config/bootstrap/<slug>-version.env（<SLUG>_VERSION=<fpk_version>）
       不向源码注入版本；node --check 语法自检（node 在 PATH 时）
       → 仓库根 app.tgz（用完即删）
-6. cd 仓库根 → scripts/build-fpk.sh <app_dir> app.tgz 1.0.0
-      → 产出 <slug>_1.0.0_all.fpk（build-fpk.sh 自取 appname/platform 命名）
+6. cd 仓库根 → scripts/build-fpk.sh <app_dir> app.tgz <fpk_version>
+      → 产出 <slug>_<fpk_version>_all.fpk（build-fpk.sh 自取 appname/platform 命名）
 7. mv 产物 → dist/<file_prefix>_<ver>_all.fpk
 8. rm app.tgz（中间产物不留在仓库根）
 9. python3 scripts/gen_runtime_manifest.py --app <slug>   # 用 VERSION 文件重新生成清单
@@ -264,8 +265,9 @@ checksum        =
 ### 5.5 脚本收敛边界（保留 per-app 的理由）
 
 - **build.sh 已完全收敛**：两个应用的 build.sh 差异（p115 固定 1.0.0 强校验 vs checkin
-  可覆盖版本；p115 不注入源码版本 vs checkin 注入）统一为「固定 1.0.0 + 不注入源码版本」
-  的规范行为（对照 fnos-apps 现有机制要点中「不再向源码注入版本」的既定结论）。
+  可覆盖版本；p115 不注入源码版本 vs checkin 注入）统一为「FPK 版本取 manifest 实值（非强制
+  1.0.0）+ 不注入源码版本」的规范行为（对照 fnos-apps 现有机制要点中「不再向源码注入版本」的
+  既定结论）。
   注意：这是对 checkin 旧行为的有意修正——旧 checkin build.sh 把 FPK 版本（1.0.0）sed
   进 store.js/update.js，导致**安装后源码与 runtime-manifest（按源码原样 sha）永久不一致**，
   热更永远提示「有更新」；统一后以仓库源码字面量（= 功能版本）为准，热更可收敛。

@@ -51,6 +51,7 @@ const ACTIONS = new Map([
   ["logout", ["POST", "logout"]],
   ["dirs_only", ["GET", "dirsOnly"]],
   ["disk_list", ["GET", "diskList"]],
+  // 暂未接线 UI（FP-6）：后端并保留新建/重命名能力，磁盘浏览界面目前只接删除；未来 UI 可用
   ["disk_mkdir", ["POST", "diskMkdir"]],
   ["disk_rename", ["POST", "diskRename"]],
   ["disk_delete", ["POST", "diskDelete"]],
@@ -69,16 +70,10 @@ const ACTIONS = new Map([
   ["strm_sync", ["POST", "strmSync"]],
   ["strm_once", ["POST", "strmOnce"]],
   ["upload_once", ["POST", "uploadOnce"]],
-  ["ledger", ["GET", "ledger"]],
-  ["ledger_verify", ["POST", "ledgerVerify"]],
-  ["library_drop", ["POST", "libraryDrop"]],
   ["upload_conflicts", ["GET", "uploadConflicts"]],
   ["upload_conflicts_resolve", ["POST", "resolveUploadConflicts"]],
   ["task_cancel", ["POST", "taskCancel"]],
   ["checkin_now", ["POST", "checkinNow"]],
-  ["check_update", ["GET", "checkUpdate"]],
-  ["download_update", ["POST", "downloadUpdate"]],
-  ["apply_update", ["POST", "applyUpdate"]],
   ["fnos_login", ["POST", "fnosLogin"]],
   ["fnos_forget", ["POST", "fnosForget"]],
   ["check_hotfix", ["GET", "checkHotfix"]],
@@ -402,11 +397,11 @@ function startServer(sockPath, api) {
   });
 }
 
-function startRedirectPort(api, port) {
+function createRedirectServer(api) {
   // 独立 302 播放中转端口：绕开 fnOS 网关对 /app/* 的强制认证，
   // 播放器直连本端口即可匿名取链（HMAC 验签 + IP 限流仍生效）。
   // 只放行 redirect 路径，其余一律 404，不暴露 UI/API。
-  const server = http.createServer((req, res) => {
+  return http.createServer((req, res) => {
     let pathname = "/";
     try {
       pathname = new URL(req.url, "http://localhost").pathname.replace(/\/+$/, "") || "/";
@@ -429,13 +424,21 @@ function startRedirectPort(api, port) {
       } catch { /* 忽略 */ }
     });
   });
+}
+
+function listenRedirectServer(server, port) {
   return new Promise((resolve, reject) => {
-    server.on("error", reject);
+    server.once("error", reject);
     server.listen(port, "0.0.0.0", () => {
+      server.removeListener("error", reject);
       console.log(`302 播放中转端口已启动：0.0.0.0:${port}`);
       resolve(server);
     });
   });
+}
+
+function startRedirectPort(api, port) {
+  return listenRedirectServer(createRedirectServer(api), port);
 }
 
 function configureLogging(logFile) {
@@ -554,13 +557,34 @@ async function main(argv) {
     console.error(`启动失败：${err.message}`);
     process.exit(2);
   }
-  // 独立 302 播放中转端口（绕开 fnOS 网关认证，播放器直连）
-  const relayPort = parseInt(args.port || process.env.P115_RELAY_PORT || "3667", 10) || 3667;
+  // 独立 302 播放中转端口（绕开 fnOS 网关认证，播放器直连）。
+  // relay_port 唯一权威（FP-1）：启动读取 config.relay_port（env P115_RELAY_PORT 仅兜底），
+  // save_config 改动后经 api._relistener 动态重绑，STRM URL 与监听端口永不双源分叉。
+  let redirectServer = null;
+  const relayPort = api.relayPort();
   try {
-    await startRedirectPort(api, relayPort);
+    redirectServer = await startRedirectPort(api, relayPort);
   } catch (err) {
     console.warn(`302 中转端口启动失败（不影响主服务）：${err.message}`);
   }
+  // save_config 改动 relay_port → 立即重绑 302 监听；新端口绑定失败则回退「重启生效」提示。
+  api._relistener = async (port) => {
+    const p = parseInt(port, 10);
+    if (!Number.isFinite(p) || p < 1 || p > 65535) throw new Error(`非法中转端口: ${port}`);
+    const next = createRedirectServer(api);
+    try {
+      await listenRedirectServer(next, p);
+    } catch (err) {
+      try { next.close(); } catch { /* 忽略 */ }
+      throw err;
+    }
+    const old = redirectServer;
+    redirectServer = next;
+    if (old) {
+      old.close(() => console.log("旧 302 中转端口已关闭"));
+    }
+    console.log(`302 播放中转端口已切换：0.0.0.0:${p}`);
+  };
   console.log("后端已就绪");
 
   // 启动时恢复上次启用的文件监听

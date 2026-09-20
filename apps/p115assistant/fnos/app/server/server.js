@@ -21,16 +21,18 @@ const crypto = require("node:crypto");
 const { U115Client, U115AccessLimitError, U115AuthError, sleep } = require("./client");
 const { Notifier } = require("./notify");
 const { Store } = require("./store");
-const { buildLedger, posixDirname } = require("./ledger");
-const updater = require("./update");
+// 媒体账本子系统已于 2026-09-21 下线（FP-2）：ledger/ledger_verify/library_drop 三个 action、
+// server/ledger.js 与正文字段删除；仅保留 posixDirname 供 STRM 记录生成云目录使用。
+// 删除前已 grep 全仓库确认无其他引用（含 server.js 内 store/history 联动，无读点）。
 
-// 云端核对的预算与冷却（对齐参考实现 cloud_check.py）：
-// 一次点击能等的量有上限，撞了访问上限就停手并把结果存下来，冷却期内不重试。
-const LEDGER_CHECK_BUDGET = 60;
-const LEDGER_CHECK_BUDGET_MAX = 200;
-const LEDGER_COOLDOWN_MS = 600 * 1000;
-// 账本扫描输出目录时的文件数上限，防止误配的巨大目录把一次 GET 拖死
-const LEDGER_SCAN_LIMIT = 20000;
+// 路径小工具：取 POSIX 云路径的父目录（STRM 记录生成 cloud_dir 用），以 '/' 分隔。
+// 原 ledger.js 一并下线（FP-2），此处内联唯一仍被核心 STRM 使用的小函数。
+function posixDirname(value) {
+  const text = String(value || "").replace(/\\/g, "/").replace(/\/+$/, "");
+  const index = text.lastIndexOf("/");
+  if (index < 0) return "";
+  return text.slice(0, index);
+}
 
 function ok(data, message) {
   return { success: true, message: message || "", data: data === undefined ? {} : data };
@@ -55,7 +57,6 @@ const PUBLIC_CONFIG_FIELDS = new Set([
   "version",
   "rate_limit_profile",
   "login_client_type",
-  "link_redirect_mode",
   "upload_mappings",
   "upload_include_sidecars",
   "upload_generate_strm",
@@ -385,7 +386,6 @@ class Server {
       consecutiveFailures: 0,  // 连续失败计数（非风控）
     };
     this._logTail = [];
-    this._ledgerCooldownUntil = 0;   // 云端核对撞限流后的冷却截止（epoch ms）
     this._strmBusy = false;          // STRM 生成的并发闸（同步与一次性任务共用）
     this._redirectUrlCache = new Map();   // 匿名 302 取链 URL 缓存（pickcode|ua → {url, expireAt}）
     this._redirectInflight = new Map();   // 匿名 302 singleflight 并发去重（同 key 共享一次取链）
@@ -568,7 +568,7 @@ class Server {
     }
   }
 
-  saveConfig(payload) {
+  async saveConfig(payload) {
     payload = payload || {};
     const updates = {};
     for (const [key, value] of Object.entries(payload)) {
@@ -579,6 +579,20 @@ class Server {
     if (Object.prototype.hasOwnProperty.call(updates, "feishu_webhook") && !String(updates.feishu_webhook).trim()) {
       delete updates.feishu_webhook;
     }
+    // relay_port 唯一权威（FP-1）：302 监听与 STRM URL 都以 config.relay_port 为准。
+    // 留空视为恢复默认 3667；非 1-65535 整数直接拒绝，绝不落库非法端口。
+    if (Object.prototype.hasOwnProperty.call(updates, "relay_port")) {
+      const raw = String(updates.relay_port === undefined ? "" : updates.relay_port).trim();
+      let port;
+      if (raw === "") {
+        port = 3667;
+      } else {
+        if (!/^\d+$/.test(raw)) return error("中转端口必须为 1-65535 的整数");
+        port = parseInt(raw, 10);
+        if (!Number.isFinite(port) || port < 1 || port > 65535) return error("中转端口必须为 1-65535 的整数");
+      }
+      updates.relay_port = port;
+    }
     if (!Object.keys(updates).length) {
       return error("没有可保存的配置项");
     }
@@ -587,6 +601,7 @@ class Server {
       const before = this.store.getConfig();
       this.store.updateConfig(updates);
       const after = this.store.getConfig();
+      const relayChanged = String(before.relay_port) !== String(after.relay_port);
       const linkChanged = ["strm_base_url", "relay_port"].some(
         (k) => String(before[k] === undefined ? "" : before[k]) !== String(after[k] === undefined ? "" : after[k])
       );
@@ -606,6 +621,19 @@ class Server {
             })
             .catch((err) => console.warn(`自动 STRM 同步失败：${err.message}`));
         }, 2000);
+      }
+      // relay_port 变更 → 立即动态重绑 302 监听（relistener 由 main.js 注册）。
+      // 新端口绑定失败时回退「新端口需重启生效」提示，配置保持已保存状态。
+      if (relayChanged && typeof this._relistener === "function") {
+        try {
+          await this._relistener(after.relay_port);
+          this.recordLog(`302 中转端口已切换：${after.relay_port}`, "INFO", "LINK");
+          return ok(undefined, `配置已保存，中转端口已切换到 ${after.relay_port}`);
+        } catch (err) {
+          console.warn(`302 中转端口重绑失败：${err.message}`);
+          this.recordLog(`302 中转端口重绑失败：${err.message}（新端口 ${after.relay_port} 将在应用重启后生效）`, "WARN", "LINK");
+          return ok(undefined, `配置已保存；中转端口 ${after.relay_port} 绑定失败（可能被占用），将在应用重启后生效`);
+        }
       }
       return ok(undefined, "配置已保存");
     } catch (err) {
@@ -1455,39 +1483,11 @@ class Server {
     return String(record.pickcode_identity_fileid || record.fileid || "").trim();
   }
 
-  // ── 自更新（半自动：检测→下载→用户确认后执行）──
+  // ── 功能热更数据目录 ──
+  // FPK 自更新（check_update/download_update/apply_update）已于 2026-09-21 下线（FP-4），
+  // fpk 升级唯一通道为 App Center UI；本方法仅供 applyHotfix 落 patches/ 备份与 current.json。
   _updateDataDir() {
-    // 返回数据根目录；update.js 内部统一 updateDir() 拼接 updates/（避免 /updates/updates 双重路径）
     return this.store._dir || "/vol1/@appdata/p115assistant";
-  }
-
-  async checkUpdate() {
-    const info = await updater.checkUpdate(this._updateDataDir(), this.store.getConfig().version || updater.CURRENT_VERSION);
-    if (!info.success) return error(info.message || "检查更新失败");
-    // 统一 ok() 包装为 {success, data}（与其它 action 一致），否则 UI 端 r.data 取不到
-    return ok(info);
-  }
-
-  async downloadUpdate(payload) {
-    const res = await this.checkUpdate();
-    // checkUpdate 已用 ok() 包装为 {success, data}；解包后判断
-    const info = (res && res.data) || res;
-    if (!info.success) return error(info.message || "检查更新失败");
-    if (!info.has_update || !info.latest) return error("当前已是最新版本，无需下载");
-    const dl = await updater.downloadUpdate(info.latest, this._updateDataDir());
-    if (!dl.success) return error(dl.message);
-    return ok({ file: dl.file, size: dl.size, version: info.latest.version }, dl.message);
-  }
-
-  async applyUpdate(payload) {
-    if (!payload || !payload.file) return error("缺少 FPK 文件路径");
-    const cfg = this.store.getConfig();
-    const res = await updater.applyUpdate(payload, this._updateDataDir(), {
-      username: String(cfg.fnos_username || ""),
-      password: String(cfg.fnos_password || ""),
-    });
-    if (!res.success) return error(res.message, { data: { need_login: !!res.need_login, code: res.code, message: res.message } });
-    return ok(res);
   }
 
   // fnOS 账号凭据（仅用于自动登录 trim-cli 执行安装预检；密码不进前端/日志）
@@ -1685,6 +1685,11 @@ class Server {
     if (Number.isFinite(cfg) && cfg > 0 && cfg < 65536) return cfg;
     const p = parseInt(process.env.P115_RELAY_PORT || "3667", 10);
     return Number.isFinite(p) && p > 0 ? p : 3667;
+  }
+
+  // 302 监听端口唯一权威（FP-1）：main.js 启动与 save_config 动态重绑都经它取当前值。
+  relayPort() {
+    return this._relayPort();
   }
 
   _relayHost() {
@@ -2012,369 +2017,6 @@ class Server {
       this.store.saveStrmRecords(records);
     } catch (err) {
       console.warn(`[STRM] 保存记录失败：${err.message}`);
-    }
-  }
-
-  // ── 媒体账本 ──
-  /**
-   * 扫输出目录里「记录中没有」的 .strm。它们在网盘上还有没有无从得知，账本单独标
-   * untracked，不硬塞进任何一边 —— 猜一个会把筛选和清理的计数全带偏。
-   */
-  _scanUntrackedStrm(records, mappings) {
-    const dirs = new Set();
-    for (const mapping of mappings) {
-      const dir = String((mapping && mapping.target_dir) || "").trim();
-      if (dir) dirs.add(dir);
-    }
-    // 映射被删了、STRM 还留在盘上的情况也要看得见
-    for (const record of Object.values(records)) {
-      const dir = String((record && record.target_dir) || "").trim();
-      if (dir) dirs.add(dir);
-    }
-    const trackedPaths = new Set();
-    for (const record of Object.values(records)) {
-      const owned = String((record && record.path) || "").trim();
-      if (owned) trackedPaths.add(owned);
-    }
-    const found = [];
-    let scanned = 0;
-    for (const dir of dirs) {
-      const [resolved] = this._authorizedLocalPath(dir);
-      if (resolved === null) continue;
-      const stack = [resolved];
-      while (stack.length && scanned < LEDGER_SCAN_LIMIT) {
-        const current = stack.pop();
-        let names;
-        try { names = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
-        for (const dirent of names) {
-          if (dirent.name.startsWith(".")) continue;
-          const full = path.join(current, dirent.name);
-          if (dirent.isDirectory()) { stack.push(full); continue; }
-          if (!dirent.isFile()) continue;
-          if (!dirent.name.toLowerCase().endsWith(".strm")) continue;
-          scanned += 1;
-          if (trackedPaths.has(full)) continue;
-          let stat = null;
-          try { stat = fs.statSync(full); } catch { /* 读不到就算了 */ }
-          found.push({
-            path: full,
-            rel: path.relative(resolved, full).split(path.sep).join("/"),
-            target_dir: resolved,
-            mtime: stat ? Math.floor(stat.mtimeMs / 1000) : 0,
-          });
-        }
-      }
-    }
-    return found;
-  }
-
-  /** 账本快照：只读本地记录与文件系统，一个 115 请求都不打，所以随时能重算。 */
-  _buildLedgerSnapshot() {
-    const config = this.store.getConfig();
-    const records = this._getStrmRecords();
-    const mappings = Array.isArray(config.strm_mappings) ? config.strm_mappings : [];
-    return buildLedger({
-      records,
-      strmMappings: mappings,
-      untracked: this._scanUntrackedStrm(records, mappings),
-    });
-  }
-
-  ledger() {
-    try {
-      const snapshot = this._buildLedgerSnapshot();
-      return ok({
-        rows: snapshot.rows,
-        summary: snapshot.summary,
-        cooldown_left: this._ledgerCooldownLeft(),
-        risk: this._riskStatus(),
-      });
-    } catch (err) {
-      console.error(`读取媒体账本失败：${err.message}`);
-      return error(`读取媒体账本失败: ${err.message}`);
-    }
-  }
-
-  // ── 云端核对（唯一一处为了填账本而主动打 115 的地方）──
-  _ledgerCooldownLeft() {
-    return Math.max(0, this._ledgerCooldownUntil - Date.now());
-  }
-
-  /**
-   * 按预算分批核对：一部片/一季一行，一行只问一次它所在的云目录在不在。
-   * 撞上访问上限立刻停，把已经问出来的结果存下来，并如实说停在第几行、为什么。
-   * 只做标记，不删除任何东西。
-   */
-  async ledgerVerify(payload) {
-    payload = payload || {};
-    try {
-      const wait = this._ledgerCooldownLeft();
-      if (wait > 0) {
-        return error(`上次撞了 115 访问上限，${Math.ceil(wait / 60000)} 分钟内不再核对（还剩 ${Math.ceil(wait / 1000)} 秒）`);
-      }
-      if (this._riskLimited()) {
-        return error(`风控冷却中（还剩约 ${Math.ceil(this._riskCooldownRemaining() / 1000)} 秒），先不核对`);
-      }
-
-      const snapshot = this._buildLedgerSnapshot();
-      const wanted = Array.isArray(payload.ids)
-        ? [...new Set(payload.ids.map((value) => String(value || "").trim()).filter(Boolean))]
-        : [];
-      let candidates = snapshot.rows.filter((row) =>
-        row.items.some((item) => item.tracked && item.cloud_dir)
-      );
-      if (wanted.length) {
-        const wantedSet = new Set(wanted);
-        candidates = candidates.filter((row) => wantedSet.has(row.id));
-        if (!candidates.length) {
-          return error("选中的媒体没有可核对的记录（缺云目录，先跑一次 STRM 同步）");
-        }
-      }
-      // 没指定就挑最久没核对过的：没核对过的排最前
-      const lastChecked = (row) => {
-        let value = 0;
-        for (const item of row.items) if (item.verify_at > value) value = item.verify_at;
-        return value;
-      };
-      candidates = candidates.slice().sort((a, b) => lastChecked(a) - lastChecked(b));
-
-      let budget = parseInt(payload.budget || LEDGER_CHECK_BUDGET, 10);
-      if (!Number.isFinite(budget) || budget <= 0) budget = LEDGER_CHECK_BUDGET;
-      budget = Math.min(budget, LEDGER_CHECK_BUDGET_MAX);
-
-      // 按行取云目录并去重：一季 20 集同在一个目录里，只问一次 —— 预算就是这么省下来的
-      const dirs = [];
-      const dirSet = new Set();
-      const rowIds = [];
-      for (const row of candidates) {
-        if (dirs.length >= budget) break;
-        const rowDirs = [...new Set(
-          row.items.filter((item) => item.tracked && item.cloud_dir).map((item) => item.cloud_dir)
-        )];
-        if (!rowDirs.length) continue;
-        const fresh = rowDirs.filter((dir) => !dirSet.has(dir));
-        for (const dir of fresh.slice(0, budget - dirs.length)) {
-          dirSet.add(dir);
-          dirs.push(dir);
-        }
-        rowIds.push(row.id);
-      }
-      if (!dirs.length) {
-        return error("没有可核对的 STRM 记录（记录里缺云目录，先跑一次 STRM 同步）");
-      }
-
-      const client = this._getClient();
-      const state = client.newAccessLimitState();
-      const results = new Map();
-      let stopped = "";
-      let limited = false;
-      try {
-        await client.runWithAccessLimitState(state, async () => {
-          for (let index = 0; index < dirs.length; index += 1) {
-            const dir = dirs[index];
-            let item;
-            try {
-              item = await client.getItem(dir);
-            } catch (err) {
-              if (err instanceof U115AccessLimitError) throw err;
-              // 一个错就停：同一个毛病重复问几十次只会更快撞上限流
-              stopped = `问到第 ${index + 1} 个目录时出错，先停下了（已核对 ${results.size} 个）：${err.message}`;
-              return;
-            }
-            results.set(dir, item ? "yes" : "no");
-          }
-        });
-      } catch (err) {
-        if (!(err instanceof U115AccessLimitError)) throw err;
-        limited = true;
-        this._ledgerCooldownUntil = Date.now() + LEDGER_COOLDOWN_MS;
-        this._riskPause(err.message);
-        stopped = `115 报了访问上限，已核对 ${results.size} 个目录就停下了，${Math.round(LEDGER_COOLDOWN_MS / 60000)} 分钟内不再试：${err.message}`;
-        console.warn(`【媒体账本】${stopped}`);
-      }
-
-      // 结果带时间戳存着，所以「还在」「没了」「还没核对」是三种状态而不是两种
-      const records = this._getStrmRecords();
-      const nowSec = Math.floor(Date.now() / 1000);
-      for (const record of Object.values(records)) {
-        if (!record || typeof record !== "object") continue;
-        const dir = String(record.cloud_dir || "");
-        if (!dir || !results.has(dir)) continue;
-        record.verify_state = results.get(dir);
-        record.verify_at = nowSec;
-      }
-      this._saveStrmRecords(records);
-
-      const after = this._buildLedgerSnapshot();
-      const checkedRowSet = new Set(rowIds);
-      let checkedFiles = 0;
-      let aliveFiles = 0;
-      let staleFiles = 0;
-      const staleItems = [];
-      for (const row of after.rows) {
-        if (!checkedRowSet.has(row.id)) continue;
-        for (const item of row.items) {
-          if (!item.tracked || !item.cloud_dir || !results.has(item.cloud_dir)) continue;
-          checkedFiles += 1;
-          if (item.verify_state === "no") {
-            staleFiles += 1;
-            staleItems.push({
-              id: item.id,
-              row_id: row.id,
-              title: row.title,
-              kind: row.kind,
-              rel: item.rel,
-              path: item.path,
-              name: item.name,
-              size: item.size,
-              mapping: row.channel,
-              cloud_dir: item.cloud_dir,
-            });
-          } else {
-            aliveFiles += 1;
-          }
-        }
-      }
-
-      const summary = stopped
-        || `核对完成：${checkedFiles} 个 STRM 全部还在云端`;
-      this.store.appendHistory({
-        ts: Date.now(), type: "strm", title: "媒体账本云端核对",
-        detail: `${summary}（目录 ${results.size} 个，失效 ${staleFiles}）`,
-        ok: staleFiles === 0 && !stopped,
-      });
-      return ok({
-        checked_dirs: results.size,
-        rows_checked: rowIds.length,
-        checked_files: checkedFiles,
-        alive: aliveFiles,
-        stale: staleFiles,
-        stopped_early: Boolean(stopped),
-        limited,
-        cooldown_left: this._ledgerCooldownLeft(),
-        stale_items: staleItems,
-      }, summary);
-    } catch (err) {
-      console.error(`云端核对失败：${err.message}`);
-      return error(`云端核对失败: ${err.message}`);
-    }
-  }
-
-  // ── 失效清理：只删本地 .strm，绝不碰云端 ──
-  /**
-   * 入参必须是应用自己返回的失效项 id（``ledgerVerify`` 的 ``stale_items[].id``）。
-   * 三道闸：记录必须存在、必须已被确认云端失效、本地路径必须落在已授权的输出目录内。
-   * 本方法不调用任何 115 删除接口。
-   */
-  libraryDrop(payload) {
-    payload = payload || {};
-    try {
-      const rawIds = payload.ids;
-      const ids = Array.isArray(rawIds)
-        ? [...new Set(rawIds.map((value) => String(value || "").trim()).filter(Boolean))]
-        : [];
-      if (!ids.length) return error("没有选择要清理的失效 STRM");
-
-      const records = this._getStrmRecords();
-      const removed = [];
-      const skipped = [];
-      const failed = [];
-      const touchedDirs = new Set();
-      // 输出根目录一律不删：先从记录与配置里把根收齐，删除过程中记录会被摘掉，
-      // 那时再反查就没人认领这些根了。
-      const protectedRoots = new Set();
-      const noteRoot = (value) => {
-        const text = String(value || "").trim();
-        if (!text) return;
-        try { protectedRoots.add(path.resolve(text)); } catch { /* 忽略 */ }
-      };
-      for (const record of Object.values(records)) noteRoot(record && record.target_dir);
-      for (const mapping of (this.store.getConfig().strm_mappings || [])) noteRoot(mapping && mapping.target_dir);
-      for (const root of this._accessibleRoots()) noteRoot(root);
-
-      for (const id of ids) {
-        const record = records[id];
-        if (!record || typeof record !== "object") {
-          skipped.push({ id, reason: "记录不存在" });
-          continue;
-        }
-        if (String(record.verify_state || "") !== "no") {
-          skipped.push({ id, reason: "未确认云端失效，拒绝删除" });
-          continue;
-        }
-        const targetDir = String(record.target_dir || "");
-        const [resolvedDir] = this._authorizedLocalPath(targetDir);
-        if (resolvedDir === null) {
-          skipped.push({ id, reason: "输出目录不在应用可访问范围内" });
-          continue;
-        }
-        const rawPath = String(record.path || "");
-        if (!rawPath.toLowerCase().endsWith(".strm")) {
-          skipped.push({ id, reason: "目标不是 .strm 文件" });
-          continue;
-        }
-        let filePath;
-        try {
-          filePath = path.resolve(rawPath);
-        } catch {
-          skipped.push({ id, reason: "路径无效" });
-          continue;
-        }
-        if (!filePath.startsWith(resolvedDir + path.sep)) {
-          skipped.push({ id, reason: "路径越界，拒绝删除" });
-          continue;
-        }
-        try {
-          if (fs.existsSync(filePath)) {
-            if (!fs.statSync(filePath).isFile()) {
-              skipped.push({ id, reason: "目标不是普通文件" });
-              continue;
-            }
-            fs.unlinkSync(filePath);
-            touchedDirs.add(path.dirname(filePath));
-          }
-          delete records[id];
-          removed.push({ id, path: filePath, name: String(record.name || ""), title: String(record.rel || "") });
-        } catch (err) {
-          failed.push({ id, message: err.message });
-        }
-      }
-
-      // 顺手收掉空目录（只删空的，且绝不越过映射的输出根目录）—— 刮削器不喜欢空壳
-      let dirsRemoved = 0;
-      for (const start of touchedDirs) {
-        let current = start;
-        while (true) {
-          const [resolvedDir] = this._authorizedLocalPath(current);
-          if (resolvedDir === null) break;
-          let names;
-          try { names = fs.readdirSync(current); } catch { break; }
-          if (names.length) break;
-          if (protectedRoots.has(path.resolve(current))) break;   // 输出根/授权根，绝不删
-          try {
-            fs.rmdirSync(current);
-            dirsRemoved += 1;
-          } catch { break; }
-          const parent = path.dirname(current);
-          if (parent === current) break;
-          current = parent;
-        }
-      }
-
-      this._saveStrmRecords(records);
-      const detail = `删除本地失效 STRM ${removed.length} 个，清理空目录 ${dirsRemoved} 个，跳过 ${skipped.length} 个，失败 ${failed.length} 个（未触碰云端文件）`;
-      this.store.appendHistory({
-        ts: Date.now(), type: "strm", title: "清理失效 STRM",
-        detail, ok: failed.length === 0,
-      });
-      console.log(`【媒体账本】${detail}`);
-      return ok(
-        { removed: removed.length, dirs_removed: dirsRemoved, skipped, failed, items: removed },
-        detail
-      );
-    } catch (err) {
-      console.error(`清理失效 STRM 失败：${err.message}`);
-      return error(`清理失效 STRM 失败: ${err.message}`);
     }
   }
 

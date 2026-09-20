@@ -46,6 +46,23 @@ scp dist/*.fpk nas:/tmp/
 trim-cli app install-fpk /tmp/p115assistant_<VERSION>_all.fpk --accept-license --yes --custom-parameters "[]"
 ```
 
+## 安全边界（威胁模型）
+
+> 以下描述的是当前**实际**具备的安全属性，供部署与风险评估参考，非承诺性保证。
+
+- **凭据加密 = 混淆而非防护**：cookie / tokens / fnos_password 用 Fernet
+  （AES-128-CBC + HMAC-SHA256）加密落盘，但密钥种子（`p115liteassistant_redirect_secret.json`，
+  经 PBKDF2 派生密钥）与密文**同在一个数据目录**。对能读取该目录的本地攻击者，种子与密文
+  同时可得，「加密存储」不构成实质保护。它只防「意外读取 / 备份被拖走明文」这类场景；
+  真正的部署侧防护是数据目录权限最小化（`0o700`）与运行账号 root 化。
+- **302 播放中转暴露面**：`/redirect` 中转监听绑定 `0.0.0.0:<relay_port>`（默认 `3667`），对
+  所在网段全部网卡开放。请求靠 **HMAC 签名 + 每 IP 60 req/60s 限流**保护，无用户名/密码认证
+  （播放器直连取链的用例所需）。它不是开放代理（无有效签名不转发生效），但可被局域网内端口
+  扫描探测。若 NAS 直连不可信网段（客用 Wi-Fi / 公网），建议在防火墙或路由器层面把
+  `<relay_port>` 的入站访问限制到受信 VLAN / 网段。
+- **`get_config` 不泄露敏感值**：响应只下发 `PUBLIC_CONFIG_FIELDS` 白名单字段，cookie /
+  tokens / fnos_password 永不下发，feishu_webhook 掩码显示（真机验证）。
+
 ## 本地校验
 
 ```bash
