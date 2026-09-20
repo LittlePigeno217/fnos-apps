@@ -226,8 +226,23 @@ function sha256Hex(buf) {
   return crypto.createHash("sha256").update(buf).digest("hex");
 }
 
-/** 请求系统重启（trim-cli app restart，凭据自动登录） */
+/** 请求系统重启（应用以 root 运行时优先 appcenter-cli 免凭据；否则 trim-cli 登录重启） */
 async function restartApp(dataDir, creds) {
+  // 1) appcenter-cli（fnOS 本地工具；root 身份可直接调用，无需任何凭据）
+  const APP_CLI = "/usr/local/bin/appcenter-cli";
+  try {
+    if (fs.existsSync(APP_CLI)) {
+      // appcenter-cli 提供 stop/start（无 restart 命令）：detached 脚本先 stop 后 start，
+      // stop 会杀掉本进程，start 由 appcenter 后台服务以 root 拉起（本进程被杀不影响脚本）
+      const script = `"${APP_CLI}" stop ${APP_NAME} >/dev/null 2>&1; sleep 2; "${APP_CLI}" start ${APP_NAME} >/dev/null 2>&1`;
+      const child = spawn("sh", ["-c", script], { detached: true, stdio: "ignore" });
+      child.unref();
+      return { ok: true, out: "appcenter-cli" };
+    }
+  } catch (e) {
+    /* 回退 trim-cli */
+  }
+  // 2) trim-cli（登录 session，凭据自动登录）
   const cli = trimCliPath();
   if (!cli) return { ok: false, err: "未找到 trim-cli" };
   // 会话环境必须与 update.js trimEnv 一致：TRIM_CLI_CONFIG_DIR 指向应用数据目录下的 trimclip

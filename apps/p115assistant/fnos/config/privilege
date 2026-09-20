@@ -1,7 +1,5 @@
 {
   "defaults": {
-    "run-as": "package"
-  },
-  "username": "p115assistant",
-  "groupname": "p115assistant"
+    "run-as": "root"
+  }
 }

@@ -91,13 +91,10 @@ build_one() {
     local app_dir="${REPO_ROOT}/apps/${slug}"
     local fnos_dir="${app_dir}/fnos"
 
-    # 1. FPK 版本 = manifest version，校验恒 1.0.0
+    # 1. FPK 版本 = manifest version（唯一事实源；功能热更版本独立走 VERSION）
     local fpk_version
     fpk_version=$(grep "^version" "${fnos_dir}/manifest" | awk -F'=' '{print $2}' | tr -d ' ')
     [ -z "${fpk_version}" ] && error "[${slug}] 无法确定 fpk 版本号（manifest 缺少 version）"
-    if [ "${fpk_version}" != "1.0.0" ]; then
-        error "[${slug}] fpk 版本必须为 1.0.0（manifest version=${fpk_version}）；功能更新请走热更（VERSION 文件 + runtime-manifest.json）"
-    fi
 
     # 2. 功能版本 = VERSION 文件（单一事实源；构建流程绝不写它）
     local feature_version
