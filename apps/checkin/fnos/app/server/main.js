@@ -160,7 +160,7 @@ const ACTION_HANDLERS = {
       return { success: false, message: "清空日志失败：" + e.message };
     }
   },
-  checkHotfix: () => checkHotfix(APP_DIR),
+  checkHotfix: () => checkHotfix(APP_DIR).then((r) => ({ success: true, data: r })).catch((err) => ({ success: false, message: "检查功能更新失败: " + err.message })),
   async applyHotfix() {
     const r = await applyHotfix(APP_DIR, DATA_DIR, null);
     if (r.success && r.version) {
