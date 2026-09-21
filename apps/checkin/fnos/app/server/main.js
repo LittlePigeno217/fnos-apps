@@ -156,6 +156,7 @@ const ACTION_HANDLERS = {
   saveConfig: (body) => api.saveConfig(body),
   status: () => api.status(),
   runOnce: (body) => api.runOnce(body.sites),
+  runAccount: (body) => api.runAccount(body.site, body.account_id),
   points: () => api.points(),
   testLogin: (body) => api.testLogin(body.site, body.account_id),
   getHistory: (body, ctx) => api.getHistory(new URL(ctx.req.url, "http://x").searchParams.get("limit")),

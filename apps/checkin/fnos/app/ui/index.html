@@ -72,6 +72,10 @@
   /* 动作回映动效（克制）：签到徽标盖章缩放；失败展开微滑；数字变化过渡 */
   @keyframes stamp { 0% { transform: scale(.6); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
   .stamp { animation: stamp .18s ease-out; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { display:inline-block; width:10px; height:10px; margin-right:4px; vertical-align:-1px;
+          border:2px solid currentColor; border-top-color:transparent; border-radius:50%;
+          animation: spin .6s linear infinite; }
   .toast { pointer-events:auto; background:var(--card); border:1px solid var(--border); color:var(--ink);
            padding:9px 14px; border-radius:10px; font-size:12.5px; box-shadow:var(--shadow);
            opacity:0; transform: translateY(6px); transition: all .18s ease; max-width:320px; }
@@ -399,7 +403,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.2</span>
+      <span class="ver" id="appVersion">v1.3.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -812,8 +816,10 @@ function renderAcctCard(key, a, cap) {
     loginBtn = '<button class="btn btn-mini" onclick="siteLogin(\'' + key + "','" + esc(a.id || "") + '\')">' +
       (hasSession ? "重新登录" : "登录") + "</button>";
   }
-  const enToggle = '<button class="btn btn-mini" title="' + (enabled ? "点击停用该账号" : "点击启用该账号") + '" onclick="toggleAccountEnabled(\'' + key + "','" + esc(a.id || "") + "'," + (enabled ? "false" : "true") + ')">' +
-    (enabled ? "停用" : "启用") + "</button>";
+  // 单账号签到：仅为该账号触发（不影响全部签到）。停用账号禁用按钮。
+  const checkinBtn = '<button class="btn btn-mini" title="' + (enabled ? "单独为该账号签到" : "该账号已停用") + '"' +
+    (enabled ? "" : " disabled") +
+    ' onclick="cardCheckinAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">签到</button>';
   return '<div class="acct-card"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
     siteTag +
     '<div class="acct-card-top"><div class="acct-card-title">' +
@@ -823,7 +829,7 @@ function renderAcctCard(key, a, cap) {
     balLine +
     '<div class="acct-meta">' + dayBadge + "</div>" +
     '<div class="acct-actions">' +
-      loginBtn + enToggle +
+      loginBtn + checkinBtn +
       '<button class="btn btn-mini" onclick="cardTestAccount(\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
       '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
     "</div>" +
@@ -1219,20 +1225,26 @@ async function cardDeleteAccount(key, accountId) {
   else toast("删除失败：" + (r.message || ""), "err");
 }
 
-/** 账号行「启用/停用」：save_config 提交该站点全部账号的 {id, enabled}（凭据留空=后端保留原值）。
- *  必须显式带上每个账号当前 enabled，否则后端对缺省 enabled 的账号会回落为「启用」。 */
-async function toggleAccountEnabled(key, accountId, next) {
-  if (!accountId) return;
-  const st = SITE_DATA[key] || {};
-  const accs = Array.isArray(st.accounts) ? st.accounts : [];
-  const accounts = accs.map((a) => ({
-    id: a.id,
-    enabled: String(a.id) === String(accountId) ? next === true : (a.enabled !== false),
-  }));
-  const body = { sites: { [key]: { enabled: st.enabled === true, use_proxy: st.use_proxy === true, accounts } } };
-  const r = await call("save_config", "POST", body);
-  if (r.success) { toast(next ? "账号已启用" : "账号已停用", next ? "ok" : "warn"); await refreshOverview(); }
-  else toast("操作失败：" + (r.message || ""), "err");
+/** 账号行「签到」：仅为该账号触发单账号签到（POST checkin/run_account {site, account_id}）。
+ *  按钮禁用 + spinner → 结果 toast（成功含奖励/已签到/失败原因原样）→ 成功后刷新总览（该卡片积分/余额/最后签到重渲染）。
+ *  enabled 语义不变：仍由 config 控制，本按钮不切换启用状态。 */
+async function cardCheckinAccount(btn, key, accountId) {
+  if (!accountId) { toast("请先在编辑弹窗保存后再签到", "warn"); return; }
+  const orig = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>签到中'; }
+  try {
+    const r = await call("checkin/run_account", "POST", { site: key, account_id: accountId }, 60000);
+    if (r && r.success) {
+      const res = (r.data && r.data.result) || {};
+      const reward = (res.reward != null && res.reward !== "") ? ("，奖励 " + res.reward) : "";
+      toast("✓ " + (res.status || r.message || "签到完成") + reward, "ok");
+      await refreshOverview(); // 刷新积分/余额快照、最后签到、列表计数
+    } else {
+      toast("✗ " + (r && r.message ? r.message : "签到失败"), "err");
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
 }
 
 function shortTime(t) {

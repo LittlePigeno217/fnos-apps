@@ -215,6 +215,57 @@ class Server {
     }
   }
 
+  /**
+   * 单账号立即签到：按 site + account_id 精确定位一个账号，仅跑该账号。
+   * 复用 runOnce 的单账号执行逻辑（isConfigured → runCheckin → snapshotBalance → 落 history）。
+   * 返回该账号结果（成功/已签到/失败原因 + reward/total），无该账号返回明确错误。
+   */
+  async runAccount(site, accountId) {
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    if (accountId == null || accountId === "") return fail("缺少 account_id");
+    if (this._running) return fail("签到正在执行中，请稍后再试");
+    this._running = true;
+    try {
+      const cfg = this._store.getConfig();
+      if (!cfg.enabled) return fail("总开关未开启（设置 → 应用启用）");
+      const st = cfg.sites[site];
+      if (!st || !st.enabled) return fail("该站点未启用");
+      const accs = Array.isArray(st.accounts) ? st.accounts : [];
+      const acc = accs.find((a) => String(a.id) === String(accountId));
+      if (!acc) return fail("未找到指定账号");
+      if (acc.enabled === false) return fail("该账号已停用");
+      const accLabel = adapter.getAccountLabel(acc);
+      const who = accLabel ? `（${accLabel}）` : "";
+      this._log(`单账号签到 ${adapter.name}${who}…`);
+      let result;
+      let history;
+      try {
+        if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
+        const r = await adapter.runCheckin(acc);
+        await this._snapshotBalance(adapter, acc); // 签到成功后刷新余额快照（失败不致命）
+        result = { site_key: site, account_id: acc.id, account: accLabel, ...r };
+        history = { time: r.time, site, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" };
+        this._log(`单账号签到 ${adapter.name} → ${r.status}`);
+      } catch (err) {
+        const msg = err.message || String(err);
+        result = { site_key: site, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "执行失败", error: msg };
+        history = { time: new Date().toLocaleString("zh-CN", { hour12: false }), site, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", reward: "", total: "", error: msg };
+        this._log(`单账号签到 ${adapter.name}${who} 失败：${msg}`);
+      }
+      this._store.appendHistory(history);
+      if (this._notifier && cfg.notify_enabled) {
+        const text = this._notifier.buildNotifyText("签到工具", [result]);
+        const sent = await this._notifier.sendText(cfg.feishu_webhook, text);
+        if (sent) this._log("单账号签到通知已发送");
+      }
+      const okRun = result.status !== "执行失败";
+      return ok({ result, success_count: okRun ? 1 : 0, total: 1 }, okRun ? result.status : "执行失败");
+    } finally {
+      this._running = false;
+    }
+  }
+
   async testLogin(siteKey, accountId) {
     const adapter = ADAPTERS[siteKey];
     if (!adapter) return fail(`未知站点：${siteKey}`);

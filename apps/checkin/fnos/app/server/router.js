@@ -19,6 +19,7 @@ const ROUTES = new Map([
   ["checkin/config", { GET: "getConfig", POST: "saveConfig" }],
   ["checkin/status", { GET: "status" }],
   ["checkin/run", { POST: "runOnce" }],
+  ["checkin/run_account", { POST: "runAccount" }],   // 单账号签到（body: {site, account_id}）
   ["checkin/points", { GET: "points" }],   // 阶段1：积分聚合，无旧别名
 
   // ── 阶段2：账号运维（命名空间，无旧别名）────────────
