@@ -189,6 +189,7 @@ class Server {
           try {
             if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
             const r = await adapter.runCheckin(acc);
+            await this._snapshotBalance(adapter, acc); // 签到成功后刷新余额快照（失败不致命）
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
             history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" });
             this._log(`签到 ${adapter.name} → ${r.status}`);
@@ -224,10 +225,30 @@ class Server {
     if (!acc || !adapter.isConfigured(acc)) return fail(accountId ? "该账号尚未配置凭据" : "该站点没有可用账号");
     try {
       const r = await adapter.testConnection(acc);
+      await this._snapshotBalance(adapter, acc); // 测试连接成功后刷新余额快照（失败不致命）
       return ok({ ...r, account_id: acc.id, account: adapter.getAccountLabel(acc) });
     } catch (err) {
       return fail(err.message || "测试失败");
     }
+  }
+
+  /**
+   * 账号级余额快照：仅对声明了 queryBalance 的 adapter（workbuddy 积分 / anyrouter quota）生效。
+   * 写入 acc.balance（原始数值）、acc.balance_delta（与上次快照差；无上次 → null）、acc.balance_ts。
+   * 任何异常都吞掉——余额取不到绝不影响签到/测试结果。凭据/token 绝不返回，仅存数值。
+   */
+  async _snapshotBalance(adapter, acc) {
+    if (!adapter || typeof adapter.queryBalance !== "function") return;
+    try {
+      const val = await adapter.queryBalance(acc);
+      if (val == null || !Number.isFinite(Number(val))) return;
+      const next = Number(val);
+      const prev = (acc.balance == null) ? null : Number(acc.balance);
+      acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
+      acc.balance = next;
+      acc.balance_ts = Date.now();
+      this._store.save();
+    } catch { /* 余额快照失败不致命 */ }
   }
 
   getHistory(limit) {
@@ -296,15 +317,30 @@ class Server {
           const accHist = hist.filter((h) => h && h.site === key && String(h.account_id) === String(a.id));
           const last = accHist[0] || null;
           const points = Number(accHist.reduce((s, h) => s + parseReward(h.reward), 0).toFixed(4));
+          // 余额快照（脱敏——纯数值/展示串，绝不含 token/cookie）：
+          // supports_balance = adapter 是否声明 queryBalance（前端据此决定是否显示余额行）
+          const supportsBalance = typeof adapter.queryBalance === "function";
+          const rawBal = (a.balance == null) ? null : Number(a.balance);
+          const rawDelta = (a.balance_delta == null) ? null : Number(a.balance_delta);
+          const fmt = (v) => (typeof adapter.fmtBalance === "function" ? adapter.fmtBalance(v) : String(v));
           return {
             id: a.id,
             enabled: a.enabled !== false,
             remark: a.remark || "",
             label: adapter.getAccountLabel(a),
+            site_name: adapter.name,
             configured: adapter.isConfigured(a),
             has_session: !!a.session,
             last: last ? { time: last.time, status: last.status } : null,
             points,
+            supports_balance: supportsBalance,
+            balance_label: supportsBalance ? (adapter.balanceLabel || "余额") : "",
+            balance: rawBal,
+            balance_delta: rawDelta,
+            balance_ts: Number(a.balance_ts) || 0,
+            balance_display: (supportsBalance && rawBal != null) ? fmt(rawBal) : "",
+            balance_delta_display: (supportsBalance && rawDelta != null && rawDelta !== 0)
+              ? ((rawDelta > 0 ? "+" : "") + fmt(rawDelta)) : "",
           };
         }),
       };

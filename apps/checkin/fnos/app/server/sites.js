@@ -767,6 +767,21 @@ const ANYROUTER = {
     return { site: this.key, site_name: this.name, message: `连接成功，${cfg.username ? maskEmail(cfg.username) : "Cookie"} 有效，余额 ${this._fmtUsd(info.quota)}` };
   },
 
+  /* 账号级余额快照（server 在签到/测试成功后调用）：返回原始数值 quota（点数）。
+   * Sub2API 无独立用户信息端点 → 返回 null（该模式余额随签到响应，不单独快照）。 */
+  balanceLabel: "余额",
+  async queryBalance(cfg) {
+    if (this._isSub2Api(cfg)) return null; // Sub2API 无 self 端点：跳过快照
+    const auth = await this._resolveAuth(cfg);
+    const info = await this._getUserInfo(auth, cfg.use_proxy);
+    if (!info) return null;
+    return Number(info.quota) || 0; // 原始点数（500000 点 = $1）
+  },
+  /** 余额数值 → 展示串（USD）；delta 同单位 */
+  fmtBalance(v) {
+    return this._fmtUsd(Number(v) || 0);
+  },
+
   _ok(status, message, reward, total, cfg, auth) {
     return { site: this.key, site_name: this.name, status, message, reward, total, account: (cfg && cfg.username) ? maskEmail(cfg.username) : (auth && auth.type === "cookie" ? (cfg.api_user ? "User " + cfg.api_user : "Cookie") : "-"), time: now() };
   },
@@ -1079,6 +1094,18 @@ const WORKBUDDY = {
     const { credits, total } = await this._queryCredits(cfg);
     const detail = credits != null ? `积分 ${credits}${total != null ? ` / ${total}` : ""}` : "凭据有效";
     return { site: this.key, site_name: this.name, message: `连接成功，${detail}` };
+  },
+
+  /* 账号级余额快照（server 在签到/测试成功后调用）：返回当前积分（ΣcapacityRemain）。 */
+  balanceLabel: "积分",
+  async queryBalance(cfg) {
+    const { credits } = await this._queryCredits(cfg);
+    return credits != null ? Number(credits) : null; // 原始积分数值
+  },
+  /** 积分数值 → 展示串（整数优先，保留必要小数） */
+  fmtBalance(v) {
+    const n = Number(v) || 0;
+    return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(4)));
   },
 
   _ok(status, message, cfg, reward, total) {
