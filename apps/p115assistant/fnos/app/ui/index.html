@@ -448,7 +448,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.1.0</span>
+      <span class="ver" id="appVersion">v1.1.1</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -652,7 +652,7 @@
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="upGenStrm" onchange="markDirty('upload')">
-                <span class="muted">上传后生成 STRM（在目标目录旁生成 .strm 占位）</span>
+                <span class="muted">上传后生成 STRM（生成到下方 STRM 输出目录；留空则生成到上传目标目录旁）</span>
               </label>
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="upDelSrc" onchange="markDirty('upload')">
@@ -816,6 +816,13 @@
                 <span class="muted" style="font-size:13px">附带云端同名字幕</span>
               </label>
             </div>
+            <div class="field-row" style="align-items:flex-start;gap:8px">
+              <span style="font-size:13px;width:200px;flex:none;padding-top:4px">STRM 输出目录（多目录）</span>
+              <textarea id="strmOutputDirs" rows="3" style="flex:1;min-width:0;font-family:var(--font-mono,monospace);font-size:12px" placeholder="每行一个本地绝对路径，如：
+/vol1/1000/媒体库/Strm
+（留空 = 生成到各映射目标目录内）" onchange="markDirty('strm')"></textarea>
+            </div>
+            <div class="muted" style="font-size:12px;margin-top:2px">配置多个目录时，每个文件会同时生成到所有输出目录（保持原相对路径）；字幕同步到各输出目录。</div>
             <div class="field-row" style="margin-top:4px">
               <span class="muted" style="font-size:12px">提示：增量适合长期同步；首次使用建议先全量生成一次，再开启增量。</span>
             </div>
@@ -3591,6 +3598,7 @@ async function saveStrmCfg(){
     relay_port: port,
     strm_incremental: el("strmIncremental").checked === true,
     strm_add_subtitles: el("strmAddSubtitles").checked === true,
+    strm_output_dirs: el("strmOutputDirs").value.split("\n").map((s) => s.trim()).filter(Boolean),
   };
   const r = await call("save_config", "POST", updates);
   if (r.success){ clearDirty("strm"); saveStrmBase && saveStrmBase(); return; }
@@ -3973,6 +3981,7 @@ async function saveStrmBase(){
   const d = rc.data;
   // 回填输入框：手动配置过则显示配置原值，否则显示自动推导的基础地址
   el("strmBaseUrl").value = d.manual_base_url || d.base_url || "";
+  if (el("strmOutputDirs")) el("strmOutputDirs").value = Array.isArray(d.strm_output_dirs) ? d.strm_output_dirs.join("\n") : "";
   el("strmRelayHint").textContent =
     `实际 STRM 地址：${d.base_url || "未确定"}（中转端口 ${d.relay_port}）`;
   // 外网提示：手动填写公网可达地址 + 路由器映射中转端口，否则外网播放器无法访问

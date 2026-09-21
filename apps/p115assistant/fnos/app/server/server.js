@@ -67,6 +67,7 @@ const PUBLIC_CONFIG_FIELDS = new Set([
   "upload_risk_profile",
   "watch_enabled",
   "strm_mappings",
+  "strm_output_dirs",
   "strm_incremental",
   "strm_add_subtitles",
   "strm_base_url",
@@ -96,6 +97,7 @@ const EDITABLE_CONFIG_FIELDS = new Set([
   "feishu_webhook",
   "upload_risk_profile",
   "strm_mappings",
+  "strm_output_dirs",
   "strm_incremental",
   "strm_add_subtitles",
   "strm_base_url",
@@ -1735,6 +1737,21 @@ class Server {
     if (!mappings.length) return error("没有启用的 STRM 映射");
     if (this._strmBusy) return error("已有 STRM 任务在执行中，请稍候");
     const incremental = config.strm_incremental !== false;
+    // 解析 STRM 输出目录（多目录）：非空 → 生成到这些目录；空 → 维持映射目标目录
+    const writeDirs = [];
+    if (Array.isArray(config.strm_output_dirs)) {
+      for (const d of config.strm_output_dirs) {
+        const s = String(d || "").trim();
+        if (!s) continue;
+        const [r, err] = this._authorizedLocalPath(s);
+        if (r === null) {
+          totals.errors += 1;
+          console.warn(`[STRM] 输出目录无效：${s}：${err}`);
+          continue;
+        }
+        writeDirs.push(r);
+      }
+    }
     const mediaExts = extensionSet(config.upload_media_extensions);
     const totals = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0 };
     this._strmBusy = true;
@@ -1752,7 +1769,7 @@ class Server {
         }
         console.log(`[STRM] 开始同步 ${mapping.name}: ${sourceCid} -> ${targetDir}`);
         try {
-          const result = await this._runStrmMapping(client, mapping, sourceCid, targetResolved, baseUrl, incremental, mediaExts);
+          const result = await this._runStrmMapping(client, mapping, sourceCid, targetResolved, baseUrl, incremental, mediaExts, writeDirs);
           totals.added += result.added;
           totals.updated += result.updated;
           totals.removed += result.removed;
@@ -1782,8 +1799,10 @@ class Server {
     }
   }
 
-  async _runStrmMapping(client, mapping, sourceCid, targetDir, baseUrl, incremental, mediaExts) {
+  async _runStrmMapping(client, mapping, sourceCid, targetDir, baseUrl, incremental, mediaExts, writeDirs) {
     const counts = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0, subtitles: 0, subtitles_skipped: 0, subtitles_errors: 0 };
+    // 输出目录集合（多目录）：writeDirs 非空 → 生成到每个输出目录；空 → 维持映射目标目录
+    const dirs = Array.isArray(writeDirs) && writeDirs.length ? writeDirs : [targetDir];
     const mappingId = String(mapping.id || sourceCid || "default");
     // 源目录的云路径：账本核对要靠它把本地 .strm 对回云上的目录
     const sourcePath = await this._resolveSourcePath(client, mapping, sourceCid);
@@ -1841,71 +1860,72 @@ class Server {
       }
     }
 
-    // 2) 生成 STRM 内容并写入目标目录（保持相对路径、.iso 特例对齐插件）
+    // 2) 生成 STRM 内容并写入输出目录（保持相对路径、.iso 特例对齐插件）
     const expectedByRel = new Map();
     for (const file of cloudFiles) {
       const rel = file.relPath.replace(/\\/g, "/");
       const outName = rel.toLowerCase().endsWith(".iso") ? `${rel}.strm` : rel.replace(/\.[^.]+$/, "") + ".strm";
-      const outputPath = path.join(targetDir, outName);
       const sign = this.buildRedirectSignature(file.pickcode);
       const qs = new URLSearchParams({ pickcode: file.pickcode, file_name: file.name, sign });
       // STRM 内容完全对齐插件 115 轻量助手（strm.py build_strm_url）：
       //   {base}/api/v1/plugin/P115LiteAssistant/redirect?pickcode=..&file_name=..&sign=..
       const content = `${baseUrl}/api/v1/plugin/P115LiteAssistant/redirect?${qs.toString()}\n`;
-      expectedByRel.set(outName, { content, outputPath, sign, file });
+      expectedByRel.set(outName, { content, outputPaths: dirs.map((d) => path.join(d, outName)), sign, file, rel });
     }
 
-    // 3) 写文件（增量：内容一致跳过）
+    // 3) 写文件（多目录各写一份；增量：内容一致跳过）
     for (const [outName, target] of expectedByRel) {
       if (this._uploadWorker.cancelled()) break;
-      try {
-        fs.mkdirSync(path.dirname(target.outputPath), { recursive: true });
-        let current = "";
+      for (const outputPath of target.outputPaths) {
         try {
-          const stat = fs.statSync(target.outputPath);
-          if (stat.isFile() && stat.size < 8192) current = fs.readFileSync(target.outputPath, "utf8");
-        } catch { /* 不存在 */ }
-        if (current === target.content) {
-          counts.skipped += 1;
-          continue;
-        }
-        if (incremental && current) counts.updated += 1;
-        else if (!current) counts.added += 1;
-        const tmp = `${target.outputPath}.${process.pid}.tmp`;
-        fs.writeFileSync(tmp, target.content);
-        fs.renameSync(tmp, target.outputPath);
-        // 附带同名字幕：云端同目录同名 .srt/.ass/.ssa/.sup/.vtt → 下载到 STRM 同目录（播放器自动加载）
-        if (this.store.getConfig().strm_add_subtitles !== false) {
-          const relOut = String(outName).replace(/\\/g, "/");
-          const dirKey = path.posix.dirname(relOut);
-          const subs = subtitleMap.get(dirKey === "." ? "" : dirKey) || [];
-          if (subs.length) {
-            const base = path.basename(relOut).replace(/\.strm$/i, "").toLowerCase();
-            for (const sub of subs) {
-              if (path.basename(sub.name).replace(/\.[^.]+$/, "").toLowerCase() !== base) continue;
-              const subOut = path.join(path.dirname(target.outputPath), sub.name);
-              let skip = false;
-              try {
-                const st = fs.statSync(subOut);
-                if (st.isFile() && st.size === sub.size) skip = true;
-              } catch { /* 不存在则下载 */ }
-              if (skip) {
-                counts.subtitles_skipped += 1;
-                continue;
-              }
-              try {
-                await client.downloadFile(sub.pickcode, subOut, true);
-                counts.subtitles += 1;
-              } catch (err) {
-                counts.subtitles_errors += 1;
-                console.warn(`[STRM] 字幕下载失败 ${sub.name}: ${err.message}`);
+          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+          let current = "";
+          try {
+            const stat = fs.statSync(outputPath);
+            if (stat.isFile() && stat.size < 8192) current = fs.readFileSync(outputPath, "utf8");
+          } catch { /* 不存在 */ }
+          if (current === target.content) {
+            counts.skipped += 1;
+            continue;
+          }
+          if (incremental && current) counts.updated += 1;
+          else if (!current) counts.added += 1;
+          const tmp = `${outputPath}.${process.pid}.tmp`;
+          fs.writeFileSync(tmp, target.content);
+          fs.renameSync(tmp, outputPath);
+          // 附带同名字幕：云端同目录同名 .srt/.ass/.ssa/.sup/.vtt → 下载到 STRM 同目录（播放器自动加载）
+          if (this.store.getConfig().strm_add_subtitles !== false) {
+            const relOut = String(outName).replace(/\\/g, "/");
+            const dirKey = path.posix.dirname(relOut);
+            const subs = subtitleMap.get(dirKey === "." ? "" : dirKey) || [];
+            if (subs.length) {
+              const base = path.basename(relOut).replace(/\.strm$/i, "").toLowerCase();
+              for (const sub of subs) {
+                if (path.basename(sub.name).replace(/\.[^.]+$/, "").toLowerCase() !== base) continue;
+                const subOut = path.join(path.dirname(outputPath), sub.name);
+                let skip = false;
+                try {
+                  const st = fs.statSync(subOut);
+                  if (st.isFile() && st.size === sub.size) skip = true;
+                } catch { /* 不存在则下载 */ }
+                if (skip) {
+                  counts.subtitles_skipped += 1;
+                  continue;
+                }
+                try {
+                  await client.downloadFile(sub.pickcode, subOut, true);
+                  counts.subtitles += 1;
+                } catch (err) {
+                  counts.subtitles_errors += 1;
+                  console.warn(`[STRM] 字幕下载失败 ${sub.name}: ${err.message}`);
+                }
               }
             }
           }
+        } catch (err) {
+          counts.errors += 1;
+          console.warn(`[STRM] 写入失败 ${outputPath}：${err.message}`);
         }
-      } catch (err) {
-        counts.errors += 1;
-        console.warn(`[STRM] 写入失败 ${target.outputPath}：${err.message}`);
       }
     }
 
@@ -1931,7 +1951,7 @@ class Server {
           if (st.isDirectory()) { walkRemove(fullPath); continue; }
           if (!st.isFile()) continue;
           if (!name.toLowerCase().endsWith(".strm")) continue;
-          const relPart = path.relative(targetDir, fullPath).split(path.sep).join("/");
+          const relPart = path.relative(directory, fullPath).split(path.sep).join("/");
           if (expectedByRel.has(relPart)) continue;
           if (ownedByOthers.has(fullPath)) continue;   // 别的映射的地盘，不碰
           try {
@@ -1944,7 +1964,7 @@ class Server {
           }
         }
       };
-      walkRemove(targetDir);
+      for (const d of dirs) walkRemove(d);
     }
 
     // 5) 记账：每个生成出来的 .strm 一条记录，媒体账本与云端核对都读它。
@@ -1958,7 +1978,8 @@ class Server {
         mapping_id: mappingId,
         mapping_name: String(mapping.name || ""),
         rel: outName,
-        path: target.outputPath,
+        path: target.outputPaths[0],
+        paths: target.outputPaths.length > 1 ? target.outputPaths : undefined,
         name: target.file.name,
         size: target.file.size,
         mtime: target.file.mtime,

@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.1.0",
+  version: "1.1.1",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -36,6 +36,7 @@ const DEFAULT_CONFIG = {
     ".mp4,.mkv,.ts,.iso,.rmvb,.avi,.mov,.mpeg,.mpg,.wmv,.3gp,.asf,.m4v,.flv,.m2ts,.tp,.f4v",
   upload_sidecar_extensions: ".nfo,.jpg,.jpeg,.png,.webp,.srt,.ass,.ssa,.sup",
   strm_mappings: [],
+  strm_output_dirs: [],   // STRM 输出目录（多目录）：非空时 .strm 生成到这些目录，空=生成到映射目标目录内
   strm_incremental: true,
   strm_add_subtitles: true,
   strm_base_url: "",
