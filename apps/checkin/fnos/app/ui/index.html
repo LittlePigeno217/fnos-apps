@@ -271,13 +271,6 @@
   .res-line.err { color: var(--err); }
 
   /* ---------- 账号为中心卡片（阶段3） ---------- */
-  .site-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--jc-radius);
-               margin-bottom: 12px; box-shadow: var(--shadow-card); overflow: hidden;
-               transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease; }
-  .site-card:hover { border-color: var(--accent); box-shadow: 0 10px 28px rgba(30,40,80,.1), 0 0 0 3px var(--accent-soft); }
-  .site-card-head { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 12px 16px 12px 20px; flex-wrap: wrap; }
-  .site-card-title { min-width: 0; flex: 1; }
-  .site-card-title .name { font-weight: 600; font-size: 15px; }
   /* 账号卡片：每个账号一张精简卡（网格容器见 .acct-grid-global） */
   .acct-card { display: flex; flex-direction: column; gap: 8px; min-width: 0;
                background: var(--card); border: 1px solid var(--border); border-radius: var(--jc-radius);
@@ -337,23 +330,6 @@
   /* ---------- 结果摘要 ---------- */
   .summary-line { margin-top: 10px; white-space: pre-line; font-size: 13px; }
 
-  /* ---------- 统计卡行（仿 Ant 统计卡） ---------- */
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-               gap: 12px; margin-bottom: 16px; }
-  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--jc-radius);
-               padding: 14px 16px; box-shadow: var(--shadow-card); backdrop-filter: blur(6px);
-               transition: border-color .15s ease, box-shadow .15s ease; }
-  .stat-card:hover { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .stat-title { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-  .stat-title .ic { width: 15px; height: 15px; color: var(--accent); }
-  .stat-value { margin-top: 6px; font-size: 22px; font-weight: 600; letter-spacing: -.4px;
-                font-variant-numeric: tabular-nums; line-height: 1.1; }
-  .stat-value .sep { color: var(--muted-2); font-size: 15px; font-weight: 400; }
-  .stat-value.brand { background: var(--brand-grad); -webkit-background-clip: text; background-clip: text;
-                      -webkit-text-fill-color: transparent; }
-  .stat-foot { margin-top: 4px; font-size: 11.5px; color: var(--muted); }
-  .stat-foot.err { color: var(--err); }
-
   /* ---------- 行云启动器居中卡片（鉴权登录） ---------- */
   .launcher-card { background: var(--card); border: 1px solid var(--border);
                    border-radius: 20px; width: min(380px, 92vw); padding: 32px 28px;
@@ -406,7 +382,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.9</span>
+      <span class="ver" id="appVersion">v1.3.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -422,33 +398,6 @@
 
       <!-- 站点签到 -->
       <section id="tab-sites">
-        <!-- 统计卡行 -->
-        <div class="stat-grid">
-          <div class="stat-card">
-            <div class="stat-title">
-              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 2-1 3-2.5 3H10l-4 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              今日已签到
-            </div>
-            <div class="stat-value"><span id="ovDone">0</span><span class="sep"> / </span><span id="ovTotal">0</span></div>
-            <div class="stat-foot" id="ovHint"></div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-title">
-              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
-              启用站点
-            </div>
-            <div class="stat-value" id="statSites">0</div>
-            <div class="stat-foot" id="statSitesFoot"></div>
-          </div>
-          <div class="stat-card" id="ovFailWrap" hidden>
-            <div class="stat-title" style="color:var(--err)">
-              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-              待处理失败
-            </div>
-            <div class="stat-value" style="font-size:16px" id="ovFailList"></div>
-            <div class="stat-foot err">需重新签到 / 登录</div>
-          </div>
-        </div>
         <!-- 工具条 -->
         <div class="toolbar">
           <button class="btn primary" onclick="addSiteFlow()">
@@ -463,13 +412,16 @@
           <span style="flex:1"></span>
           <span class="muted" id="runStatus"></span>
         </div>
-        <!-- 站点总览（站点级状态 + 签到/添加/编辑；账号详情移至下方账号列表区） -->
-        <div id="siteCards"></div>
         <!-- 全局账号列表（跨站点混合，每行三卡） -->
-        <section id="acctSection" hidden>
+        <section id="acctSection">
           <div class="acct-section-head">
             <span class="t">账号列表</span>
             <span class="c" id="acctSectionCount"></span>
+            <span style="flex:1"></span>
+            <button class="btn btn-mini" onclick="openAddAccount('')" title="选择已有站点添加账号">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              ＋ 添加账号
+            </button>
           </div>
           <div id="acctList" class="acct-grid-global"></div>
         </section>
@@ -728,29 +680,14 @@ function toast(message, type) {
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 240); }, 2800);
 }
 
-/* ── 总览条：今日 N/M + 失败名单（status 派生）── */
+/* ── 刷新账号列表：并行拉 status（账号卡徽标）+ accounts（脱敏明细）后重渲染 ── */
 async function refreshOverview() {
   // status（总览/站点 meta）与 accounts（per-account has_session/last/points）并行拉取
   const [r, ar] = await Promise.all([call("status"), call("checkin/accounts")]);
   if (ar && ar.success && ar.data && ar.data.sites) ACCT_DATA = ar.data.sites;
   if (!r.success || !r.data) return;
-  const t = r.data.today || { done: 0, total: 0, failed: [] };
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set("ovDone", t.done || 0);
-  set("ovTotal", t.total || 0);
-  set("ovHint", t.total > 0 ? (t.total === t.done ? "全部已签到" : (t.total - t.done) + " 个待签") : "暂无签到任务");
-  const failWrap = document.getElementById("ovFailWrap");
-  const names = (t.failed || []).map((k) => siteName(k)).join("、");
-  if (failWrap) failWrap.hidden = !(t.failed && t.failed.length);
-  set("ovFailList", names || "");
-  // 启用站点统计（有账号且站点启用）
-  const srcSites = r.data.sites || SITE_DATA || {};
-  const withAcc = Object.values(srcSites).filter((s) => s && Array.isArray(s.accounts) && s.accounts.length > 0);
-  const enabledCnt = withAcc.filter((s) => s.enabled).length;
-  set("statSites", enabledCnt);
-  set("statSitesFoot", withAcc.length ? "共 " + withAcc.length + " 个已配置" : "尚未配置站点");
-  // status 返回的 sites 含 last/today_ok（徽标数据源）；get_config 的 sites 仅含配置。
-  // 必须传 r.data.sites，否则站点行徽标恒显「未签」。
+  // status 返回的 sites 含 last/today_ok（账号卡徽标数据源）；get_config 的 sites 仅含配置。
+  // 必须传 r.data.sites，否则账号卡徽标恒显「未签」。
   renderSiteCards(r.data.sites || SITE_DATA);
   probeLoginCaps();
 }
@@ -766,47 +703,13 @@ function acctDetail(key, id) {
   return s.accounts.find((a) => String(a.id) === String(id)) || null;
 }
 
-/* 账号为中心卡片：站点头（tag/名/模式/账号数·登录态摘要/启用/签到/编辑）+ 账号行列表。
- * 数据源合并：SITE_DATA（status/get_config，含 meta/enabled/last）+ ACCT_DATA（accounts，含 has_session/last/points）。
- * 交互登录按钮仅当 LOGIN_CAPS[key]===true 显示（恩山等 Cookie 站点无 loginFlow → 无按钮）。 */
+/* 账号列表刷新入口：合并 SITE_DATA（status/get_config，含 meta/enabled/last）
+ * 与 ACCT_DATA（accounts，含 has_session/last/points），把全部已配置账号渲染为 3 列网格。
+ * 交互登录按钮仅当 LOGIN_CAPS[key]===true 显示（恩山等 Cookie 站点无 loginFlow → 无按钮）。
+ * 函数名沿用 renderSiteCards（多处调用点保持不变）；站点总览卡已于 1.3.0 移除。 */
 function renderSiteCards(serverSites) {
   SITE_DATA = serverSites || {};
-  const box = $("siteCards");
-  box.innerHTML = "";
   const added = Object.entries(SITE_DATA).filter(([k, st]) => Array.isArray(st && st.accounts) && st.accounts.length > 0);
-  if (!added.length) {
-    box.innerHTML = '<div style="padding:42px 12px;text-align:center">' +
-      '<div class="muted" style="margin-bottom:14px">还没有添加任何站点</div>' +
-      '<button class="btn primary" onclick="addSiteFlow()">＋ 添加第一个站点</button></div>';
-    const sec = $("acctSection");
-    if (sec) sec.hidden = true;
-    const list = $("acctList");
-    if (list) list.innerHTML = "";
-    return;
-  }
-  // 站点总览卡（站点级：状态摘要 + 签到/添加/编辑；账号明细移至下方账号列表区）
-  for (const [key, st] of added) {
-    const accs = Array.isArray(st.accounts) ? st.accounts : [];
-    const cap = LOGIN_CAPS[key] === true;
-    let loggedCount = 0;
-    for (const a of accs) { const d = acctDetail(key, a.id); if (d && d.has_session) loggedCount++; }
-    const summary = accs.length + " 账号" + (cap ? " · " + loggedCount + " 已登录" : "");
-    box.insertAdjacentHTML("beforeend",
-      '<div class="site-card" id="card_' + key + '">' +
-        '<div class="site-card-head">' +
-          '<div class="site-tag ' + siteTagClass(key) + '">' + esc(siteShort(key)) + "</div>" +
-          '<div class="site-card-title">' +
-            '<div class="name">' + esc(siteName(key)) + "</div>" +
-            '<div class="muted" style="font-size:11.5px;margin-top:1px">' + esc(siteDesc(key)) + " · " + esc(siteMode(key)) + "</div>" +
-          "</div>" +
-          '<span class="muted" style="font-size:11px;white-space:nowrap">' + esc(summary) + "</span>" +
-          '<span class="muted" style="font-size:11px;white-space:nowrap">' + (st.enabled ? "已启用" : "已停用") + "</span>" +
-          '<button class="btn btn-mini" onclick="runSiteRow(\'' + key + '\')" title="立即签到该站点">签到</button>' +
-          '<button class="btn btn-mini" onclick="openAddAccount(\'' + key + '\')" title="按站点支持的方式添加账号">＋ 添加账号</button>' +
-          '<button class="btn btn-mini" onclick="openSiteEditor(\'' + key + '\')">编辑账号</button>' +
-        "</div>" +
-      "</div>");
-  }
   renderAccountList(added);
 }
 
@@ -814,7 +717,6 @@ function renderSiteCards(serverSites) {
  * 卡片内容与站点总览解耦：标题备注优先、workbuddy/anyrouter 显示积分/余额、其余站点无余额行，
  * 会话/最后签到状态与登录/启停/测试/删除操作保留。 */
 function renderAccountList(added) {
-  const sec = $("acctSection");
   const list = $("acctList");
   const cnt = $("acctSectionCount");
   if (!list) return;
@@ -824,9 +726,12 @@ function renderAccountList(added) {
     const cap = LOGIN_CAPS[key] === true;
     for (const a of accs) cards.push(renderAcctCard(key, a, cap));
   }
-  list.innerHTML = cards.join("");
+  if (cards.length) {
+    list.innerHTML = cards.join("");
+  } else {
+    list.innerHTML = '<div class="empty" style="grid-column:1/-1">还没有添加任何账号，点击右上角「＋ 添加账号」或上方「＋ 添加站点」开始配置</div>';
+  }
   if (cnt) cnt.textContent = cards.length ? "共 " + cards.length + " 个账号 · 跨站点混合" : "";
-  if (sec) sec.hidden = cards.length === 0;
 }
 
 /** 单个账号卡（全局账号列表用）：站点来源标签 + 标题（备注优先）+ 余额/积分 + 状态 + 操作。 */
@@ -1305,18 +1210,6 @@ function shortTime(t) {
   return m ? m[1] + ":" + m[2] : t;
 }
 
-/** 行内立即签到（不进入编辑弹窗；结果 Toast 反馈 + 徽标刷新） */
-async function runSiteRow(key) {
-  const r = await call("run", "POST", { sites: [key] });
-  const items = ((r.data || {}).results || []).filter((x) => x.site_key === key);
-  const ok = items.length > 0 && items.every((x) => !x.error && x.status !== "执行失败");
-  const txt = items.length
-    ? items.map((x) => (x.account ? x.account + " " : "") + (x.message || x.error || x.status)).join("；")
-    : (r.message || "无结果（可能没有启用的账号）");
-  toast(txt, ok ? "ok" : "err");
-  setTimeout(() => { refreshOverview(); }, 700);
-}
-
 /* ── 站点编辑弹窗（meta 驱动；站点增删改最短路径）── */
 let MODAL_KEY = "";
 
@@ -1709,8 +1602,8 @@ async function loadAll(attempt = 1) {
   const r = await call("get_config");
   if (!r.success) {
     if (attempt < 3) { setTimeout(() => loadAll(attempt + 1), 1200); return; }
-    const box = document.getElementById("siteCards");
-    if (box) box.innerHTML = '<div class="empty">⚠ 加载配置失败：' + esc(r.message || "网络异常") +
+    const box = document.getElementById("acctList");
+    if (box) box.innerHTML = '<div class="empty" style="grid-column:1/-1">⚠ 加载配置失败：' + esc(r.message || "网络异常") +
       '<br><button class="btn" style="margin-top:10px" onclick="location.reload()">刷新重试</button></div>';
     const chip = document.getElementById("appChipText");
     if (chip) chip.textContent = "加载失败";
