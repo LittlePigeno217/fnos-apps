@@ -11,7 +11,7 @@ const { Session, parseJson, cleanText, extractFormhash } = require("./httpc");
 function isAlreadyCheckedIn(message) {
   const text = String(message || "").trim().toLowerCase();
   return (
-    ["already checked in", "已签到", "今日已签", "今天已签", "今天已经签过", "今天已经签过到", "签过到", "明儿再来"].some((k) => text.includes(k))
+    ["already checked in", "已签到", "今日已签", "今天已签", "今天已经签到", "已经签到", "今天已经签过", "今天已经签过到", "签过到", "明儿再来"].some((k) => text.includes(k))
   );
 }
 
@@ -502,38 +502,97 @@ const ANYROUTER = {
   mode: "Cookie / 账号",
   // 账号密码直登（无 WAF 平台）+ 登录后自动产出会话；WAF 站点回落手动 Cookie
   login_caps: ["password", "password_cookie", "cookie"],
-  desc: "anyrouter.top 及 NewAPI/OneAPI 平台 · Cookie 或账号密码签到",
+  desc: "anyrouter.top / NewAPI / OneAPI / Sub2API 通用 · Cookie 或账号密码签到，Sub2API 用 access_token",
   fields: [
     { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（自建 NewAPI 填内网地址）" },
     { key: "username", label: "账号", type: "text", ph: "账号密码方式（二选一，无 WAF 平台可用）" },
     { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
     { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（二选一，WAF 站点用这个）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
+    { key: "access_token", label: "Sub2API Token", type: "password", ph: "Sub2API 平台填 access_token（如填则走 /api/v1/redeem/checkin）" },
   ],
   base: "https://anyrouter.top",
   loginPath: "/api/user/login",
   signInPath: "/api/user/sign_in",
-  fallbackSignInPath: "/api/user/checkin", // OneAPI 平台
+  fallbackSignInPath: "/api/user/checkin", // OneAPI / NewAPI 平台
   userInfoPath: "/api/user/self",
   WAF_MARKERS: ["acw_sc__v2", "var arg1=", "cdn_sec_tc"],
+  // Sub2API 平台（access_token 直登，/api/v1 协议；协议来自 all-api-hub sub2api 系列）
+  sub2MePath: "/api/v1/auth/me",
+  sub2SignInPath: "/api/v1/redeem/checkin",
+  sub2SignInStatusPath: "/api/v1/redeem/checkin/status",
 
   defaultConfig() {
     return {
       enabled: false, use_proxy: false,
       base_url: "https://anyrouter.top",
-      username: "", password: "", cookie: "", api_user: "",
+      username: "", password: "", cookie: "", api_user: "", access_token: "",
     };
   },
   isConfigured(cfg) {
     if (!cfg) return false;
     if (cfg.username && cfg.password) return true;         // 账号密码方式
     if (cfg.cookie && String(cfg.cookie).trim()) return true; // Cookie 方式
+    if (cfg.access_token && String(cfg.access_token).trim()) return true; // Sub2API 方式
     return false;
   },
   getAccountLabel(cfg) {
     if (cfg && cfg.username) return maskEmail(cfg.username);
     if (cfg && cfg.api_user) return "User " + cfg.api_user;
+    if (cfg && cfg.access_token && String(cfg.access_token).trim()) return "Sub2API Token";
     return "Cookie";
+  },
+  /** Sub2API 部署判定：填写了 access_token 即走 /api/v1 协议（与 NewAPI 流程互斥） */
+  _isSub2Api(cfg) {
+    return !!(cfg && cfg.access_token && String(cfg.access_token).trim());
+  },
+  _sub2Auth(cfg) {
+    return { type: "token", token: String(cfg.access_token).trim(), base: this._base(cfg) };
+  },
+  /** Sub2API 签到：Bearer JWT 直登。/api/v1/redeem/checkin 提交，
+   *  /status 探测、/auth/me 验身份。信封 {code,message,data:{message,reward_amount,new_balance,checked_in_at}}，
+   *  错误 403/409 + reason（DAILY_CHECKIN_DISABLED / ROLE_FORBIDDEN / ALREADY_CHECKED）。 */
+  async _runSub2Checkin(cfg) {
+    const auth = this._sub2Auth(cfg);
+    const s = new Session();
+    // 1) 状态探测：enabled=false → 禁用；已签到 → 直接返回
+    const st = await s.get(auth.base + this.sub2SignInStatusPath, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
+    if (this._isLoginExpired(st.status, st.text)) {
+      throw new Error("登录态失效（HTTP " + st.status + "）：access_token 无效或已过期，请重新获取");
+    }
+    const sj = parseJson(st.text);
+    if (sj && typeof sj.data === "object") {
+      const d = sj.data;
+      if (d.enabled === false) {
+        throw new Error(d.reason === "DAILY_CHECKIN_DISABLED" || d.reason === "DISABLED" ? "平台当日签到功能已关闭（" + (d.reason || "DISABLED") + "）" : (d.message || "签到功能已被平台禁用"));
+      }
+      if (d.checked_in_today === true || d.checkedInToday === true || d.checked_in === true || d.checked_in === 1) {
+        return this._ok("今日已签到", d.message || "今日已签到", "-", "-", cfg, auth);
+      }
+    }
+    // 2) 提交签到
+    const r = await s.postJson(auth.base + this.sub2SignInPath, {}, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
+    if (this._isLoginExpired(r.status, r.text)) {
+      throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
+    }
+    const j = parseJson(r.text);
+    if (!j || typeof j !== "object") {
+      throw new Error(`Sub2API 签到接口没回 JSON：${cleanText(r.text).slice(0, 60) || "空响应"}`);
+    }
+    // 业务信封 code===0 → 成功
+    if (Number(j.code) === 0 && j.data && typeof j.data === "object") {
+      const d = j.data;
+      const reward = (d.reward_amount != null && d.reward_amount !== "") ? ((Number(d.reward_amount) >= 0 ? "+" : "") + d.reward_amount) : "";
+      const total = (d.new_balance != null && d.new_balance !== "") ? String(d.new_balance) : "";
+      return this._ok("签到成功", d.message || "签到成功", reward || "-", total || "-", cfg, auth);
+    }
+    if (j.reason === "ALREADY_CHECKED" || /already|重复签到|已签到/.test(String(j.message || ""))) {
+      return this._ok("今日已签到", j.message || "ALREADY_CHECKED", "-", "-", cfg, auth);
+    }
+    if (j.reason === "DAILY_CHECKIN_DISABLED" || (Number(j.code) === 403 && j.reason === "ROLE_FORBIDDEN")) {
+      throw new Error(j.message || "签到被拒绝：" + (j.reason || ""));
+    }
+    throw new Error((j.message || `签到失败（code=${j.code} ret=${j.ret}）`));
   },
 
   _base(cfg) {
@@ -626,6 +685,7 @@ const ANYROUTER = {
   },
 
   async runCheckin(cfg) {
+    if (this._isSub2Api(cfg)) return this._runSub2Checkin(cfg);
     const auth = await this._resolveAuth(cfg);
     let before = null;
     try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
@@ -656,6 +716,15 @@ const ANYROUTER = {
     }
     const msg = String(j.msg || j.message || "").trim();
     const success = j.ret === 1 || j.code === 0 || j.success === true;
+    const data = (j.data && typeof j.data === "object") ? j.data : null;
+
+    // 结构化解读（NewApiCheckInStatus）：data.enabled===false → 禁用；data.checked_in===true → 已签到
+    if (data && data.enabled === false) {
+      throw new Error(msg || "签到功能已被平台禁用（enabled=false）");
+    }
+    if (data && data.checked_in === true) {
+      return this._ok("今日已签到", msg || "今日已签到", "-", "-", cfg, auth);
+    }
 
     // 签到后余额（对比奖励）
     let after = null;
@@ -663,8 +732,11 @@ const ANYROUTER = {
     const balanceMsg = after
       ? `余额 ${this._fmtUsd(after.quota)}` + (after.used_quota ? `，累计消耗 ${this._fmtUsd(after.used_quota)}` : "")
       : "";
+    // 奖励优先取接口直接回写的 quota_awarded（NewApiCheckInRecord 字段），否则用签到前后余额差
     let rewardMsg = "";
-    if (before && after && after.quota > before.quota) {
+    if (data && data.quota_awarded != null && data.quota_awarded !== "") {
+      rewardMsg = `本次签到 +${this._fmtUsd(Number(data.quota_awarded) || 0)}`;
+    } else if (before && after && after.quota > before.quota) {
       rewardMsg = `本次签到 +${this._fmtUsd(after.quota - before.quota)}`;
     }
 
@@ -680,6 +752,15 @@ const ANYROUTER = {
   },
 
   async testConnection(cfg) {
+    if (this._isSub2Api(cfg)) {
+      const auth = this._sub2Auth(cfg);
+      const s = new Session();
+      const r = await s.get(auth.base + this.sub2MePath, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
+      if (this._isLoginExpired(r.status, r.text)) throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
+      const j = parseJson(r.text);
+      if (!j || Number(j.code) !== 0) throw new Error((j && (j.message || j.msg)) || "Sub2API Token 校验失败（auth/me）");
+      return { site: this.key, site_name: this.name, message: "连接成功，Sub2API Token 有效" };
+    }
     const auth = await this._resolveAuth(cfg);
     const info = await this._getUserInfo(auth, cfg.use_proxy);
     if (!info) throw new Error("登录态有效，但用户信息接口未返回 quota");
