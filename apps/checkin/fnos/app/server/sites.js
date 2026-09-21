@@ -79,6 +79,9 @@ const FLZT = {
   name: "FLZT",
   short: "FL",
   mode: "账号密码",
+  // login_caps：登录能力声明（前端「添加账号」窗口据此动态渲染 tab；优先序 qr > password > cookie）
+  // password：账号密码直登；password_cookie：登录后自动产出会话（token/cookie）并落库，无需手填
+  login_caps: ["password", "password_cookie"],
   desc: "flzt.club · 账号密码登录后调用签到 API",
   fields: [
     { key: "email", label: "账号 / 邮箱", type: "text", ph: "name@example.com" },
@@ -173,6 +176,8 @@ const RIGHT_FORUM = {
   name: "恩山无线论坛",
   short: "恩",
   mode: "Cookie",
+  // 无登录 API，仅支持手动粘贴 Cookie
+  login_caps: ["cookie"],
   desc: "right.com.cn · Cookie 签到（formhash + 人机验证识别）",
   fields: [
     { key: "cookie", label: "Cookie", type: "password", ph: "粘贴浏览器 Cookie（留空不改）" },
@@ -306,6 +311,7 @@ const YPOJIE = {
   name: "易破解",
   short: "易",
   mode: "账号密码",
+  login_caps: ["password", "password_cookie"],
   desc: "ypojie.com · WordPress 登录后 AJAX 签到",
   fields: [
     { key: "email", label: "账号 / 邮箱", type: "text", ph: "name@example.com" },
@@ -494,6 +500,8 @@ const ANYROUTER = {
   name: "AnyRouter / NewAPI 通用",
   short: "AR",
   mode: "Cookie / 账号",
+  // 账号密码直登（无 WAF 平台）+ 登录后自动产出会话；WAF 站点回落手动 Cookie
+  login_caps: ["password", "password_cookie", "cookie"],
   desc: "anyrouter.top 及 NewAPI/OneAPI 平台 · Cookie 或账号密码签到",
   fields: [
     { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（自建 NewAPI 填内网地址）" },
@@ -703,6 +711,8 @@ const WORKBUDDY = {
   name: "WorkBuddy",
   short: "W",
   mode: "Token",
+  // 微信扫码优先；手填 access/refresh token 表单作为高级 fallback（cookie tab 承载）
+  login_caps: ["qr", "cookie"],
   desc: "www.codebuddy.cn · 腾讯 CodeBuddy 每日签到领积分（access/refresh token 自动续期）",
   fields: [
     { key: "access_token", label: "Access Token", type: "password", ph: "粘贴 access token（登录后抓包获取；留空不改）" },

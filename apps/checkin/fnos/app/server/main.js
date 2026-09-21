@@ -308,7 +308,7 @@ async function handle(req, res) {
       // 动态交互登录路由：checkin/{site}_login/{init|status}
       //   init（POST）→ loginFlowInit；status（GET）→ loginFlowStatus。
       //   未实现 loginFlow 的站点由 server 层返回「不支持交互登录」。
-      const m = actionName.match(/^(?:checkin\/)?([a-z_]+)_login\/(init|status)$/);
+      const m = actionName.match(/^(?:checkin\/)?([a-z_]+)_login\/(init|status|password)$/);
       if (m) {
         const site = m[1];
         const phase = m[2];
@@ -316,6 +316,12 @@ async function handle(req, res) {
           if (method !== "POST") return send({ success: false, message: "405 方法不允许" });
           const body = await readBody(req);
           return send(await api.loginFlowInit({ site, account_id: body.account_id }));
+        }
+        if (phase === "password") {
+          // 账号密码登录（form 站点通用入口）：提交凭据即时登录 → 自动获取会话 → 落账号
+          if (method !== "POST") return send({ success: false, message: "405 方法不允许" });
+          const body = await readBody(req);
+          return send(await api.loginFlowPassword({ site, fields: body.fields, remark: body.remark, account_id: body.account_id }));
         }
         if (method !== "GET") return send({ success: false, message: "405 方法不允许" });
         const token = new URL(req.url, "http://x").searchParams.get("token");

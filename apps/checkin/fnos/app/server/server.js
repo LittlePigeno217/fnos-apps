@@ -67,6 +67,8 @@ class Server {
           mode: adapter.mode,
           desc: adapter.desc || "",
           fields: Array.isArray(adapter.fields) ? adapter.fields : [],
+          // login_caps：登录能力（qr/password/password_cookie/cookie）——前端「添加账号」窗口据此渲染 tab
+          login_caps: Array.isArray(adapter.login_caps) ? adapter.login_caps : [],
         },
         accounts: accs.map((a) => ({
           id: a.id,
@@ -133,6 +135,7 @@ class Server {
           mode: adapter.mode,
           desc: adapter.desc || "",
           fields: Array.isArray(adapter.fields) ? adapter.fields : [],
+          login_caps: Array.isArray(adapter.login_caps) ? adapter.login_caps : [],
         },
         accounts: accs.map((a) => ({
           id: a.id,
@@ -519,6 +522,64 @@ class Server {
     }
   }
 
+  /**
+   * 账号密码登录（form 站点通用入口）：用前端提交的凭据即时登录 → 自动产出会话（token/cookie）
+   * → 落账号（新建或按 account_id 更新），会话型 session.cookie 自动回填站点 cookie 字段。
+   * 满足用户诉求「账号密码登录后自动获取 cookie 填写」：个人自有账号登录，非逆向。
+   * body: { site, fields:{email/username/password/base_url…}, remark?, account_id? }
+   */
+  async loginFlowPassword(body) {
+    const { site, fields, remark, account_id } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    const flow = adapter.loginFlow;
+    if (!flow || flow.mode !== "form") return fail("该站点不支持账号密码登录");
+    const caps = Array.isArray(adapter.login_caps) ? adapter.login_caps : [];
+    if (!caps.includes("password")) return fail("该站点不支持账号密码登录");
+
+    // 用提交的凭据构造临时配置（仅取 adapter 认识的字段），走既有 loginFlow.init 登录逻辑
+    const site_cfg = this._store.getConfig().sites[site] || {};
+    const fieldKeys = adapter.fields.map((f) => f.key);
+    const tmp = { use_proxy: !!site_cfg.use_proxy };
+    for (const f of fieldKeys) {
+      if (fields && fields[f] !== undefined && fields[f] !== null && String(fields[f]) !== "") {
+        tmp[f] = String(fields[f]).trim();
+      } else if (adapter.defaultConfig && adapter.defaultConfig()[f] !== undefined) {
+        tmp[f] = adapter.defaultConfig()[f]; // base_url 等留空时回落默认
+      }
+    }
+    let r;
+    try {
+      r = await flow.init(tmp); // 复用 loginPath 登录逻辑，成功返回 { session, ... }
+    } catch (err) {
+      return fail(err.message || "登录失败");
+    }
+    if (!r || !r.session) return fail("登录未返回会话");
+
+    // 自动提取 cookie（会话型 session）→ 供落账号时回填站点 cookie 字段（若有）
+    const autoCookie = extractSessionCookie(r.session);
+
+    // 落账号：写入提交的明文字段 + 自动 cookie（有 cookie 字段时）+ 会话
+    const data = {};
+    for (const f of fieldKeys) if (tmp[f] !== undefined) data[f] = tmp[f];
+    if (autoCookie && fieldKeys.includes("cookie")) data.cookie = autoCookie;
+    if (remark) data.remark = String(remark);
+    const acc = this._upsertLoginAccount(site, adapter, data, account_id);
+    acc.session = r.session;
+    acc.session_ts = Date.now();
+    this._store.save();
+
+    this._log(`账号密码登录成功：${adapter.name}（${adapter.getAccountLabel(acc)}）`);
+    return ok({
+      status: "ready",
+      login_mode: "password",
+      session_type: r.session.type,
+      auto_cookie: !!autoCookie, // 是否自动获取到 cookie（前端提示用，绝不回吐 cookie 值）
+      message: r.message || "登录成功，已自动获取会话",
+      account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: true },
+    });
+  }
+
   /** 扫码登录落账号：优先按 account_id、其次按 uid 去重更新；否则新建。凭据写入 adapter 字段。 */
   _upsertLoginAccount(site, adapter, data, accountId) {
     const cfg = this._store.getConfig();
@@ -546,6 +607,22 @@ class Server {
     this._store.save();
     return acc;
   }
+}
+
+/**
+ * 从登录会话对象中宽容提取 cookie 串（用于账号密码登录后自动回填 cookie 字段）。
+ * 命中：session.cookie（ypojie 型）/ session.headers.Cookie（anyrouter cookie 型）；
+ * token 型会话（flzt/anyrouter token）无 cookie → 返回空串。
+ */
+function extractSessionCookie(session) {
+  if (!session || typeof session !== "object") return "";
+  if (typeof session.cookie === "string" && session.cookie.trim()) return session.cookie.trim();
+  const h = session.headers;
+  if (h && typeof h === "object") {
+    const v = h.Cookie || h.cookie;
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
 }
 
 /**

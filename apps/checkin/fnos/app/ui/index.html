@@ -100,6 +100,16 @@
   .cred-row .cred-label { font-size:11px; color:var(--muted); }
   .cred-row input { width:100%; }
   details.fail-detail summary { cursor:pointer; font-size:11.5px; color:var(--err); }
+  /* 添加账号窗口：登录方式 tab（行云化胶囊） */
+  .add-tabs .add-tab { padding:6px 14px; border-radius:999px; border:1px solid var(--border); background:transparent;
+    color:var(--muted); font-size:12.5px; cursor:pointer; transition:all .16s; }
+  .add-tabs .add-tab:hover { color:var(--ink); }
+  .add-tabs .add-tab.active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); font-weight:600; }
+  .add-panel-tip { font-size:11.5px; color:var(--muted); line-height:1.5; margin:2px 0 10px; }
+  .add-qr-box { margin:6px auto 10px; width:180px; height:180px; border:1px dashed var(--border); border-radius:10px;
+    display:grid; place-items:center; color:var(--muted); font-size:12px; }
+  .add-preview { font-size:12px; color:var(--accent-strong); background:var(--accent-soft); border-radius:8px;
+    padding:8px 10px; margin-top:10px; word-break:break-all; }
   @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important } }
   html, body { height: 100%; }
   html { -webkit-text-size-adjust: 100%; }
@@ -398,7 +408,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.3</span>
+      <span class="ver" id="appVersion">v1.2.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -605,13 +615,34 @@
     <div class="creds-title" style="margin-top:10px">站点账号 <span class="hint">· 每个账号独立签到；凭据留空保存 = 保持当前</span></div>
     <div id="modalAccounts"></div>
     <button type="button" class="btn" style="margin-top:10px" onclick="addModalAccount()">＋ 添加账号</button>
-    <div class="muted" style="font-size:11px;margin-top:6px">可交互登录的站点在卡片上点「登录」自动获取会话；Cookie 站点请直接粘贴凭据。</div>
+    <div class="muted" style="font-size:11px;margin-top:6px">快捷添加请用站点卡上的「＋ 添加账号」（扫码 / 账号密码自动登录 / 手动 Cookie）；此处为手动编辑账号字段。</div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;align-items:center">
       <span class="muted" id="modalStatus" style="font-size:12px"></span>
       <button type="button" class="btn" onclick="closeSiteModal()">取消</button>
       <button type="submit" class="btn primary">保存</button>
     </div>
   </form>
+</div>
+
+<!-- 通用「添加账号」窗口（1.2.4）：登录方式按站点 login_caps 动态渲染 tab（qr > 账号密码 > Cookie） -->
+<div id="addModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:18px;width:min(460px,94vw);max-height:90vh;overflow:auto;padding:20px 22px;box-shadow:var(--shadow-card);backdrop-filter:blur(10px)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div class="site-tag" id="addTag">ST</div>
+      <div style="flex:1;min-width:0">
+        <div class="site-name" id="addTitle">添加账号</div>
+        <div class="muted" style="font-size:12px" id="addSub"></div>
+      </div>
+      <button type="button" class="btn btn-mini" onclick="closeAddModal()">✕</button>
+    </div>
+    <!-- 站点选择（未指定站点时显示） -->
+    <div id="addSitePick" hidden style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 0"></div>
+    <!-- 登录方式主体（选定站点后显示） -->
+    <div id="addBody" hidden>
+      <div id="addTabs" class="add-tabs" style="display:flex;gap:6px;margin:10px 0 4px;flex-wrap:wrap"></div>
+      <div id="addPanel" style="margin-top:8px"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -692,6 +723,11 @@ function siteDesc(key) {
   const m = getSiteMeta(key);
   return m.desc || "";
 }
+/** 站点登录能力（qr/password/password_cookie/cookie），来自后端 meta.login_caps（单一事实源） */
+function siteLoginCaps(key) {
+  const m = getSiteMeta(key);
+  return Array.isArray(m.login_caps) ? m.login_caps : [];
+}
 
 /* ── Toast 浮层（统一反馈通道；替换 alert/角落小字）── */
 function toast(message, type) {
@@ -735,8 +771,7 @@ async function refreshOverview() {
 
 let SITE_DATA = {};
 let ACCT_DATA = {};   // checkin/accounts 派生：per-account has_session/last/points（脱敏）
-let LOGIN_CAPS = {};  // site -> bool，交互登录能力（探测 {site}_login/status 得出）
-let LOGIN_MODE = {};  // site -> "qr"|"form"，交互登录模式（qr 站点显示「扫码添加账号」）
+let LOGIN_CAPS = {};  // site -> bool，交互登录能力（探测 {site}_login/status 得出；登录方式 tab 由 login_caps 元数据驱动）
 
 /** 从 ACCT_DATA 取某账号的脱敏明细（has_session/last/points）；无则 null（退回站点级） */
 function acctDetail(key, id) {
@@ -811,8 +846,8 @@ function renderSiteCards(serverSites) {
           '<span class="muted" style="font-size:11px;white-space:nowrap">' + esc(summary) + "</span>" +
           '<span class="muted" style="font-size:11px;white-space:nowrap">' + (st.enabled ? "已启用" : "已停用") + "</span>" +
           '<button class="btn btn-mini" onclick="runSiteRow(\'' + key + '\')" title="立即签到该站点">签到</button>' +
-          (LOGIN_MODE[key] === "qr" ? '<button class="btn btn-mini" onclick="siteLogin(\'' + key + "','')\" title=\"微信扫码自动添加账号\">＋ 扫码登录</button>" : "") +
-          '<button class="btn btn-mini" onclick="openSiteEditor(\'' + key + '\')">编辑 / 添加账号</button>' +
+          '<button class="btn btn-mini" onclick="openAddAccount(\'' + key + '\')" title="按站点支持的方式添加账号">＋ 添加账号</button>' +
+          '<button class="btn btn-mini" onclick="openSiteEditor(\'' + key + '\')">编辑账号</button>' +
         "</div>" +
         '<div class="acct-list">' + (rows || '<div class="acct-empty">暂无账号</div>') + "</div>" +
       "</div>");
@@ -827,7 +862,6 @@ async function probeLoginCaps() {
     if (k in LOGIN_CAPS) return;
     const r = await call("checkin/" + k + "_login/status");
     LOGIN_CAPS[k] = !!(r && r.success);
-    LOGIN_MODE[k] = (r && r.data && r.data.login_mode) || "";
   }));
   renderSiteCards(SITE_DATA);
 }
@@ -914,6 +948,232 @@ async function loginPoll(token) {
     return;
   }
   LOGIN_CTX.timer = setTimeout(() => loginPoll(token), 2000);
+}
+
+/* ── 通用「添加账号」窗口（1.2.4）─────────────────────────────
+ * 登录方式按站点 login_caps 动态渲染 tab，优先序 qr > 账号密码 > Cookie：
+ *   - qr：微信扫码（复用交互登录弹窗流程，自动建账号）
+ *   - 账号密码（password/password_cookie）：填账号密码 → 「登录并自动获取 Cookie」→ 后端登录+自动落库
+ *   - Cookie：手动粘贴 Cookie / token（恩山、WorkBuddy 高级 fallback）
+ * 保留现有站点编辑弹窗（remark/启用/删除/排序/导入导出）不变。 */
+let ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0 };
+
+function closeAddModal() {
+  if (ADD_CTX.qrTimer) { clearTimeout(ADD_CTX.qrTimer); ADD_CTX.qrTimer = null; }
+  ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0 };
+  $("addModal").style.display = "none";
+}
+
+/** 打开添加账号窗口。key 为空 → 站点选择（pickKeys 限定候选）；否则直接进入该站点的登录方式 tab。 */
+function openAddAccount(key, pickKeys) {
+  ADD_CTX = { key: key || "", tab: "", qrTimer: null, qrTries: 0 };
+  $("addModal").style.display = "flex";
+  if (!key) {
+    $("addTag").textContent = "＋";
+    $("addTag").className = "site-tag";
+    $("addTitle").textContent = "添加账号";
+    $("addSub").textContent = "选择站点，然后按支持的方式登录";
+    $("addBody").hidden = true;
+    const pick = $("addSitePick");
+    pick.hidden = false;
+    const keys = (pickKeys && pickKeys.length) ? pickKeys : Object.keys(SITE_DATA || {});
+    pick.innerHTML = keys.map((k) =>
+      '<button type="button" class="btn" style="min-width:150px" onclick="openAddAccount(\'' + k + '\')">' +
+      esc(siteName(k)) + "</button>").join("") || '<div class="muted">暂无可用站点</div>';
+    return;
+  }
+  $("addSitePick").hidden = true;
+  $("addBody").hidden = false;
+  $("addTag").textContent = siteShort(key);
+  $("addTag").className = "site-tag " + siteTagClass(key);
+  $("addTitle").textContent = siteName(key) + " · 添加账号";
+  $("addSub").textContent = siteDesc(key) || siteMode(key);
+  renderAddTabs(key);
+}
+
+/** 渲染登录方式 tab（按 login_caps 归并：password/password_cookie → 一个「账号密码」tab） */
+function renderAddTabs(key) {
+  const caps = siteLoginCaps(key);
+  const tabs = [];
+  if (caps.includes("qr")) tabs.push({ id: "qr", label: "扫码登录" });
+  if (caps.includes("password") || caps.includes("password_cookie")) tabs.push({ id: "password", label: "账号密码" });
+  if (caps.includes("cookie")) tabs.push({ id: "cookie", label: "手动 Cookie" });
+  if (!tabs.length) tabs.push({ id: "cookie", label: "手动配置" }); // 兜底
+  const first = ADD_CTX.tab && tabs.some((t) => t.id === ADD_CTX.tab) ? ADD_CTX.tab : tabs[0].id;
+  $("addTabs").innerHTML = tabs.map((t) =>
+    '<button type="button" class="add-tab' + (t.id === first ? " active" : "") +
+    '" onclick="switchAddTab(\'' + t.id + '\')">' + esc(t.label) + "</button>").join("");
+  switchAddTab(first);
+}
+
+function switchAddTab(tab) {
+  if (ADD_CTX.qrTimer) { clearTimeout(ADD_CTX.qrTimer); ADD_CTX.qrTimer = null; }
+  ADD_CTX.tab = tab;
+  const tabs = $("addTabs").querySelectorAll(".add-tab");
+  tabs.forEach((b) => b.classList.toggle("active", b.getAttribute("onclick").indexOf("'" + tab + "'") >= 0));
+  const key = ADD_CTX.key;
+  if (tab === "qr") renderAddQrPanel(key);
+  else if (tab === "password") renderAddPasswordPanel(key);
+  else renderAddCookiePanel(key);
+}
+
+/** 账号密码 tab：渲染 email/username + password（+ base_url）字段 + 登录并自动获取 Cookie 按钮 */
+function renderAddPasswordPanel(key) {
+  const caps = siteLoginCaps(key);
+  const autoCookie = caps.includes("password_cookie");
+  // 账号密码相关字段：登录必需的 text/password（排除纯 cookie/token 手填字段）
+  const PW_KEYS = ["base_url", "email", "username", "password"];
+  const fields = siteFields(key).filter((f) => PW_KEYS.includes(f.key));
+  const rows = fields.map((f) => `
+    <div class="cred-row">
+      <div class="cred-label">${esc(f.label)}</div>
+      <input class="input mono" id="addpw_${esc(f.key)}" type="${f.key === "password" ? "password" : "text"}"
+        placeholder="${esc(f.ph || "")}" autocomplete="off">
+    </div>`).join("");
+  $("addPanel").innerHTML =
+    '<div class="add-panel-tip">' +
+      (autoCookie ? "输入账号密码，点击下方按钮登录，成功后自动获取会话（Cookie / Token）并保存账号，无需手动抓包。"
+                  : "输入账号密码直接登录并保存账号。") +
+    "</div>" +
+    rows +
+    '<div class="cred-row"><div class="cred-label">备注（可选）</div>' +
+      '<input class="input" id="addpw_remark" placeholder="用于区分多账号，如「主号」"></div>' +
+    '<button type="button" class="btn primary" id="addpwBtn" style="width:100%;margin-top:6px" onclick="submitAddPassword()">' +
+      (autoCookie ? "登录并自动获取 Cookie" : "登录并保存") + "</button>" +
+    '<div id="addpwState" class="muted" style="font-size:12.5px;min-height:18px;margin-top:8px"></div>';
+}
+
+/** 提交账号密码登录：POST {site}_login/password → 后端登录+自动获取会话+落库 */
+async function submitAddPassword() {
+  const key = ADD_CTX.key;
+  if (!key) return;
+  const fields = {};
+  const PW_KEYS = ["base_url", "email", "username", "password"];
+  for (const f of siteFields(key)) {
+    if (!PW_KEYS.includes(f.key)) continue;
+    const inp = $("addpw_" + f.key);
+    if (inp) fields[f.key] = inp.value.trim();
+  }
+  if (!fields.password || !(fields.email || fields.username)) {
+    $("addpwState").textContent = "请填写账号和密码"; $("addpwState").className = "err"; return;
+  }
+  const remark = ($("addpw_remark") && $("addpw_remark").value.trim()) || "";
+  const btn = $("addpwBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "登录中…"; }
+  $("addpwState").textContent = "正在登录并获取会话…"; $("addpwState").className = "muted";
+  const r = await call("checkin/" + key + "_login/password", "POST", { fields, remark }, 40000);
+  if (btn) { btn.disabled = false; btn.textContent = siteLoginCaps(key).includes("password_cookie") ? "登录并自动获取 Cookie" : "登录并保存"; }
+  if (r && r.success) {
+    const d = r.data || {};
+    const acc = d.account || {};
+    $("addPanel").innerHTML =
+      '<div class="add-preview">✓ ' + esc(d.message || "登录成功") +
+      (d.auto_cookie ? "<br>已自动获取 Cookie 并保存" : "") +
+      "<br>账号：" + esc(acc.label || "") + "</div>";
+    toast("已添加账号：" + (acc.label || ""), "ok");
+    await refreshOverview();
+    setTimeout(() => { if (ADD_CTX.key === key) closeAddModal(); }, 1400);
+  } else {
+    $("addpwState").textContent = "✗ " + ((r && r.message) || "登录失败"); $("addpwState").className = "err";
+  }
+}
+
+/** 手动 Cookie tab：渲染全部 adapter 字段（cookie/token 等），保存为新账号（合并进现有账号集） */
+function renderAddCookiePanel(key) {
+  const fields = siteFields(key);
+  const rows = fields.map((f) => `
+    <div class="cred-row">
+      <div class="cred-label">${esc(f.label)}</div>
+      <input class="input mono" id="addck_${esc(f.key)}" type="${f.type}" placeholder="${esc(f.ph || "")}" autocomplete="off">
+    </div>`).join("");
+  const isEnshan = key === "right_forum";
+  $("addPanel").innerHTML =
+    '<div class="add-panel-tip">' +
+      (isEnshan ? "该站点无登录接口，请在浏览器登录后复制 Cookie 粘贴到下方。"
+                : "手动粘贴凭据 / Token 保存账号（扫码或账号密码不可用时的备用方式）。") +
+    "</div>" +
+    rows +
+    '<div class="cred-row"><div class="cred-label">备注（可选）</div>' +
+      '<input class="input" id="addck_remark" placeholder="用于区分多账号"></div>' +
+    '<button type="button" class="btn primary" id="addckBtn" style="width:100%;margin-top:6px" onclick="submitAddCookie()">保存账号</button>' +
+    '<div id="addckState" class="muted" style="font-size:12.5px;min-height:18px;margin-top:8px"></div>';
+}
+
+/** 保存手动配置账号：合并进现有账号集（保留其它账号）后 save_config */
+async function submitAddCookie() {
+  const key = ADD_CTX.key;
+  if (!key) return;
+  const acc = { id: "", enabled: true };
+  let hasVal = false;
+  for (const f of siteFields(key)) {
+    const inp = $("addck_" + f.key);
+    if (inp) { acc[f.key] = inp.value.trim(); if (acc[f.key]) hasVal = true; }
+  }
+  if (!hasVal) { $("addckState").textContent = "请至少填写一个凭据字段"; $("addckState").className = "err"; return; }
+  acc.remark = ($("addck_remark") && $("addck_remark").value.trim()) || "";
+  const st = SITE_DATA[key] || {};
+  const existing = (Array.isArray(st.accounts) ? st.accounts : []).map((a) => ({ id: a.id })); // 仅带 id，后端保留原字段
+  // 新建站点（此前无账号）默认启用，减少「加完还要去编辑里开」的步骤
+  const enabled = st.enabled === true || existing.length === 0;
+  const body = { sites: { [key]: { enabled, use_proxy: st.use_proxy === true, accounts: existing.concat([acc]) } } };
+  const btn = $("addckBtn");
+  if (btn) btn.disabled = true;
+  const r = await call("save_config", "POST", body);
+  if (btn) btn.disabled = false;
+  if (r && r.success) {
+    toast("已添加账号", "ok");
+    await refreshOverview();
+    closeAddModal();
+  } else {
+    $("addckState").textContent = "✗ " + ((r && r.message) || "保存失败"); $("addckState").className = "err";
+  }
+}
+
+/** 扫码 tab：init 建扫码会话 → 展示二维码 → 轮询 status → ready 自动建账号 */
+async function renderAddQrPanel(key) {
+  $("addPanel").innerHTML =
+    '<div class="add-panel-tip" id="addQrTip">正在发起扫码登录…</div>' +
+    '<div class="add-qr-box" id="addQrBox">二维码生成中…</div>';
+  ADD_CTX.qrTries = 0;
+  const r = await call("checkin/" + key + "_login/init", "POST", {}, 30000);
+  if (ADD_CTX.key !== key || ADD_CTX.tab !== "qr") return; // 已切走
+  if (!r || !r.success) {
+    $("addQrTip").textContent = (r && r.message) || "发起扫码失败"; $("addQrTip").className = "add-panel-tip err";
+    $("addQrBox").textContent = "—";
+    return;
+  }
+  const d = r.data || {};
+  const img = d.qr || d.qr_url;
+  if (img) $("addQrBox").innerHTML = '<img src="' + esc(img) + '" alt="登录二维码" style="width:100%;height:100%;object-fit:contain;border-radius:8px">';
+  else $("addQrBox").textContent = "二维码生成中…";
+  const link = (d.login_url || d.url)
+    ? '<div style="margin-top:6px"><a href="' + esc(d.login_url || d.url) + '" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent-strong)">或点此在浏览器打开授权</a></div>'
+    : "";
+  $("addQrTip").innerHTML = esc(d.message || "手机扫码即可自动添加账号") + link;
+  addQrPoll(key, d.token || "");
+}
+
+async function addQrPoll(key, token) {
+  if (ADD_CTX.key !== key || ADD_CTX.tab !== "qr") return;
+  ADD_CTX.qrTries += 1;
+  if (ADD_CTX.qrTries > 60) { $("addQrTip").textContent = "登录超时，请重新打开"; $("addQrTip").className = "add-panel-tip err"; return; }
+  const r = await call("checkin/" + key + "_login/status" + (token ? "?token=" + encodeURIComponent(token) : ""));
+  if (ADD_CTX.key !== key || ADD_CTX.tab !== "qr") return;
+  const state = r && r.success && r.data ? r.data.state : "";
+  if (state === "ready") {
+    const acc = (r.data && r.data.account) || {};
+    $("addQrBox").innerHTML = '<div class="add-preview" style="margin:0">✓ 登录成功<br>账号：' + esc(acc.label || "") + "</div>";
+    $("addQrTip").textContent = "已自动添加账号"; $("addQrTip").className = "add-panel-tip";
+    toast("已登录，可签到", "ok");
+    await refreshOverview();
+    setTimeout(() => { if (ADD_CTX.key === key) closeAddModal(); }, 1200);
+    return;
+  }
+  if (state === "expired" || (r && r.success === false)) {
+    $("addQrTip").textContent = (r && r.message) || "二维码已失效，请重新打开"; $("addQrTip").className = "add-panel-tip err";
+    return;
+  }
+  ADD_CTX.qrTimer = setTimeout(() => addQrPoll(key, token), 2000);
 }
 
 /* ── 面板鉴权（阶段3 B）：登录页遮罩 + 会话生命周期 ── */
@@ -1076,7 +1336,7 @@ function openSiteEditor(key) {
   $("siteModal").style.display = "flex";
 }
 
-/** 「＋ 添加站点」：选择未添加的站点（空态直达） */
+/** 「＋ 添加站点」：选择未添加的站点 → 通用「添加账号」窗口（按 login_caps 渲染登录方式） */
 function addSiteFlow() {
   const addedKeys = new Set(Object.keys(SITE_DATA).filter((k) => {
     const st = SITE_DATA[k] || {};
@@ -1084,19 +1344,8 @@ function addSiteFlow() {
   }));
   const candidates = Object.keys(SITE_DATA).filter((k) => !addedKeys.has(k));
   if (!candidates.length) { toast("所有站点都已添加", "warn"); return; }
-  $("modalTag").textContent = "＋";
-  $("modalTag").className = "site-tag";
-  $("modalTitle").textContent = "添加站点";
-  $("modalSub").textContent = "选择站点类型，然后配置登录账号";
-  $("modalEnabled").checked = true;
-  $("modalProxy").checked = false;
-  $("modalStatus").textContent = "";
-  $("modalAccounts").innerHTML =
-    '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:10px 0">' +
-    candidates.map((k) =>
-      `<button type="button" class="btn" style="min-width:150px" onclick="openSiteEditor('${k}')">${esc(siteName(k))}</button>`).join("") +
-    "</div>";
-  $("siteModal").style.display = "flex";
+  if (candidates.length === 1) { openAddAccount(candidates[0]); return; }
+  openAddAccount("", candidates);
 }
 
 function closeSiteModal() {
