@@ -510,11 +510,40 @@ class Server {
 
   /** 触发交互登录：form 模式写入账号 session；qr 模式建扫码会话并回二维码 */
   async loginFlowInit(body) {
-    const { site, account_id } = body || {};
+    const { site, account_id, provider, base_url } = body || {};
     const adapter = ADAPTERS[site];
     if (!adapter) return fail(`未知站点：${site}`);
     const flow = adapter.loginFlow;
     if (!flow) return fail("该站点不支持交互登录（请用 Cookie 配置）");
+
+    // oauth 模式：body.provider（github/linuxdo）→ 探平台取授权 URL，前端浏览器授权后粘回调
+    if (provider) {
+      const caps = Array.isArray(adapter.login_caps) ? adapter.login_caps : [];
+      if (!caps.includes("oauth_" + provider)) return fail(`该站点不支持 ${provider} OAuth 登录`);
+      if (typeof flow.oauthInit !== "function") return fail("该站点未实现 OAuth 登录");
+      try {
+        const site_cfg = this._store.getConfig().sites[site] || {};
+        const cfg = { use_proxy: !!site_cfg.use_proxy };
+        if (base_url && String(base_url).trim()) cfg.base_url = String(base_url).trim();
+        const r = await flow.oauthInit(provider, cfg);
+        // 清理过期会话，避免内存累积
+        const nowMs = Date.now();
+        for (const [k, v] of this._loginSessions) if (v.expires_at <= nowMs) this._loginSessions.delete(k);
+        const token = crypto.randomBytes(12).toString("hex");
+        this._loginSessions.set(token, {
+          site, account_id: account_id || null, oauth: true,
+          provider, base: r.base, state: r.state,
+          expires_at: nowMs + 10 * 60 * 1000, // OAuth 授权窗口 10 分钟
+        });
+        return ok({
+          status: "oauth", state: "oauth", token,
+          auth_url: r.auth_url, login_mode: "oauth", provider,
+          message: "请在浏览器完成授权，然后把地址栏回调链接粘贴回来",
+        });
+      } catch (err) {
+        return fail(err.message || "OAuth 发起失败");
+      }
+    }
 
     // qr 模式：无需既有账号，建上游会话 → 前端展示二维码 → 轮询 status
     if (flow.mode === "qr") {
@@ -676,6 +705,54 @@ class Server {
     });
   }
 
+  /**
+   * OAuth 回调完成（oauth 模式）：前端粘贴授权回调链接（含 code/state）→ 解析 → adapter 换 token
+   * → 产出 token 型 session → 落账号（token 存 acc.session，不写明文凭据字段）。
+   * body: { site, token, callback_url }
+   */
+  async loginFlowOAuthComplete(body) {
+    const { site, token, callback_url } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    const flow = adapter.loginFlow;
+    if (!flow || typeof flow.oauthComplete !== "function") return fail("该站点不支持 OAuth 登录");
+    if (!token) return fail("缺少 OAuth 会话 token，请重新发起授权");
+    const entry = this._loginSessions.get(token);
+    if (!entry || entry.site !== site || !entry.oauth) return fail("授权会话不存在或已失效，请重新发起授权");
+    if (Date.now() > entry.expires_at) {
+      this._loginSessions.delete(token);
+      return fail("授权已超时，请重新发起授权");
+    }
+    // 解析回调链接：取 code / state（兼容整段 URL 或裸 query）
+    const { code, state } = parseOAuthCallback(callback_url);
+    if (!code) return fail("回调链接里没有 code 参数，请粘贴完整的授权回调地址");
+    if (entry.state && state && state !== entry.state) {
+      return fail("state 不匹配（可能粘错链接或授权会话已过期），请重新发起授权");
+    }
+    try {
+      const site_cfg = this._store.getConfig().sites[site] || {};
+      const cfg = { use_proxy: !!site_cfg.use_proxy, base_url: entry.base };
+      const r = await flow.oauthComplete({ provider: entry.provider, code, state: state || entry.state, cfg });
+      if (!r || !r.session) return fail("OAuth 登录未返回会话");
+      const acc = this._upsertLoginAccount(site, adapter, r.account || {}, entry.account_id);
+      // token 存 session（非明文字段），标签落 oauth_login（_upsertLoginAccount 不写非字段键，这里补写）
+      acc.session = r.session;
+      acc.session_ts = Date.now();
+      if (r.account && r.account.oauth_login) acc.oauth_login = String(r.account.oauth_login);
+      this._store.save();
+      this._loginSessions.delete(token);
+      await this._snapshotBalance(adapter, acc);
+      this._log(`OAuth 登录成功：${adapter.name}（${adapter.getAccountLabel(acc)}）`);
+      return ok({
+        status: "ready", login_mode: "oauth",
+        message: r.message || "授权登录成功",
+        account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: true },
+      });
+    } catch (err) {
+      return fail(err.message || "OAuth 登录失败");
+    }
+  }
+
   /** 扫码登录落账号：优先按 account_id、其次按 uid 去重更新；否则新建。凭据写入 adapter 字段。 */
   _upsertLoginAccount(site, adapter, data, accountId) {
     const cfg = this._store.getConfig();
@@ -721,6 +798,31 @@ function extractSessionCookie(session) {
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return "";
+}
+
+/**
+ * 从用户粘贴的授权回调里提取 code / state。
+ * 兼容：完整 URL（https://host/oauth/github?code=x&state=y）、带 # 的、或裸 query（code=x&state=y）。
+ */
+function parseOAuthCallback(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return { code: "", state: "" };
+  const pick = (qs) => {
+    try {
+      const sp = new URLSearchParams(qs);
+      return { code: sp.get("code") || "", state: sp.get("state") || "" };
+    } catch { return { code: "", state: "" }; }
+  };
+  // 完整 URL：取 search（+ hash 里的 query 作兜底）
+  try {
+    const u = new URL(raw);
+    let r = pick(u.search.replace(/^\?/, ""));
+    if (!r.code && u.hash) r = pick(u.hash.replace(/^#/, "").replace(/^.*\?/, ""));
+    if (r.code || r.state) return r;
+  } catch { /* 非完整 URL：按裸 query 处理 */ }
+  // 裸 query：去掉可能的前导 ? 或 path?...
+  const q = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : raw;
+  return pick(q);
 }
 
 /**

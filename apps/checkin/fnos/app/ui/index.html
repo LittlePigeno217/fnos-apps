@@ -417,7 +417,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.5</span>
+      <span class="ver" id="appVersion">v1.3.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1010,6 +1010,7 @@ function renderAddTabs(key) {
   const caps = siteLoginCaps(key);
   const tabs = [];
   if (caps.includes("qr")) tabs.push({ id: "qr", label: "扫码登录" });
+  if (caps.includes("oauth_github") || caps.includes("oauth_linuxdo")) tabs.push({ id: "oauth", label: "第三方登录" });
   if (caps.includes("password") || caps.includes("password_cookie")) tabs.push({ id: "password", label: "账号密码" });
   if (caps.includes("cookie")) tabs.push({ id: "cookie", label: "手动 Cookie" });
   if (!tabs.length) tabs.push({ id: "cookie", label: "手动配置" }); // 兜底
@@ -1027,8 +1028,80 @@ function switchAddTab(tab) {
   tabs.forEach((b) => b.classList.toggle("active", b.getAttribute("onclick").indexOf("'" + tab + "'") >= 0));
   const key = ADD_CTX.key;
   if (tab === "qr") renderAddQrPanel(key);
+  else if (tab === "oauth") renderAddOAuthPanel(key);
   else if (tab === "password") renderAddPasswordPanel(key);
   else renderAddCookiePanel(key);
+}
+
+/** 第三方登录 tab：GitHub / LinuxDO OAuth 按钮 → 浏览器授权 → 粘贴回调链接完成建号 */
+function renderAddOAuthPanel(key) {
+  const caps = siteLoginCaps(key);
+  const provs = [];
+  if (caps.includes("oauth_github")) provs.push({ id: "github", label: "GitHub 登录" });
+  if (caps.includes("oauth_linuxdo")) provs.push({ id: "linuxdo", label: "LinuxDO 登录" });
+  const baseField = siteFields(key).find((f) => f.key === "base_url");
+  ADD_CTX.oauthToken = ""; ADD_CTX.oauthProvider = "";
+  $("addPanel").innerHTML =
+    '<div class="add-panel-tip">用 GitHub / LinuxDO 账号授权登录：点击按钮在新窗口完成授权，再把浏览器地址栏的回调链接（含 code）粘贴回来。</div>' +
+    (baseField
+      ? '<div class="cred-row"><div class="cred-label">平台地址</div><input class="input mono" id="addoauth_base" value="https://anyrouter.top" placeholder="' + esc(baseField.ph || "") + '"></div>'
+      : "") +
+    provs.map((p) =>
+      '<button type="button" class="btn" style="width:100%;margin-top:6px" id="oauthBtn_' + esc(p.id) +
+      '" onclick="startOAuth(\'' + esc(p.id) + '\')">' + esc(p.label) + "</button>").join("") +
+    '<div id="oauthPaste" style="display:none;margin-top:10px">' +
+      '<div class="cred-row"><div class="cred-label">回调链接</div>' +
+        '<input class="input mono" id="addoauth_cb" placeholder="授权完成后粘贴浏览器地址栏链接"></div>' +
+      '<button type="button" class="btn primary" style="width:100%;margin-top:6px" id="oauthDoneBtn" onclick="submitOAuth()">完成登录</button>' +
+    "</div>" +
+    '<div id="addoauthState" class="muted" style="font-size:12.5px;min-height:18px;margin-top:8px"></div>';
+}
+
+/** 发起 OAuth：POST {site}_login/init {provider,base_url} → 打开授权 URL + 展示粘贴框 */
+async function startOAuth(provider) {
+  const key = ADD_CTX.key;
+  if (!key) return;
+  const base = ($("addoauth_base") && $("addoauth_base").value.trim()) || "";
+  const st = $("addoauthState");
+  st.className = "muted"; st.textContent = "正在获取授权链接…";
+  const r = await call("checkin/" + key + "_login/init", "POST", { provider, base_url: base }, 30000);
+  if (!(r && r.success)) {
+    st.className = "err"; st.textContent = "✗ " + ((r && r.message) || "获取授权链接失败");
+    return;
+  }
+  const d = r.data || {};
+  ADD_CTX.oauthToken = d.token || ""; ADD_CTX.oauthProvider = provider;
+  if (d.auth_url) window.open(d.auth_url, "_blank", "noopener");
+  $("oauthPaste").style.display = "block";
+  st.className = "muted";
+  st.innerHTML = esc(d.message || "请在新窗口完成授权") +
+    (d.auth_url ? ' · <a href="' + esc(d.auth_url) + '" target="_blank" rel="noopener" style="color:var(--accent,#4c8bf5)">未弹出？点此打开</a>' : "");
+}
+
+/** 完成 OAuth：POST {site}_login/oauth {token,callback_url} → 换 token 建号 */
+async function submitOAuth() {
+  const key = ADD_CTX.key;
+  if (!key) return;
+  const cb = ($("addoauth_cb") && $("addoauth_cb").value.trim()) || "";
+  const st = $("addoauthState");
+  if (!ADD_CTX.oauthToken) { st.className = "err"; st.textContent = "请先点击上方按钮发起授权"; return; }
+  if (!cb) { st.className = "err"; st.textContent = "请粘贴授权回调链接"; return; }
+  const btn = $("oauthDoneBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "登录中…"; }
+  st.className = "muted"; st.textContent = "正在校验授权并建立账号…";
+  const r = await call("checkin/" + key + "_login/oauth", "POST", { token: ADD_CTX.oauthToken, callback_url: cb }, 40000);
+  if (btn) { btn.disabled = false; btn.textContent = "完成登录"; }
+  if (r && r.success) {
+    const d = r.data || {};
+    const acc = d.account || {};
+    $("addPanel").innerHTML =
+      '<div class="add-preview">✓ ' + esc(d.message || "登录成功") + "<br>账号：" + esc(acc.label || "") + "</div>";
+    toast("已添加账号：" + (acc.label || ""), "ok");
+    await refreshOverview();
+    setTimeout(() => { if (ADD_CTX.key === key) closeAddModal(); }, 1400);
+  } else {
+    st.className = "err"; st.textContent = "✗ " + ((r && r.message) || "授权登录失败");
+  }
 }
 
 /** 账号密码 tab：渲染 email/username + password（+ base_url）字段 + 登录并自动获取 Cookie 按钮 */
@@ -1554,7 +1627,8 @@ document.querySelectorAll(".nav button").forEach((b) => {
     document.querySelectorAll(".nav button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     $("pageTitle").textContent = TITLES[b.dataset.tab] || "";
-    document.querySelectorAll(".content section").forEach((s) => (s.hidden = true));
+    // 仅切换顶层视图 section（用 > 直接子级；否则会连带隐藏 #tab-sites 内嵌的 #acctSection 账号列表）
+    document.querySelectorAll(".content > section").forEach((s) => (s.hidden = true));
     $("tab-" + b.dataset.tab).hidden = false;
     if (b.dataset.tab === "history") logPoll();
   });

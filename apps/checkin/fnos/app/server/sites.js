@@ -583,8 +583,8 @@ const ANYROUTER = {
   name: "AnyRouter / NewAPI 通用",
   short: "AR",
   mode: "Cookie / 账号",
-  // 账号密码直登（无 WAF 平台）+ 登录后自动产出会话；WAF 站点回落手动 Cookie
-  login_caps: ["password", "password_cookie", "cookie"],
+  // GitHub / LinuxDO OAuth（NewAPI 统一 OAuth）优先；账号密码直登 + 登录后自动产出会话；WAF 站点回落手动 Cookie
+  login_caps: ["oauth_github", "oauth_linuxdo", "password", "password_cookie", "cookie"],
   desc: "anyrouter.top / NewAPI / OneAPI / Sub2API 通用 · Cookie 或账号密码签到，Sub2API 用 access_token",
   fields: [
     { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（自建 NewAPI 填内网地址）" },
@@ -604,6 +604,30 @@ const ANYROUTER = {
   sub2MePath: "/api/v1/auth/me",
   sub2SignInPath: "/api/v1/redeem/checkin",
   sub2SignInStatusPath: "/api/v1/redeem/checkin/status",
+  // NewAPI 统一 OAuth（协议来源：开源 github.com/QuantumNous/new-api，公开源码非逆向）：
+  //   1) POST /api/oauth/state {provider,intent:"login"} → {data:{flow_token}}（flow_token 即 state，CSRF）
+  //   2) 客户端拼授权 URL（client_id 取自 /api/status 的 {provider}_client_id），跳转 provider
+  //   3) provider 回调 {origin}/oauth/{provider}?code&state → GET /api/oauth/{provider}?code&state
+  //      服务端换 token + 建/登用户 → {data:{access_token,...}}（access_token 即 NewAPI 会话 token，Bearer 直用）
+  statusPath: "/api/status",
+  oauthStatePath: "/api/oauth/state",
+  oauthCallbackPath: "/api/oauth/", // + provider
+  OAUTH_PROVIDERS: {
+    github: {
+      name: "GitHub", client_key: "github_client_id", enabled_key: "github_oauth",
+      // web/src/lib/oauth.ts buildGitHubOAuthUrl
+      authorize: (cid, state) =>
+        "https://github.com/login/oauth/authorize?client_id=" + encodeURIComponent(cid) +
+        "&state=" + encodeURIComponent(state) + "&scope=user:email",
+    },
+    linuxdo: {
+      name: "LinuxDO", client_key: "linuxdo_client_id", enabled_key: "linuxdo_oauth",
+      // web/src/lib/oauth.ts buildLinuxDOOAuthUrl
+      authorize: (cid, state) =>
+        "https://connect.linux.do/oauth2/authorize?response_type=code&client_id=" + encodeURIComponent(cid) +
+        "&state=" + encodeURIComponent(state),
+    },
+  },
 
   defaultConfig() {
     return {
@@ -617,12 +641,16 @@ const ANYROUTER = {
     if (cfg.username && cfg.password) return true;         // 账号密码方式
     if (cfg.cookie && String(cfg.cookie).trim()) return true; // Cookie 方式
     if (cfg.access_token && String(cfg.access_token).trim()) return true; // Sub2API 方式
+    // OAuth 登录：无明文凭据，凭 session（NewAPI 会话 token）鉴权
+    if (cfg.session && cfg.session.type === "token" && cfg.session.token) return true;
     return false;
   },
   getAccountLabel(cfg) {
     if (cfg && cfg.username) return maskEmail(cfg.username);
     if (cfg && cfg.api_user) return "User " + cfg.api_user;
     if (cfg && cfg.access_token && String(cfg.access_token).trim()) return "Sub2API Token";
+    if (cfg && cfg.oauth_login) return String(cfg.oauth_login); // OAuth 账号标签（如「GitHub @user」）
+    if (cfg && cfg.session && cfg.session.type === "token" && cfg.session.token) return "OAuth 登录";
     return "Cookie";
   },
   /** Sub2API 部署判定：填写了 access_token 即走 /api/v1 协议（与 NewAPI 流程互斥） */
@@ -750,6 +778,81 @@ const ANYROUTER = {
         session,
         account_label: ANYROUTER.getAccountLabel(cfg),
         message: "登录成功",
+      };
+    },
+
+    /* OAuth 发起（oauth_github / oauth_linuxdo）：探 /api/status 拿 client_id + 开关，
+     * POST /api/oauth/state 拿 flow_token（state），拼授权 URL 返给前端。不触发真实授权。 */
+    async oauthInit(provider, cfg) {
+      const p = ANYROUTER.OAUTH_PROVIDERS[provider];
+      if (!p) throw new Error("不支持的 OAuth 提供方：" + provider);
+      const base = ANYROUTER._base(cfg);
+      if (!base) throw new Error("请先配置平台地址（base_url）");
+      const s = new Session();
+      // 1) /api/status：确认该 provider 已启用并取 client_id
+      const stR = await s.get(base + ANYROUTER.statusPath, {
+        headers: { Accept: "application/json, text/plain, */*" }, timeout: 15000, useProxy: cfg && cfg.use_proxy,
+      });
+      if (ANYROUTER._isWafChallenge(stR.text)) {
+        throw new Error("平台有 WAF 人机验证，服务端无法直接发起 OAuth：请在浏览器登录后改用「手动 Cookie」方式");
+      }
+      const stj = parseJson(stR.text);
+      const sd = (stj && typeof stj.data === "object") ? stj.data : (stj || {});
+      if (sd[p.enabled_key] === false) throw new Error("平台未启用 " + p.name + " OAuth 登录");
+      const clientId = firstStr(sd, [p.client_key]);
+      if (!clientId) throw new Error("平台未返回 " + p.name + " client_id（可能未配置 OAuth 或非 NewAPI 平台）");
+      // 2) POST /api/oauth/state {provider,intent:login} → data.flow_token（state）
+      const flowR = await s.postJson(base + ANYROUTER.oauthStatePath, { provider, intent: "login" }, {
+        headers: { Accept: "application/json, text/plain, */*" }, timeout: 15000, useProxy: cfg && cfg.use_proxy,
+      });
+      if (ANYROUTER._isWafChallenge(flowR.text)) {
+        throw new Error("平台有 WAF 人机验证，OAuth state 接口被拦截：请改用「手动 Cookie」方式");
+      }
+      const fj = parseJson(flowR.text);
+      const fd = (fj && typeof fj.data === "object") ? fj.data : (fj || {});
+      const state = firstStr(fd, ["flow_token", "state"]);
+      if (!state) {
+        throw new Error((fj && (fj.message || fj.msg)) || "获取 OAuth state 失败（HTTP " + flowR.status + "）");
+      }
+      return { provider, base, state, auth_url: p.authorize(clientId, state) };
+    },
+
+    /* OAuth 回调完成：解析回调 URL 的 code/state → GET /api/oauth/{provider}?code&state
+     * 服务端换 token + 建/登用户 → data.access_token（NewAPI 会话 token）。产出 token 型 session。 */
+    async oauthComplete(args) {
+      const { provider, code, state, cfg } = args || {};
+      const p = ANYROUTER.OAUTH_PROVIDERS[provider];
+      if (!p) throw new Error("不支持的 OAuth 提供方：" + provider);
+      if (!code) throw new Error("回调链接缺少 code 参数（请粘贴完整的授权回调地址）");
+      const base = ANYROUTER._base(cfg);
+      const s = new Session();
+      const url = base + ANYROUTER.oauthCallbackPath + encodeURIComponent(provider) +
+        "?code=" + encodeURIComponent(code) + (state ? "&state=" + encodeURIComponent(state) : "");
+      const r = await s.get(url, { headers: { Accept: "application/json, text/plain, */*" }, timeout: 20000, useProxy: cfg && cfg.use_proxy });
+      if (ANYROUTER._isWafChallenge(r.text)) {
+        throw new Error("平台 WAF 拦截了 OAuth 回调：请在浏览器完成登录后改用「手动 Cookie」方式");
+      }
+      const j = parseJson(r.text);
+      if (!j || typeof j !== "object") {
+        throw new Error("OAuth 回调没回 JSON：" + (cleanText(r.text).slice(0, 60) || "空响应") + "（code 可能已被浏览器消费，请重新发起授权）");
+      }
+      if (j.success === false) {
+        throw new Error((j.message || j.msg) || "OAuth 登录被拒绝（授权失败或 state 失效）");
+      }
+      const d = (j.data && typeof j.data === "object") ? j.data : {};
+      const token = firstStr(d, ["access_token"]);
+      if (!token) {
+        throw new Error((j.message || j.msg) || "未获取到 access_token（该平台回调可能仅下发 Cookie，请改用「手动 Cookie」方式）");
+      }
+      // 账号展示标签：优先 provider + 用户名
+      const u = (d.user && typeof d.user === "object") ? d.user : {};
+      const uname = firstStr(u, ["username", "display_name", "github_id", "linux_do_id", "email"]);
+      const label = p.name + (uname ? " @" + uname : "");
+      return {
+        session: { type: "token", token, base },
+        account: { base_url: base, oauth_login: label, remark: label },
+        account_label: label,
+        message: p.name + " 授权登录成功",
       };
     },
   },
