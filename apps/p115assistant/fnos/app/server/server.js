@@ -391,7 +391,7 @@ class Server {
     this._checkinCheckedDate = "";
     this._uploadWorker = new UploadWorker(
       (job) => this._runWorkerJob(job),
-      () => this._maybeAutoStrmAfterUpload()
+      null
     );
     this._fileWatcher = new FileWatcher(this);
     this._riskState = {
@@ -1252,6 +1252,12 @@ class Server {
             });
             console.log(`已上传 ${path.basename(filePath)}（${result.reused ? "秒传" : "上传"}）`);
             this._riskState.consecutiveFailures = 0;
+            // 上传后生成 STRM（单文件粒度）：媒体落盘后立即生成对应 .strm
+            const cloudRel = remapRelativePath(filePath, source, targetDir).replace(/\/+$/, "") + "/" + path.basename(filePath);
+            this._maybeAutoStrmForFile(mapping, cloudRel, {
+              name: path.basename(filePath),
+              pickcode: String((result.fileItem && result.fileItem.pickcode) || ""),
+            });
             // upload_delete_source：上传成功后删除本地源文件（只删成功项）
             if (config.upload_delete_source) {
               try {
@@ -2126,37 +2132,51 @@ class Server {
     return `未知任务: ${JSON.stringify(job)}`;
   }
 
-  /**
-   * 「上传后生成 STRM」接线（1.1.3）：由 UploadWorker 队列自然清空后的空闲回调触发。
-   * 开关开启 → 防抖 3s 自动跑一次全量增量 strmSync（与手动「立即同步」同一路径，
-   * 输出到各 STRM 映射的 target_dir；增量受 strm_incremental 约束）；
-   * 开关关闭 → 什么都不做。手动 strmSync、基础连接变更自动同步、strm_once 一次性任务
-   * 行为均不受影响。
-   */
-  _maybeAutoStrmAfterUpload() {
+  /** 单文件 STRM 生成（1.1.5）：媒体文件上传成功后立即生成对应 .strm，
+   *  不打全量同步。匹配 STRM 映射：映射源云端目录 == 上传目标云端目录，
+   *  输出到映射 target_dir（多映射=多目录）。秒传/上传均触发；非媒体扩展名、
+   *  未开开关、无匹配映射、输出目录无效 → 静默跳过。 */
+  _maybeAutoStrmForFile(uploadMapping, cloudRelPath, fileInfo) {
     try {
+      if (this.store.getConfig().upload_generate_strm !== true) return;
       const config = this.store.getConfig();
-      if (config.upload_generate_strm !== true) return;
-      if (this._strmBusy) return; // 已有 STRM 任务在执行中，留给下一轮上传
-      clearTimeout(this._uploadStrmSyncTimer);
-      this._uploadStrmSyncTimer = setTimeout(() => {
-        this.strmSync({})
-          .then((res) => {
-            if (res && res.success) {
-              this.recordLog(`上传完成，自动生成 STRM：${res.message || "同步完成"}`, "INFO", "STRM");
-            } else if (
-              res && res.message &&
-              !String(res.message).includes("没有启用") &&
-              !String(res.message).includes("执行中")
-            ) {
-              // 「没有启用的 STRM 映射」/「已有 STRM 任务执行中」属预期静默；其余才提示
-              this.recordLog(`上传后自动 STRM 同步未执行：${res.message}`, "WARN", "STRM");
-            }
-          })
-          .catch((err) => console.warn(`上传后自动 STRM 同步失败：${err.message}`));
-      }, 3000);
+      const targetCid = String(uploadMapping.targetCid || uploadMapping.target_cid || "");
+      if (!targetCid) return;
+      const mappings = Array.isArray(config.strm_mappings) ? config.strm_mappings : [];
+      const mapping = mappings.find(
+        (m) => m.enabled !== false && String(m.sourceCid || m.source_cid || "") === targetCid
+      );
+      if (!mapping) return;
+      const targetDir = String(mapping.target_dir || mapping.targetDir || "").trim();
+      if (!targetDir) return;
+      const [dirOK, dirErr] = this._authorizedLocalPath(targetDir);
+      if (dirOK === null) {
+        console.warn(`上传后生成 STRM 失败：输出目录无效 ${targetDir}：${dirErr}`);
+        return;
+      }
+      const name = String(fileInfo.name || "");
+      const suffix = path.extname(name).toLowerCase();
+      const mediaExts = extensionSet(config.upload_media_extensions);
+      if (suffix === "" || !mediaExts.has(suffix)) return; // 只对媒体文件生成
+      const baseUrl = this._resolveStrmBaseUrl();
+      if (!baseUrl) {
+        console.warn("上传后生成 STRM 失败：无法确定 STRM 基础地址");
+        return;
+      }
+      const rel = String(cloudRelPath || "").replace(/\\/g, "/");
+      if (!rel) return;
+      const outName = rel.toLowerCase().endsWith(".iso") ? `${rel}.strm` : rel.replace(/\.[^.]+$/, "") + ".strm";
+      const outPath = path.join(dirOK, outName);
+      const sign = this.buildRedirectSignature(String(fileInfo.pickcode || ""));
+      const qs = new URLSearchParams({ pickcode: fileInfo.pickcode, file_name: name, sign });
+      // STRM 内容完全对齐插件（strm.py build_strm_url）与全量同步 _runStrmMapping
+      const content = `${baseUrl}/api/v1/plugin/P115LiteAssistant/redirect?${qs.toString()}\n`;
+      const outDir = path.dirname(outPath);
+      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(outPath, content);
+      this.recordLog(`上传完成，生成 STRM：${outName}`, "INFO", "STRM");
     } catch (err) {
-      console.warn(`上传后自动 STRM 同步启动失败：${err.message}`);
+      console.warn(`上传后生成 STRM 失败：${err.message}`);
     }
   }
 
