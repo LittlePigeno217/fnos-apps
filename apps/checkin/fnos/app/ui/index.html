@@ -323,22 +323,6 @@
   /* ---------- 结果摘要 ---------- */
   .summary-line { margin-top: 10px; white-space: pre-line; font-size: 13px; }
 
-  /* ---------- 行云横幅（右上绿色光晕 + 大标题） ---------- */
-  .hero { position: relative; overflow: hidden; margin-bottom: 16px;
-          padding: 20px 24px; border: 1px solid var(--border-soft); border-radius: var(--jc-radius);
-          background:
-            radial-gradient(ellipse at top right, var(--accent-soft), transparent 60%),
-            var(--card);
-          box-shadow: var(--shadow-card); backdrop-filter: blur(6px); }
-  .hero-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .hero-logo { width: 52px; height: 52px; flex: none; border-radius: 14px; display: grid; place-items: center;
-               color: #fff; font-weight: 800; font-size: 18px; letter-spacing: .5px;
-               background: var(--brand-grad); box-shadow: 0 8px 22px rgba(79,70,229,.4); }
-  .hero-txt { min-width: 0; }
-  .hero-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: .2px; }
-  .hero-sub { margin-top: 3px; font-size: 12.5px; color: var(--muted); }
-  .hero-state { margin-left: auto; }
-
   /* ---------- 统计卡行（仿 Ant 统计卡） ---------- */
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
                gap: 12px; margin-bottom: 16px; }
@@ -408,7 +392,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.4</span>
+      <span class="ver" id="appVersion">v1.2.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -424,17 +408,6 @@
 
       <!-- 站点签到 -->
       <section id="tab-sites">
-        <!-- 行云横幅 -->
-        <div class="hero">
-          <div class="hero-row">
-            <div class="hero-logo">签</div>
-            <div class="hero-txt">
-              <h2 class="hero-title">签到中心</h2>
-              <div class="hero-sub">FLZT / 恩山 / 易破解 / AnyRouter · 每日自动签到与积分归集</div>
-            </div>
-            <span class="chip hero-state" id="appChip2"><span id="appChip2Text">加载中…</span></span>
-          </div>
-        </div>
         <!-- 统计卡行 -->
         <div class="stat-grid">
           <div class="stat-card">
@@ -1654,7 +1627,7 @@ let cfgDirty = false;
 function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function updateChip(on) {
   const label = on ? "自动签到已开启" : "未启用";
-  [["appChip", "appChipText"], ["appChip2", "appChip2Text"]].forEach(([cid, tid]) => {
+  [["appChip", "appChipText"]].forEach(([cid, tid]) => {
     const chip = document.getElementById(cid);
     if (chip) chip.classList.toggle("on", !!on);
     const txt = document.getElementById(tid);

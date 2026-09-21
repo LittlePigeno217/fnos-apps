@@ -239,6 +239,7 @@ class Server {
    * history 最新在前（Store.appendHistory 头插），每组取第一条（最新）的 site_name 与 last_time。
    * reward 单位因站而异（MB / 积分 / USD…），故 total_points 仅做粗略展示，
    * per-site 的 total_points 才是有效口径，不跨站换算。
+   * 累计口径：仅统计 workbuddy 站点（其余站点当前无真实积分），明细仍列出各站。
    */
   points(window = 500) {
     const hist = this._store.getHistory(window) || [];
@@ -262,7 +263,7 @@ class Server {
         total_points: Number(g.sum.toFixed(4)), // 防浮点尾巴
         last_time: first.time || "",
       });
-      totalPoints += g.sum;
+      if (key === "workbuddy") totalPoints += g.sum; // 累计仅计 workbuddy
     }
     return ok({
       sites,
