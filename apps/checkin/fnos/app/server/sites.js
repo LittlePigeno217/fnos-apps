@@ -175,27 +175,37 @@ const RIGHT_FORUM = {
   key: "right_forum",
   name: "恩山无线论坛",
   short: "恩",
-  mode: "Cookie",
-  // 无登录 API，仅支持手动粘贴 Cookie
-  login_caps: ["cookie"],
-  desc: "right.com.cn · Cookie 签到（formhash + 人机验证识别）",
+  mode: "账号密码 / Cookie",
+  // Discuz! 账号密码登录后自动产出 Cookie 落库（password_cookie），WAF/验证码时回落手动 Cookie
+  login_caps: ["password_cookie", "cookie"],
+  desc: "right.com.cn · 账号密码自动获取 Cookie 或手填 Cookie（formhash + 人机验证识别）",
   fields: [
-    { key: "cookie", label: "Cookie", type: "password", ph: "粘贴浏览器 Cookie（留空不改）" },
+    { key: "username", label: "账号 / 用户名", type: "text", ph: "恩山论坛用户名或邮箱" },
+    { key: "password", label: "密码", type: "password", ph: "输入密码（留空不改）" },
+    { key: "cookie", label: "Cookie", type: "password", ph: "或直接粘贴浏览器 Cookie（留空不改）" },
   ],
   base: "https://www.right.com.cn/forum",
   signPages: ["/plugin.php?id=erling_qd:sign_in", "/erling_qd-sign_in.html"],
   signAction: "/plugin.php?id=erling_qd:action&action=sign",
   forumPage: "/forum.php",
+  // Discuz! 登录：GET 登录页取 formhash + loginhash → POST 提交表单（inajax）→ Set-Cookie 出 xxx_auth
+  loginPage: "/member.php?mod=logging&action=login",
+  loginSubmit: "/member.php?mod=logging&action=login&loginsubmit=yes&handlekey=login&inajax=1",
   CHALLENGE_MARKERS: ["_waf_is_mobile", "CF_APP_WAF", '"sceneId"', 'id="renderData"'],
+  // 真实验证码/安全验证标记（questionid 安全提问下拉框为 Discuz 常规字段，不计入）
+  CAPTCHA_MARKERS: ["seccodeverify", "misc.php?mod=seccode", "请输入验证码", "需要验证码", "验证码不正确"],
 
   defaultConfig() {
-    return { enabled: false, use_proxy: false, cookie: "" };
+    return { enabled: false, use_proxy: false, username: "", password: "", cookie: "" };
   },
   isConfigured(cfg) {
-    return !!(cfg && cfg.cookie && cfg.cookie.trim());
+    if (!cfg) return false;
+    if (cfg.cookie && String(cfg.cookie).trim()) return true;
+    return !!(cfg.username && cfg.password);
   },
-  getAccountLabel() {
-    return "Cookie";
+  getAccountLabel(cfg) {
+    const u = cfg && cfg.username && String(cfg.username).trim();
+    return u ? maskEmail(u) : "Cookie";
   },
 
   _headers(cookie, referer, ajax) {
@@ -255,6 +265,79 @@ const RIGHT_FORUM = {
     m = cleaned.match(/总签到天数[:：]\s*(\d+)\s*天/);
     if (m) parts.push(`总签到天数：${m[1]} 天`);
     return parts.join("；");
+  },
+
+  _hasCaptcha(text) {
+    return this.CAPTCHA_MARKERS.some((m) => String(text || "").includes(m));
+  },
+
+  /** Discuz! 账号密码登录：GET 登录页取 formhash+loginhash → POST 提交 → 会话 jar 出 xxx_auth。
+   *  真机只读探测确认：无验证码时可用；命中验证码/WAF/失败均抛明确文案，回落手填 Cookie。 */
+  async _passwordLogin(cfg) {
+    const username = (cfg.username || "").trim();
+    const password = (cfg.password || "").trim();
+    if (!username || !password) throw new Error("请先填写恩山账号和密码");
+
+    const s = new Session();
+    // 1. GET 登录页取 formhash 与动态 loginhash
+    const lp = await s.get(this.base + this.loginPage, { headers: this._headers("", this.forumPage), timeout: 15000, useProxy: cfg.use_proxy });
+    this._ensureUsable(lp.text);
+    if (this._hasCaptcha(lp.text)) {
+      throw new Error("恩山登录当前需要验证码，账号密码方式不可用：请在浏览器登录后到设置里手填 Cookie");
+    }
+    const formhash = extractFormhash(lp.text);
+    if (!formhash) throw new Error("登录页里没有 formhash（站点结构变化或被拦截），请改用手填 Cookie");
+    const loginhash = (String(lp.text).match(/loginhash=([0-9a-zA-Z]+)/) || [])[1] || "";
+
+    // 2. POST 登录（inajax 提交，会话 jar 自动累积 Set-Cookie）
+    const submitPath = this.loginSubmit + (loginhash ? "&loginhash=" + loginhash : "");
+    const form = {
+      formhash,
+      referer: this.base + this.forumPage,
+      loginfield: "username",
+      username,
+      password,
+      questionid: "0",
+      answer: "",
+      cookietime: "2592000",
+    };
+    const r = await s.postForm(this.base + submitPath, form, { headers: this._headers(s.cookieHeader(), this.loginPage, true), timeout: 15000, useProxy: cfg.use_proxy });
+    const body = String(r.text || "");
+    this._ensureUsable(body);
+
+    // 登录结果判定：成功后会话 jar 出现 xxx_auth（最可靠）；辅以成功/失败文案
+    const hasAuth = Object.keys(s.cookies).some((k) => /_auth$/i.test(k));
+    if (this._hasCaptcha(body)) {
+      throw new Error("恩山登录触发验证码：请在浏览器登录后到设置里手填 Cookie");
+    }
+    if (!hasAuth) {
+      if (/密码错误|帐号|账号|用户名不存在|不存在或/.test(body) && /错误|不存在/.test(body)) {
+        throw new Error("恩山登录失败：账号或密码错误");
+      }
+      if (/尝试登录次数|登录失败次数|请\s*\d+\s*分钟/.test(body)) {
+        throw new Error("恩山登录失败次数过多，请稍后再试或在浏览器登录后手填 Cookie");
+      }
+      throw new Error("恩山登录未成功：未获取到登录 Cookie（可能触发安全验证），请在浏览器登录后手填 Cookie");
+    }
+    const cookie = s.cookieHeader();
+    if (!cookie) throw new Error("登录成功但未取到会话 Cookie");
+    return { s, cookie };
+  },
+
+  loginFlow: {
+    mode: "form",
+    desc: "账号密码自动登录产出 Cookie（Discuz! member.php 登录）",
+    async init(cfg) {
+      const { cookie } = await RIGHT_FORUM._passwordLogin(cfg);
+      return {
+        mode: "form",
+        status: "ready",
+        // type=cookie：server 自动提取 cookie 回填 cookie 字段，后续签到走既有 Cookie 路径
+        session: { type: "cookie", cookie },
+        account_label: RIGHT_FORUM.getAccountLabel(cfg),
+        message: "登录成功，已自动获取 Cookie",
+      };
+    },
   },
 
   async runCheckin(cfg) {

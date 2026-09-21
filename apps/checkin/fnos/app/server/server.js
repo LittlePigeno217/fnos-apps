@@ -572,7 +572,8 @@ class Server {
     const flow = adapter.loginFlow;
     if (!flow || flow.mode !== "form") return fail("该站点不支持账号密码登录");
     const caps = Array.isArray(adapter.login_caps) ? adapter.login_caps : [];
-    if (!caps.includes("password")) return fail("该站点不支持账号密码登录");
+    // password 或 password_cookie 均走此账号密码登录入口（与前端 tab 归并逻辑一致）
+    if (!caps.includes("password") && !caps.includes("password_cookie")) return fail("该站点不支持账号密码登录");
 
     // 用提交的凭据构造临时配置（仅取 adapter 认识的字段），走既有 loginFlow.init 登录逻辑
     const site_cfg = this._store.getConfig().sites[site] || {};
