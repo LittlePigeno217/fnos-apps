@@ -278,15 +278,24 @@
   .site-card-head { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 12px 16px 12px 20px; flex-wrap: wrap; }
   .site-card-title { min-width: 0; flex: 1; }
   .site-card-title .name { font-weight: 600; font-size: 15px; }
-  /* 账号卡片：3 列网格（窄屏自适应降列），每个账号一张精简卡 */
-  .acct-grid { border-top: 1px solid var(--border); padding: 14px 15px;
-               display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  @media (max-width: 900px) { .acct-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 560px) { .acct-grid { grid-template-columns: 1fr; } }
+  /* 账号卡片：每个账号一张精简卡（网格容器见 .acct-grid-global） */
   .acct-card { display: flex; flex-direction: column; gap: 8px; min-width: 0;
                background: var(--card); border: 1px solid var(--border); border-radius: var(--jc-radius);
                padding: 12px 13px; transition: border-color .15s ease, box-shadow .15s ease; }
   .acct-card:hover { border-color: var(--accent); box-shadow: 0 6px 18px rgba(30,40,80,.08); }
+  /* 全局账号列表：跨站点每行三卡（自适应降列），站点来源用卡上小标签区分 */
+  .acct-section-head { display: flex; align-items: baseline; gap: 8px; margin: 4px 2px 10px; flex-wrap: wrap; }
+  .acct-section-head .t { font-weight: 700; font-size: 14.5px; }
+  .acct-section-head .c { font-size: 12px; color: var(--muted); }
+  .acct-grid-global { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  @media (max-width: 900px) { .acct-grid-global { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .acct-grid-global { grid-template-columns: 1fr; } }
+  /* 账号卡站点来源标识（色块小标签 + 站点名） */
+  .acct-site { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; }
+  .acct-site .st { width: 18px; height: 18px; flex: none; border-radius: 6px; display: grid; place-items: center;
+                   font-size: 9px; font-weight: 800; color: #fff; letter-spacing: .2px; }
+  .acct-site .nm { font-size: 11px; color: var(--muted); font-weight: 600;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .acct-card-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
   .acct-card-title { min-width: 0; flex: 1; }
   .acct-card-title .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -301,25 +310,12 @@
   .acct-bal.empty .bv { color: var(--muted-2); font-weight: 600; }
   .acct-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; }
   .acct-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
-  .acct-empty { padding: 14px 15px; color: var(--muted); font-size: 12px; }
   /* 登录态徽标 */
   .login-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; white-space: nowrap;
                  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: transparent; }
   .login-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
   .login-badge.on { color: var(--ok); border-color: var(--ok-border); }
   .login-badge.on .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-glow); }
-  /* 积分面板条 */
-  .points-bar { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-                padding: 12px 16px; margin-bottom: 14px; }
-  .points-bar-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
-  .points-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; font-size: 12px;
-                 border: 1px solid var(--border); border-radius: 999px; background: transparent;
-                 font-variant-numeric: tabular-nums; }
-  .points-chip b { color: var(--accent-strong); font-weight: 700; }
-  .points-detail { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
-  .points-detail table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .points-detail th, .points-detail td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
-  .points-detail th { color: var(--muted); font-weight: 600; }
   /* 账号运维工具行（弹窗内） */
   .acct-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 2px;
                 padding-bottom: 9px; border-bottom: 1px dashed var(--border); }
@@ -410,7 +406,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.7</span>
+      <span class="ver" id="appVersion">v1.2.8</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -444,14 +440,6 @@
             <div class="stat-value" id="statSites">0</div>
             <div class="stat-foot" id="statSitesFoot"></div>
           </div>
-          <div class="stat-card">
-            <div class="stat-title">
-              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg>
-              累计积分
-            </div>
-            <div class="stat-value brand" id="statPoints">—</div>
-            <div class="stat-foot" id="statPointsFoot"></div>
-          </div>
           <div class="stat-card" id="ovFailWrap" hidden>
             <div class="stat-title" style="color:var(--err)">
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
@@ -475,8 +463,16 @@
           <span style="flex:1"></span>
           <span class="muted" id="runStatus"></span>
         </div>
-        <div id="pointsBar" class="points-bar" hidden></div>
+        <!-- 站点总览（站点级状态 + 签到/添加/编辑；账号详情移至下方账号列表区） -->
         <div id="siteCards"></div>
+        <!-- 全局账号列表（跨站点混合，每行三卡） -->
+        <section id="acctSection" hidden>
+          <div class="acct-section-head">
+            <span class="t">账号列表</span>
+            <span class="c" id="acctSectionCount"></span>
+          </div>
+          <div id="acctList" class="acct-grid-global"></div>
+        </section>
         <div class="summary-line" id="runResult"></div>
       </section>
 
@@ -757,7 +753,6 @@ async function refreshOverview() {
   // 必须传 r.data.sites，否则站点行徽标恒显「未签」。
   renderSiteCards(r.data.sites || SITE_DATA);
   probeLoginCaps();
-  refreshPoints();
 }
 
 let SITE_DATA = {};
@@ -783,71 +778,18 @@ function renderSiteCards(serverSites) {
     box.innerHTML = '<div style="padding:42px 12px;text-align:center">' +
       '<div class="muted" style="margin-bottom:14px">还没有添加任何站点</div>' +
       '<button class="btn primary" onclick="addSiteFlow()">＋ 添加第一个站点</button></div>';
+    const sec = $("acctSection");
+    if (sec) sec.hidden = true;
+    const list = $("acctList");
+    if (list) list.innerHTML = "";
     return;
   }
+  // 站点总览卡（站点级：状态摘要 + 签到/添加/编辑；账号明细移至下方账号列表区）
   for (const [key, st] of added) {
     const accs = Array.isArray(st.accounts) ? st.accounts : [];
     const cap = LOGIN_CAPS[key] === true;
     let loggedCount = 0;
-    const rows = accs.map((a) => {
-      const d = acctDetail(key, a.id);
-      const hasSession = d ? !!d.has_session : false;
-      if (hasSession) loggedCount++;
-      // 标题：备注优先，其次站点名（label 脱敏标识降级为副标题）
-      const title = a.remark || (d && d.site_name) || siteName(key) || ("账号 " + (a.id || ""));
-      const subLabel = a.label || (d && d.label) || "";
-      const enabled = a.enabled !== false;
-      const last = d ? d.last : null;
-      let dayBadge;
-      if (last && last.status === "执行失败") {
-        dayBadge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + esc(shortTime(last.time)) + "</span></span>";
-      } else if (last) {
-        dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + esc(shortTime(last.time)) + "</span></span>";
-      } else {
-        dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">未签</span></span>';
-      }
-      let loginBadge = "";
-      if (cap || hasSession) {
-        loginBadge = hasSession
-          ? '<span class="login-badge on"><span class="dot"></span>已登录</span>'
-          : '<span class="login-badge"><span class="dot"></span>未登录</span>';
-      }
-      // 余额 / 积分行：仅 supports_balance 的账号（workbuddy 积分 / anyrouter 余额）显示
-      let balLine = "";
-      if (d && d.supports_balance) {
-        const bl = esc(d.balance_label || "余额");
-        if (d.balance_display) {
-          let delta = "";
-          if (d.balance_delta_display) {
-            const up = Number(d.balance_delta) > 0;
-            delta = '<span class="bd ' + (up ? "up" : "down") + '">' + esc(d.balance_delta_display) + "</span>";
-          }
-          balLine = '<div class="acct-bal"><span class="bl">' + bl + '</span><span class="bv">' + esc(d.balance_display) + "</span>" + delta + "</div>";
-        } else {
-          balLine = '<div class="acct-bal empty"><span class="bl">' + bl + '</span><span class="bv">—</span></div>';
-        }
-      }
-      let loginBtn = "";
-      if (cap) {
-        loginBtn = '<button class="btn btn-mini" onclick="siteLogin(\'' + key + "','" + esc(a.id || "") + '\')">' +
-          (hasSession ? "重新登录" : "登录") + "</button>";
-      }
-      const enToggle = '<button class="btn btn-mini" title="' + (enabled ? "点击停用该账号" : "点击启用该账号") + '" onclick="toggleAccountEnabled(\'' + key + "','" + esc(a.id || "") + "'," + (enabled ? "false" : "true") + ')">' +
-        (enabled ? "停用" : "启用") + "</button>";
-      return '<div class="acct-card"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
-        '<div class="acct-card-top"><div class="acct-card-title">' +
-          '<div class="t" title="' + esc(title) + '">' + esc(title) + "</div>" +
-          (subLabel ? '<div class="sub" title="' + esc(subLabel) + '">' + esc(subLabel) + "</div>" : "") +
-        "</div>" + loginBadge + "</div>" +
-        balLine +
-        '<div class="acct-meta">' + dayBadge + "</div>" +
-        '<div class="acct-actions">' +
-          loginBtn + enToggle +
-          '<button class="btn btn-mini" onclick="cardTestAccount(\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
-          '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
-        "</div>" +
-      "</div>";
-    }).join("");
+    for (const a of accs) { const d = acctDetail(key, a.id); if (d && d.has_session) loggedCount++; }
     const summary = accs.length + " 账号" + (cap ? " · " + loggedCount + " 已登录" : "");
     box.insertAdjacentHTML("beforeend",
       '<div class="site-card" id="card_' + key + '">' +
@@ -863,9 +805,93 @@ function renderSiteCards(serverSites) {
           '<button class="btn btn-mini" onclick="openAddAccount(\'' + key + '\')" title="按站点支持的方式添加账号">＋ 添加账号</button>' +
           '<button class="btn btn-mini" onclick="openSiteEditor(\'' + key + '\')">编辑账号</button>' +
         "</div>" +
-        (rows ? '<div class="acct-grid">' + rows + "</div>" : '<div class="acct-empty">暂无账号</div>') +
       "</div>");
   }
+  renderAccountList(added);
+}
+
+/* 全局账号列表：把所有站点已配置账号混合为一个 3 列网格，站点来源用卡上色块小标签区分。
+ * 卡片内容与站点总览解耦：标题备注优先、workbuddy/anyrouter 显示积分/余额、其余站点无余额行，
+ * 会话/最后签到状态与登录/启停/测试/删除操作保留。 */
+function renderAccountList(added) {
+  const sec = $("acctSection");
+  const list = $("acctList");
+  const cnt = $("acctSectionCount");
+  if (!list) return;
+  const cards = [];
+  for (const [key, st] of added) {
+    const accs = Array.isArray(st.accounts) ? st.accounts : [];
+    const cap = LOGIN_CAPS[key] === true;
+    for (const a of accs) cards.push(renderAcctCard(key, a, cap));
+  }
+  list.innerHTML = cards.join("");
+  if (cnt) cnt.textContent = cards.length ? "共 " + cards.length + " 个账号 · 跨站点混合" : "";
+  if (sec) sec.hidden = cards.length === 0;
+}
+
+/** 单个账号卡（全局账号列表用）：站点来源标签 + 标题（备注优先）+ 余额/积分 + 状态 + 操作。 */
+function renderAcctCard(key, a, cap) {
+  const d = acctDetail(key, a.id);
+  const hasSession = d ? !!d.has_session : false;
+  // 标题：备注优先，其次站点名（label 脱敏标识降级为副标题）
+  const title = a.remark || (d && d.site_name) || siteName(key) || ("账号 " + (a.id || ""));
+  const subLabel = a.label || (d && d.label) || "";
+  const enabled = a.enabled !== false;
+  const last = d ? d.last : null;
+  // 站点来源标签（色块 + 站点名）：跨站点混合列表中区分账号归属
+  const siteTag = '<div class="acct-site">' +
+    '<span class="site-tag ' + siteTagClass(key) + '" style="width:18px;height:18px;border-radius:6px;font-size:9px">' + esc(siteShort(key)) + "</span>" +
+    '<span class="nm" title="' + esc(siteName(key)) + '">' + esc(siteName(key)) + "</span></div>";
+  let dayBadge;
+  if (last && last.status === "执行失败") {
+    dayBadge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + esc(shortTime(last.time)) + "</span></span>";
+  } else if (last) {
+    dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + esc(shortTime(last.time)) + "</span></span>";
+  } else {
+    dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">未签</span></span>';
+  }
+  let loginBadge = "";
+  if (cap || hasSession) {
+    loginBadge = hasSession
+      ? '<span class="login-badge on"><span class="dot"></span>已登录</span>'
+      : '<span class="login-badge"><span class="dot"></span>未登录</span>';
+  }
+  // 余额 / 积分行：仅 supports_balance 的账号（workbuddy 积分 / anyrouter 余额）显示
+  let balLine = "";
+  if (d && d.supports_balance) {
+    const bl = esc(d.balance_label || "余额");
+    if (d.balance_display) {
+      let delta = "";
+      if (d.balance_delta_display) {
+        const up = Number(d.balance_delta) > 0;
+        delta = '<span class="bd ' + (up ? "up" : "down") + '">' + esc(d.balance_delta_display) + "</span>";
+      }
+      balLine = '<div class="acct-bal"><span class="bl">' + bl + '</span><span class="bv">' + esc(d.balance_display) + "</span>" + delta + "</div>";
+    } else {
+      balLine = '<div class="acct-bal empty"><span class="bl">' + bl + '</span><span class="bv">—</span></div>';
+    }
+  }
+  let loginBtn = "";
+  if (cap) {
+    loginBtn = '<button class="btn btn-mini" onclick="siteLogin(\'' + key + "','" + esc(a.id || "") + '\')">' +
+      (hasSession ? "重新登录" : "登录") + "</button>";
+  }
+  const enToggle = '<button class="btn btn-mini" title="' + (enabled ? "点击停用该账号" : "点击启用该账号") + '" onclick="toggleAccountEnabled(\'' + key + "','" + esc(a.id || "") + "'," + (enabled ? "false" : "true") + ')">' +
+    (enabled ? "停用" : "启用") + "</button>";
+  return '<div class="acct-card"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
+    siteTag +
+    '<div class="acct-card-top"><div class="acct-card-title">' +
+      '<div class="t" title="' + esc(title) + '">' + esc(title) + "</div>" +
+      (subLabel ? '<div class="sub" title="' + esc(subLabel) + '">' + esc(subLabel) + "</div>" : "") +
+    "</div>" + loginBadge + "</div>" +
+    balLine +
+    '<div class="acct-meta">' + dayBadge + "</div>" +
+    '<div class="acct-actions">' +
+      loginBtn + enToggle +
+      '<button class="btn btn-mini" onclick="cardTestAccount(\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
+      '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
+    "</div>" +
+  "</div>";
 }
 
 /** 探测各站点交互登录能力：GET {site}_login/status（纯能力检查，不触网）→ 缓存 LOGIN_CAPS → 重渲染 */
@@ -1273,37 +1299,6 @@ async function toggleAccountEnabled(key, accountId, next) {
   else toast("操作失败：" + (r.message || ""), "err");
 }
 
-/* ── 积分面板条（读 checkin/points；失败静默隐藏，不阻塞主流程）── */
-let pointsExpanded = false;
-async function refreshPoints() {
-  const bar = $("pointsBar");
-  if (!bar) return;
-  const setStat = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  const r = await call("checkin/points");
-  if (!r || !r.success || !r.data) { bar.hidden = true; setStat("statPoints", "—"); setStat("statPointsFoot", "暂无积分数据"); return; }
-  const d = r.data;
-  const sites = (d.sites || [])
-    .filter((s) => s.count > 0 || s.total_points)
-    .sort((a, b) => (Number(b.total_points) || 0) - (Number(a.total_points) || 0)); // 按累计积分降序
-  setStat("statPoints", (d.total_points != null && d.total_points !== "") ? String(d.total_points) : "—");
-  setStat("statPointsFoot", sites.length ? "覆盖 " + sites.length + " 个站点" : "暂无积分数据");
-  if (!sites.length) { bar.hidden = true; return; }
-  const chips = sites.map((s) =>
-    '<span class="points-chip">' + esc(s.site_name) + " <b>" + esc(String(s.total_points)) + "</b></span>").join("");
-  const foot = '<span class="muted" style="font-size:11px;margin-left:auto">共 ' + sites.length + " 站 · 累计 " + esc(String(d.total_points)) + "</span>";
-  let detail = "";
-  if (pointsExpanded) {
-    const trs = sites.map((s) =>
-      "<tr><td>" + esc(s.site_name) + "</td><td>" + esc(String(s.count)) + "</td><td>" +
-      esc(String(s.total_points)) + "</td><td>" + esc(shortTime(s.last_time) || "—") + "</td></tr>").join("");
-    detail = '<div class="points-detail"><table><thead><tr><th>站点</th><th>次数</th><th>累计</th><th>最后</th></tr></thead><tbody>' +
-      trs + "</tbody></table></div>";
-  }
-  bar.innerHTML = '<div class="points-bar-head" onclick="togglePoints()">' +
-    '<span class="muted" style="font-size:12px">累计积分</span>' + chips + foot + "</div>" + detail;
-  bar.hidden = false;
-}
-function togglePoints() { pointsExpanded = !pointsExpanded; refreshPoints(); }
 function shortTime(t) {
   if (!t) return "";
   const m = String(t).match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
