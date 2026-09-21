@@ -286,12 +286,20 @@
   .acct-section-head .c { font-size: 12px; color: var(--muted); }
   .acct-grid-global { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
   @media (max-width: 900px) { .acct-grid-global { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  /* 分组账号列表：NewApi / WorkBuddy / 其他站点，组头 + 各自 3 列网格 */
-  .acct-group { margin-bottom: 18px; }
-  .acct-group-head { display: flex; align-items: baseline; gap: 8px; margin: 2px 2px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-  .acct-group-head .gt { font-weight: 700; font-size: 13.5px; }
-  .acct-group-head .gc { font-size: 12px; color: var(--muted); }
-  .acct-group-empty { font-size: 12.5px; color: var(--muted); padding: 4px 2px 2px; }
+  /* 分组账号标签栏：NewApi / WorkBuddy / 其他站点，点击切换渲染该组账号（行云胶囊，选中态品牌渐变） */
+  .acct-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 2px 14px; }
+  .acct-tab { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px;
+              border: 1px solid var(--border); border-radius: 999px; background: var(--card);
+              color: var(--muted); font-size: 13px; cursor: pointer;
+              transition: color .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease; }
+  .acct-tab:hover { color: var(--ink); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .acct-tab.active { background: var(--brand-grad); border-color: transparent; color: #fff; font-weight: 600;
+                     box-shadow: 0 6px 16px rgba(79,70,229,.28); }
+  .acct-tab.active:hover { color: #fff; }
+  .acct-tab .acct-tab-c { font-size: 11.5px; font-variant-numeric: tabular-nums;
+                          padding: 1px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--muted); }
+  .acct-tab.active .acct-tab-c { background: rgba(255,255,255,.22); color: #fff; }
+  .acct-group-empty { font-size: 12.5px; color: var(--muted); padding: 16px 2px; text-align: center; }
   @media (max-width: 560px) { .acct-grid-global { grid-template-columns: 1fr; } }
   /* 账号卡站点来源标识（色块小标签 + 站点名） */
   .acct-site { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; }
@@ -409,7 +417,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.4</span>
+      <span class="ver" id="appVersion">v1.3.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -445,6 +453,7 @@
             <span class="t">账号列表</span>
             <span class="c" id="acctSectionCount"></span>
           </div>
+          <div class="acct-tabs" id="acctTabs" role="tablist"></div>
           <div id="acctList"></div>
         </section>
         <div class="summary-line" id="runResult"></div>
@@ -703,45 +712,74 @@ const ACCT_GROUPS = [
   { title: "其他站点", keys: ["flzt", "right_forum", "ypojie"] },
 ];
 
-/* 分组账号列表：每组一个区块（组头 + 3 列账号卡网格），组内无账号仍显示组头 + 空提示。
- * 卡片内容与站点总览解耦：标题备注优先、workbuddy/anyrouter 显示积分/余额、其余站点无余额行，
- * 会话/最后签到状态与登录/启停/测试/删除操作保留。 */
-function renderAccountList() {
-  const list = $("acctList");
-  const cnt = $("acctSectionCount");
-  if (!list) return;
+/* 当前激活的分组标签索引（ACCT_GROUPS 下标）。切换 tab 即切换渲染，无需重新请求。 */
+let ACCT_TAB = 0;
+
+/* 计算每个分组实际归入的站点 key（「其他站点」兜底收纳未归前两组的站点），返回与 ACCT_GROUPS 等长的数组。 */
+function acctGroupKeys() {
   const data = SITE_DATA || {};
-  const grouped = new Set();  // 已归入前两组的站点 key，供「其他站点」兜底去重
+  const grouped = new Set();
   for (const g of ACCT_GROUPS) {
     if (g.title !== "其他站点") for (const k of g.keys) grouped.add(k);
   }
-  const blocks = [];
-  let total = 0;
-  for (const g of ACCT_GROUPS) {
-    // 组内站点 key：显式列出的 + （仅「其他站点」）兜底收纳未归组的站点
+  return ACCT_GROUPS.map((g) => {
     let keys = g.keys.slice();
     if (g.title === "其他站点") {
       for (const k of Object.keys(data)) {
         if (!grouped.has(k) && !keys.includes(k)) keys.push(k);
       }
     }
-    const cards = [];
-    for (const key of keys) {
-      const st = data[key];
-      const accs = Array.isArray(st && st.accounts) ? st.accounts : [];
-      const cap = LOGIN_CAPS[key] === true;
-      for (const a of accs) cards.push(renderAcctCard(key, a, cap));
-    }
-    total += cards.length;
-    const head = '<div class="acct-group-head"><span class="gt">' + esc(g.title) + '</span>' +
-      '<span class="gc">' + cards.length + ' 个账号</span></div>';
-    const bodyHtml = cards.length
-      ? '<div class="acct-grid-global">' + cards.join("") + "</div>"
-      : '<div class="acct-group-empty">该分组暂无账号，点击上方「＋ 添加账号」添加</div>';
-    blocks.push('<div class="acct-group">' + head + bodyHtml + "</div>");
+    return keys;
+  });
+}
+
+/* 某分组的账号卡 HTML 数组（供计数与渲染共用）。 */
+function acctGroupCards(keys) {
+  const data = SITE_DATA || {};
+  const cards = [];
+  for (const key of keys) {
+    const st = data[key];
+    const accs = Array.isArray(st && st.accounts) ? st.accounts : [];
+    const cap = LOGIN_CAPS[key] === true;
+    for (const a of accs) cards.push(renderAcctCard(key, a, cap));
   }
-  list.innerHTML = blocks.join("");
-  if (cnt) cnt.textContent = total ? "共 " + total + " 个账号 · 分 3 组" : "";
+  return cards;
+}
+
+/* 分组账号标签页：三个 tab（NewApi / WorkBuddy / 其他站点）+ 内容区仅渲染激活组的 3 列卡片网格。
+ * 卡片内容与站点总览解耦：标题备注优先、workbuddy/anyrouter 显示积分/余额、其余站点无余额行，
+ * 会话/最后签到状态与登录/启停/测试/删除操作保留。切换 tab 仅切换渲染（accounts 数据已全量）。 */
+function renderAccountList() {
+  const tabsEl = $("acctTabs");
+  const list = $("acctList");
+  const cnt = $("acctSectionCount");
+  if (!list) return;
+  const groupKeys = acctGroupKeys();
+  const counts = groupKeys.map((keys) => acctGroupCards(keys).length);
+  const total = counts.reduce((a, b) => a + b, 0);
+  // 默认激活：当前激活组为空则回退到第一个有账号的组（全空则 NewApi=0）
+  if (!(counts[ACCT_TAB] > 0)) {
+    const firstNonEmpty = counts.findIndex((c) => c > 0);
+    ACCT_TAB = firstNonEmpty >= 0 ? firstNonEmpty : 0;
+  }
+  if (tabsEl) {
+    tabsEl.innerHTML = ACCT_GROUPS.map((g, i) =>
+      '<button type="button" class="acct-tab' + (i === ACCT_TAB ? " active" : "") +
+      '" role="tab" aria-selected="' + (i === ACCT_TAB ? "true" : "false") +
+      '" onclick="switchAcctTab(' + i + ')">' + esc(g.title) +
+      '<span class="acct-tab-c">' + counts[i] + "</span></button>").join("");
+  }
+  const cards = acctGroupCards(groupKeys[ACCT_TAB]);
+  list.innerHTML = cards.length
+    ? '<div class="acct-grid-global">' + cards.join("") + "</div>"
+    : '<div class="acct-group-empty">该分组暂无账号，点击上方「＋ 添加账号」添加</div>';
+  if (cnt) cnt.textContent = total ? "共 " + total + " 个账号" : "";
+}
+
+/* 切换分组标签页：更新激活组并重渲染（数据已全量，无需重新请求）。 */
+function switchAcctTab(i) {
+  ACCT_TAB = i;
+  renderAccountList();
 }
 
 /** 单个账号卡（全局账号列表用）：站点来源标签 + 标题（备注优先）+ 余额/积分 + 状态 + 操作。 */
