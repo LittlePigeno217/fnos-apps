@@ -155,12 +155,12 @@ class Server {
             if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
             const r = await adapter.runCheckin(acc);
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
-            history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, error: "" });
+            history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" });
             this._log(`签到 ${adapter.name} → ${r.status}`);
           } catch (err) {
             const msg = err.message || String(err);
             results.push({ site_key: key, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "执行失败", error: msg });
-            history.push({ time: new Date().toLocaleString("zh-CN", { hour12: false }), site: key, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", error: msg });
+            history.push({ time: new Date().toLocaleString("zh-CN", { hour12: false }), site: key, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", reward: "", total: "", error: msg });
             this._log(`签到 ${adapter.name}${who} 失败：${msg}`);
           }
         }
@@ -199,10 +199,62 @@ class Server {
     return ok({ records: this._store.getHistory(Number(limit) || 50) });
   }
 
+  /**
+   * 积分聚合：按 site 分组统计最近 window 条 history 中的 reward。
+   * history 最新在前（Store.appendHistory 头插），每组取第一条（最新）的 site_name 与 last_time。
+   * reward 单位因站而异（MB / 积分 / USD…），故 total_points 仅做粗略展示，
+   * per-site 的 total_points 才是有效口径，不跨站换算。
+   */
+  points(window = 500) {
+    const hist = this._store.getHistory(window) || [];
+    const bySite = new Map(); // site -> { count, sum }
+    for (const h of hist) {
+      const key = h && h.site;
+      if (!key) continue;
+      const g = bySite.get(key) || { count: 0, sum: 0 };
+      g.count += 1;
+      g.sum += parseReward(h.reward);
+      bySite.set(key, g);
+    }
+    const sites = [];
+    let totalPoints = 0;
+    for (const [key, g] of bySite) {
+      const first = hist.find((h) => h.site === key) || {};
+      sites.push({
+        site: key,
+        site_name: first.site_name || key, // 组内最新一条的 site_name
+        count: g.count,
+        total_points: Number(g.sum.toFixed(4)), // 防浮点尾巴
+        last_time: first.time || "",
+      });
+      totalPoints += g.sum;
+    }
+    return ok({
+      sites,
+      total_count: hist.length,
+      total_points: Number(totalPoints.toFixed(4)),
+      window,
+    });
+  }
+
   clearHistory() {
     this._store.clearHistory();
     return ok({ cleared: true });
   }
+
+  // 阶段 2 TODO: 账号运维方法（importAccounts/exportAccounts/reorderAccounts/clearAccounts）
+}
+
+/**
+ * 从 reward 字符串中提取「第一个数字 token」作为积分数值。
+ * 命中情况：2.5积分 → 2.5；"+0.0001" → 0.0001；"0" → 0；"-" / 空 / 旧记录无 reward → 0。
+ */
+function parseReward(reward) {
+  if (typeof reward !== "string" && typeof reward !== "number") return 0;
+  const m = String(reward).match(/-?\d+(\.\d+)?/);
+  if (!m) return 0;
+  const n = parseFloat(m[0]);
+  return Number.isFinite(n) ? n : 0;
 }
 
 /** 判断 history 时间字符串（'2026/9/20 23:40:15'）是否为今天 */

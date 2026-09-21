@@ -9,6 +9,7 @@ const { Store } = require("./store");
 const { Server } = require("./server");
 const notify = require("./notify");
 const { checkHotfix, applyHotfix } = require("./hotfix");
+const { ROUTES } = require("./router");
 
 const DATA_DIR = process.env.CHECKIN_DATA_DIR || path.join(__dirname, "..", "..", "..", "@appdata", "checkin");
 const SOCKET_PATH = process.env.CHECKIN_SOCKET || path.join(__dirname, "..", "app.sock");
@@ -136,26 +137,14 @@ function readBody(req) {
 /* ── HTTP 路由：/action/<name>（对齐 115网盘助手主应用做法）──────
  * fnOS 网关对微应用以 /app/checkin/action/* 转发动态 API（独立于静态页面路径），
  * 前端统一请求 /app/checkin/action/<name>；同时兼容裸路径（取最后一段）。
- * ACTIONS: action 名 → [允许方法, 处理器]（白名单）。 */
-const ACTIONS = new Map([
-  ["get_config", ["GET", "getConfig"]],
-  ["save_config", ["POST", "saveConfig"]],
-  ["status", ["GET", "status"]],
-  ["run", ["POST", "runOnce"]],
-  ["test_login", ["POST", "testLogin"]],
-  ["history", ["GET", "getHistory"]],
-  ["history_clear", ["POST", "clearHistory"]],
-  ["get_logs", ["GET", "getLogs"]],
-  ["clear_logs", ["POST", "clearLogs"]],
-  ["check_hotfix", ["GET", "checkHotfix"]],
-  ["apply_hotfix", ["POST", "applyHotfix"]],
-]);
-
+ * 路由表（键 + 方法 → handlerKey）由 router.js 单一维护（ROUTES）；
+ * ACTION_HANDLERS 只定义处理逻辑，handlerKey 为字符串在此查表调用。 */
 const ACTION_HANDLERS = {
   getConfig: () => api.getConfig(),
   saveConfig: (body) => api.saveConfig(body),
   status: () => api.status(),
   runOnce: (body) => api.runOnce(body.sites),
+  points: () => api.points(),
   testLogin: (body) => api.testLogin(body.site, body.account_id),
   getHistory: (body, ctx) => api.getHistory(new URL(ctx.req.url, "http://x").searchParams.get("limit")),
   clearHistory: () => api.clearHistory(),
@@ -248,16 +237,20 @@ async function handle(req, res) {
       return sendFile(path.join(APP_DIR, "www", "index.html"), req.url);
     }
 
-    // action 提取：/action/<name> 或裸路径最后段（兼容旧前端）
+    // action 提取：
+    //  - /action/ 分支：取 /action/ 之后「整段（含斜杠）」作为路由键（如 checkin/points），
+    //    去尾部 /；空段视为无效（命名空间路由）。
+    //  - 裸路径分支：取最后一段（兼容旧前端扁平名）。
     let actionName;
     if (pathname.includes("/action/")) {
-      actionName = pathname.split("/action/", 2)[1].split("/", 1)[0];
+      actionName = pathname.split("/action/", 2)[1].replace(/\/+$/, "");
     } else {
       actionName = pathname.split("/").filter(Boolean).pop() || "";
     }
-    if (!ACTIONS.has(actionName)) return send({ success: false, message: "404" });
-    const [allowedMethod, handlerKey] = ACTIONS.get(actionName);
-    if (method !== allowedMethod) return send({ success: false, message: "405 方法不允许" });
+    const route = ROUTES.get(actionName);
+    if (!route) return send({ success: false, message: "404" });
+    const handlerKey = route[method];
+    if (!handlerKey) return send({ success: false, message: "405 方法不允许" });
     const handler = ACTION_HANDLERS[handlerKey];
     if (typeof handler !== "function") return send({ success: false, message: "500 未找到处理器" });
 
