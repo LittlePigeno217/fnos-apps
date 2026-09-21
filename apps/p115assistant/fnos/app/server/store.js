@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.1.9",
+  version: "1.2.0",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -50,7 +50,7 @@ const DEFAULT_CONFIG = {
 };
 
 const ENCRYPTION_SALT = "p115liteassistant_v1";
-const ENCRYPTED_FIELDS = ["cookie", "tokens", "fnos_password"];
+const ENCRYPTED_FIELDS = ["cookie", "tokens", "fnos_password", "feishu_webhook"];
 const REDIRECT_SECRET_KEY = "p115liteassistant_redirect_secret";
 const CONFIG_KEY = "p115assistant_config";
 const HISTORY_KEY = "p115assistant_history";
