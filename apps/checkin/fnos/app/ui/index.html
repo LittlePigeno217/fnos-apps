@@ -398,7 +398,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.2</span>
+      <span class="ver" id="appVersion">v1.2.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -736,6 +736,7 @@ async function refreshOverview() {
 let SITE_DATA = {};
 let ACCT_DATA = {};   // checkin/accounts 派生：per-account has_session/last/points（脱敏）
 let LOGIN_CAPS = {};  // site -> bool，交互登录能力（探测 {site}_login/status 得出）
+let LOGIN_MODE = {};  // site -> "qr"|"form"，交互登录模式（qr 站点显示「扫码添加账号」）
 
 /** 从 ACCT_DATA 取某账号的脱敏明细（has_session/last/points）；无则 null（退回站点级） */
 function acctDetail(key, id) {
@@ -810,6 +811,7 @@ function renderSiteCards(serverSites) {
           '<span class="muted" style="font-size:11px;white-space:nowrap">' + esc(summary) + "</span>" +
           '<span class="muted" style="font-size:11px;white-space:nowrap">' + (st.enabled ? "已启用" : "已停用") + "</span>" +
           '<button class="btn btn-mini" onclick="runSiteRow(\'' + key + '\')" title="立即签到该站点">签到</button>' +
+          (LOGIN_MODE[key] === "qr" ? '<button class="btn btn-mini" onclick="siteLogin(\'' + key + "','')\" title=\"微信扫码自动添加账号\">＋ 扫码登录</button>" : "") +
           '<button class="btn btn-mini" onclick="openSiteEditor(\'' + key + '\')">编辑 / 添加账号</button>' +
         "</div>" +
         '<div class="acct-list">' + (rows || '<div class="acct-empty">暂无账号</div>') + "</div>" +
@@ -825,6 +827,7 @@ async function probeLoginCaps() {
     if (k in LOGIN_CAPS) return;
     const r = await call("checkin/" + k + "_login/status");
     LOGIN_CAPS[k] = !!(r && r.success);
+    LOGIN_MODE[k] = (r && r.data && r.data.login_mode) || "";
   }));
   renderSiteCards(SITE_DATA);
 }
@@ -862,13 +865,21 @@ async function siteLogin(key, accountId) {
     return;
   }
   const d = r.data || {};
-  // 二维码 / 跳转 URL（qr/url 模式预留）：有则渲染占位并进入轮询
+  // qr 模式：渲染二维码（后端本地生成的图片）+ 浏览器打开 fallback，进入轮询
   if (d.qr || d.qr_url || d.login_url || d.status === "pending") {
     const qr = $("loginQr");
     qr.hidden = false;
-    qr.textContent = d.qr_url || d.login_url ? "请在新窗口完成登录" : "二维码占位";
-    if (d.login_url || d.url) { try { window.open(d.login_url || d.url, "_blank", "noopener"); } catch { /* 忽略弹窗拦截 */ } }
-    $("loginState").textContent = d.message || "等待登录确认…";
+    const img = d.qr || d.qr_url;
+    if (img) {
+      qr.innerHTML = '<img src="' + esc(img) + '" alt="登录二维码" style="width:100%;height:100%;object-fit:contain;border-radius:8px">';
+    } else {
+      qr.textContent = "二维码生成中…";
+    }
+    const link = (d.login_url || d.url)
+      ? '<div style="margin-top:8px"><a href="' + esc(d.login_url || d.url) + '" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent,#4c8bf5)">或点此在浏览器打开授权</a></div>'
+      : "";
+    $("loginState").innerHTML = esc(d.message || "手机端 CodeBuddy 扫码即可自动添加账号") + "，请扫码后等待…" + link;
+    $("loginState").className = "muted";
     loginPoll(d.token || "");
     return;
   }

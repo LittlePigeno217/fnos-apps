@@ -63,6 +63,16 @@ function sessionFromCookie(cookieStr) {
   return s;
 }
 
+/** 从对象里按候选键顺序取第一个非空字符串（上游字段大小写/命名不稳定时的宽容取值） */
+function firstStr(obj, keys) {
+  if (!obj || typeof obj !== "object") return "";
+  for (const k of keys) {
+    const v = obj[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
+}
+
 /* ── FLZT ─────────────────────────────────────────────────── */
 const FLZT = {
   key: "flzt",
@@ -680,8 +690,13 @@ const ANYROUTER = {
  *   - 积分：POST https://www.codebuddy.cn/v2/billing/meter/get-user-resource
  *   - 刷新：POST https://copilot.tencent.com/v2/plugin/auth/token/refresh（体 {refresh_token}）
  * 鉴权：Authorization: Bearer <access_token>；企业上下文 X-Enterprise-Id / X-Domain。
- * 扫码登录（微信）为异步二维码流，本 adapter 不实现（loginFlow 是同步 form 模型）；
- * 用户在账号表单手填 access_token / refresh_token，签到前若过期用 refresh_token 自动续期。
+ * 扫码登录（微信）为异步二维码流（loginFlow.mode="qr"，对齐行云）：
+ *   1. POST copilot.tencent.com/v2/plugin/auth/state?platform=CLI → 建会话，回 state + auth_url（二维码内容）
+ *   2. 轮询 GET /v2/plugin/auth/token?state=… → 未确认回业务码 11217（pending）；确认后回 data.accessToken/refreshToken/domain（camelCase）
+ *   3. 带 Bearer GET /v2/plugin/login/account?state=… → uid/nickname/enterpriseId
+ *   扫码链路专用 UA「CLI/2.63.2 CodeBuddy/2.63.2」+ X-Requested-With + Origin/Referer codebuddy.cn
+ *   （auth/state 只认这套头，浏览器 UA 会打到不同网关规则）；会话 TTL 5 分钟。
+ * 手填 access_token / refresh_token 表单作为 fallback 保留（签到前过期用 refresh_token 自动续期）。
  */
 const WORKBUDDY = {
   key: "workbuddy",
@@ -714,6 +729,97 @@ const WORKBUDDY = {
   },
   getAccountLabel(cfg) {
     return (cfg && (cfg.uid || cfg.remark)) || "WorkBuddy";
+  },
+
+  /* 微信扫码登录流（qr 模式）：server 层负责会话持有（token→state）与轮询编排、
+   * 成功后自动建账号；adapter 只封装两步上游协议。tokens 绝不落日志/报告。 */
+  loginFlow: {
+    mode: "qr",
+    desc: "微信扫码登录，自动添加账号（对齐行云签到中心）",
+    ttl_ms: 5 * 60 * 1000, // 扫码会话有效期 5 分钟（对齐上游 wbLoginTTL）
+    tip: "手机端 CodeBuddy 扫码即可自动添加账号",
+    authStatePath: "/v2/plugin/auth/state",
+    authTokenPath: "/v2/plugin/auth/token",
+    loginAccountPath: "/v2/plugin/login/account",
+    // 扫码链路专用 UA（auth/state 只认这套头，浏览器 UA 会打到不同网关规则）
+    loginUA: "CLI/2.63.2 CodeBuddy/2.63.2",
+
+    _headers() {
+      return {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/plain, */*",
+        "User-Agent": this.loginUA,
+        "X-Requested-With": "XMLHttpRequest",
+        Origin: "https://www.codebuddy.cn",
+        Referer: "https://www.codebuddy.cn/",
+      };
+    },
+
+    /** 合并上游包裹层字段（data 覆盖顶层，命名/大小写不稳定时宽容取值） */
+    _merged(j) {
+      if (!j || typeof j !== "object") return {};
+      return { ...j, ...(j.data && typeof j.data === "object" ? j.data : {}) };
+    },
+
+    /** 建扫码会话：POST auth/state?platform=CLI → {state, auth_url}（auth_url 即二维码内容） */
+    async startSession(cfg) {
+      const s = new Session();
+      const r = await s.postJson(
+        WORKBUDDY.authBase + this.authStatePath + "?platform=CLI",
+        {},
+        { headers: this._headers(), timeout: 15000, useProxy: cfg && cfg.use_proxy },
+      );
+      const j = parseJson(r.text) || {};
+      const cand = this._merged(j);
+      const state = firstStr(cand, ["state", "auth_state", "ticket"]);
+      const authUrl = firstStr(cand, ["auth_url", "authUrl", "url", "login_url"]);
+      if (!state || !authUrl) {
+        throw new Error(WORKBUDDY._msg(j) || `扫码会话创建失败（HTTP ${r.status}，缺少 state/authUrl）`);
+      }
+      return { state, auth_url: authUrl };
+    },
+
+    /** 轮询一次：pending / expired / ready（ready 带 account={access_token, refresh_token, uid, ...}） */
+    async poll(sess, cfg) {
+      const s = new Session();
+      const tr = await s.get(
+        WORKBUDDY.authBase + this.authTokenPath + "?state=" + encodeURIComponent(sess.state),
+        { headers: this._headers(), timeout: 15000, useProxy: cfg && cfg.use_proxy },
+      );
+      const tj = parseJson(tr.text) || {};
+      const tok = this._merged(tj);
+      const access = firstStr(tok, ["accessToken", "access_token"]);
+      if (!access) {
+        // 未扫码/未确认（业务码 11217 login ing…）→ pending；会话失效关键词 → expired
+        const text = WORKBUDDY._msg(tj);
+        if (/过期|expired|失效|invalid|不存在/i.test(text)) {
+          return { state: "expired", message: text || "登录已过期，请重新扫码" };
+        }
+        return { state: "pending" };
+      }
+      const account = {
+        access_token: access,
+        refresh_token: firstStr(tok, ["refreshToken", "refresh_token"]),
+      };
+      const domain = firstStr(tok, ["domain"]);
+      if (domain) account.domain = domain;
+      // 二段：带 Bearer 拉账号信息（uid/nickname/enterpriseId）——失败不影响登录
+      try {
+        const h = { ...this._headers(), Authorization: "Bearer " + access };
+        const ar = await s.get(
+          WORKBUDDY.authBase + this.loginAccountPath + "?state=" + encodeURIComponent(sess.state),
+          { headers: h, timeout: 15000, useProxy: cfg && cfg.use_proxy },
+        );
+        const cand = this._merged(parseJson(ar.text) || {});
+        const uid = firstStr(cand, ["uid", "user_id", "userid"]);
+        if (uid) account.uid = uid;
+        const nick = firstStr(cand, ["nickname", "display_name", "username"]);
+        if (nick) account.remark = nick;
+        const ent = firstStr(cand, ["enterpriseId", "enterprise_id"]);
+        if (ent) account.enterprise_id = ent;
+      } catch { /* 账号信息拉取失败：仍以 tokens 完成登录 */ }
+      return { state: "ready", account };
+    },
   },
 
   /** 计费端点公共头（Bearer + 企业上下文） */

@@ -4,7 +4,21 @@
  * 方法：getConfig / saveConfig / status / runOnce / testLogin / getHistory / clearHistory
  * 统一返回 { success, message, data }。
  */
+const crypto = require("crypto");
 const { ADAPTERS } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
+const qrcode = require("./qrcode");        // 纯 JS 二维码编码（扫码登录 auth_url → 图片）
+
+/** auth_url → data:image/gif base64 二维码（离线本地生成，不外传登录票据） */
+function renderQrDataUrl(text) {
+  try {
+    const t = qrcode(0, "M"); // type 0=自动版本，纠错级 M
+    t.addData(String(text));
+    t.make();
+    return t.createDataURL(4, 8); // cellSize=4, margin=8
+  } catch {
+    return ""; // 生成失败：前端回落展示链接
+  }
+}
 
 function ok(data, message = "") {
   return { success: true, message, data };
@@ -19,6 +33,7 @@ class Server {
     this._notifier = notifier || null;
     this._log = log || (() => {});
     this._running = false; // 防并发执行
+    this._loginSessions = new Map(); // 扫码登录会话：token → { site, account_id, sess, expires_at }（进程内，重启即失效）
   }
 
   getConfig() {
@@ -397,14 +412,48 @@ class Server {
     return ok({ site, cleared: true }, "已清空该站点账号");
   }
 
-  /* ── 阶段 2：交互登录（loginFlow，form 模式一步完成）───────────── */
+  /* ── 阶段 2/4：交互登录（loginFlow）─────────────────────────────
+   * 两种模式统一 {site}_login/{init,status}：
+   *   form（flzt/ypojie/anyrouter）：init 同步产出 session 写入账号，status 恒 ready（行为不回归）。
+   *   qr（workbuddy）：init 建上游扫码会话 → 返回二维码 + token（不建账号）；
+   *     前端轮询 status?token= → pending/expired/ready；ready 时自动建/更账号。tokens 绝不回吐/落日志。 */
 
-  /** 触发交互登录：产出 session 写入账号并落盘（不回吐 session 明文） */
+  /** 触发交互登录：form 模式写入账号 session；qr 模式建扫码会话并回二维码 */
   async loginFlowInit(body) {
     const { site, account_id } = body || {};
     const adapter = ADAPTERS[site];
     if (!adapter) return fail(`未知站点：${site}`);
-    if (!adapter.loginFlow) return fail("该站点不支持交互登录（请用 Cookie 配置）");
+    const flow = adapter.loginFlow;
+    if (!flow) return fail("该站点不支持交互登录（请用 Cookie 配置）");
+
+    // qr 模式：无需既有账号，建上游会话 → 前端展示二维码 → 轮询 status
+    if (flow.mode === "qr") {
+      try {
+        const site_cfg = this._store.getConfig().sites[site] || {};
+        const sess = await flow.startSession({ use_proxy: !!site_cfg.use_proxy });
+        // 清理过期会话，避免内存累积
+        const nowMs = Date.now();
+        for (const [k, v] of this._loginSessions) if (v.expires_at <= nowMs) this._loginSessions.delete(k);
+        const token = crypto.randomBytes(12).toString("hex");
+        this._loginSessions.set(token, {
+          site, account_id: account_id || null, sess,
+          expires_at: nowMs + (flow.ttl_ms || 5 * 60 * 1000),
+        });
+        return ok({
+          status: "pending",
+          state: "qr",
+          token,
+          login_url: sess.auth_url,          // 扫码链接（前端 QR 内容 + 浏览器打开 fallback）
+          qr: renderQrDataUrl(sess.auth_url), // data:image/gif 二维码（本地生成）
+          login_mode: "qr",
+          message: flow.tip || "请用手机扫码登录",
+        });
+      } catch (err) {
+        return fail(err.message || "扫码会话创建失败");
+      }
+    }
+
+    // form 模式：既有行为——同步登录产出 session 写入指定账号
     const cfg = this._store.getConfig();
     const accs = Array.isArray(cfg.sites[site].accounts) ? cfg.sites[site].accounts : [];
     const acc = account_id
@@ -420,6 +469,7 @@ class Server {
       return ok({
         status: r.status || "ready",
         session_type: r.session.type,
+        login_mode: "form",
         message: r.message || "登录成功",
         account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: true },
       });
@@ -428,13 +478,73 @@ class Server {
     }
   }
 
-  /** 交互登录状态（form 模式同步完成，恒 ready；token 占位备 qr/url 扩展） */
-  loginFlowStatus(body) {
-    const { site } = body || {};
+  /** 交互登录状态：form 恒 ready；qr 按 token 轮询上游（ready 时自动建账号） */
+  async loginFlowStatus(body) {
+    const { site, token } = body || {};
     const adapter = ADAPTERS[site];
     if (!adapter) return fail(`未知站点：${site}`);
-    if (!adapter.loginFlow) return fail("该站点不支持交互登录（请用 Cookie 配置）");
-    return ok({ state: "ready" });
+    const flow = adapter.loginFlow;
+    if (!flow) return fail("该站点不支持交互登录（请用 Cookie 配置）");
+
+    // form 模式：能力探测 + 同步完成（恒 ready）
+    if (flow.mode !== "qr") return ok({ state: "ready", login_mode: "form" });
+
+    // qr 模式：无 token（前端能力探测）→ 回 pending（success:true 即代表支持）
+    if (!token) return ok({ state: "pending", login_mode: "qr" });
+    const entry = this._loginSessions.get(token);
+    if (!entry || entry.site !== site) {
+      return ok({ state: "expired", login_mode: "qr", message: "登录会话不存在，请重新扫码" });
+    }
+    if (Date.now() > entry.expires_at) {
+      this._loginSessions.delete(token);
+      return ok({ state: "expired", login_mode: "qr", message: "二维码已过期，请重新获取" });
+    }
+    try {
+      const site_cfg = this._store.getConfig().sites[site] || {};
+      const r = await flow.poll(entry.sess, { use_proxy: !!site_cfg.use_proxy });
+      if (r.state === "ready") {
+        const acc = this._upsertLoginAccount(site, adapter, r.account || {}, entry.account_id);
+        this._loginSessions.delete(token);
+        this._log(`扫码登录成功：${adapter.name}（${adapter.getAccountLabel(acc)}）`);
+        return ok({ state: "ready", login_mode: "qr", account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: true } });
+      }
+      if (r.state === "expired") {
+        this._loginSessions.delete(token);
+        return ok({ state: "expired", login_mode: "qr", message: r.message || "二维码已失效，请重新获取" });
+      }
+      return ok({ state: "pending", login_mode: "qr" });
+    } catch (err) {
+      // 瞬时错误不打断轮询（对齐上游：保持等待态）
+      return ok({ state: "pending", login_mode: "qr", message: err.message || "" });
+    }
+  }
+
+  /** 扫码登录落账号：优先按 account_id、其次按 uid 去重更新；否则新建。凭据写入 adapter 字段。 */
+  _upsertLoginAccount(site, adapter, data, accountId) {
+    const cfg = this._store.getConfig();
+    if (!Array.isArray(cfg.sites[site].accounts)) cfg.sites[site].accounts = [];
+    const arr = cfg.sites[site].accounts;
+    const fieldKeys = adapter.fields.map((f) => f.key);
+    let acc = null;
+    if (accountId) acc = arr.find((a) => String(a.id) === String(accountId));
+    if (!acc && data.uid) acc = arr.find((a) => a.uid && String(a.uid) === String(data.uid));
+    if (!acc) {
+      let max = 0;
+      for (const a of arr) {
+        const m = parseInt(String(a.id || "").replace(/\D/g, ""), 10);
+        if (Number.isFinite(m) && m > max) max = m;
+      }
+      acc = { id: "a" + (max + 1), enabled: true, remark: "", session: null, session_ts: 0 };
+      for (const f of fieldKeys) acc[f] = "";
+      arr.push(acc);
+    }
+    // 仅写入 adapter 认识的字段；空值不覆盖（保留原凭据）
+    for (const f of fieldKeys) {
+      if (data[f] !== undefined && data[f] !== null && String(data[f]) !== "") acc[f] = String(data[f]);
+    }
+    if (data.remark && !acc.remark) acc.remark = String(data.remark);
+    this._store.save();
+    return acc;
   }
 }
 
