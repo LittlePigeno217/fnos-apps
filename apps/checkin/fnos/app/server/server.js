@@ -45,8 +45,6 @@ class Server {
       notify_enabled: cfg.notify_enabled,
       retry_count: cfg.retry_count,
       feishu_configured: !!(cfg.feishu_webhook),
-      auth_enabled: !!cfg.auth_enabled,          // 面板鉴权开关（前端设置页回填）
-      auth_configured: !!cfg.auth_token,          // 是否已设口令（绝不回吐口令值）
       sites: {},
     };
     for (const key of Object.keys(ADAPTERS)) {
@@ -84,12 +82,6 @@ class Server {
 
   saveConfig(patch) {
     patch = patch || {};
-    // 开启面板鉴权前必须已有（或本次同时提交）非空口令，否则拒绝——避免开启后无口令可登录被锁死
-    if (patch.auth_enabled === true) {
-      const cur = this._store.getConfig();
-      const incoming = patch.auth_token !== undefined ? String(patch.auth_token).trim() : "";
-      if (!incoming && !cur.auth_token) return fail("开启面板鉴权前必须设置访问口令");
-    }
     const cfg = this._store.saveConfig(patch);
     return ok({
       version: cfg.version,
@@ -97,8 +89,6 @@ class Server {
       cron: cfg.cron,
       notify_enabled: cfg.notify_enabled,
       feishu_configured: !!cfg.feishu_webhook,
-      auth_enabled: !!cfg.auth_enabled,
-      auth_configured: !!cfg.auth_token,
     });
   }
 

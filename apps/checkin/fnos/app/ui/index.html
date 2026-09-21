@@ -286,6 +286,12 @@
   .acct-section-head .c { font-size: 12px; color: var(--muted); }
   .acct-grid-global { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
   @media (max-width: 900px) { .acct-grid-global { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* 分组账号列表：NewApi / WorkBuddy / 其他站点，组头 + 各自 3 列网格 */
+  .acct-group { margin-bottom: 18px; }
+  .acct-group-head { display: flex; align-items: baseline; gap: 8px; margin: 2px 2px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .acct-group-head .gt { font-weight: 700; font-size: 13.5px; }
+  .acct-group-head .gc { font-size: 12px; color: var(--muted); }
+  .acct-group-empty { font-size: 12.5px; color: var(--muted); padding: 4px 2px 2px; }
   @media (max-width: 560px) { .acct-grid-global { grid-template-columns: 1fr; } }
   /* 账号卡站点来源标识（色块小标签 + 站点名） */
   .acct-site { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; }
@@ -403,7 +409,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.3</span>
+      <span class="ver" id="appVersion">v1.3.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -439,7 +445,7 @@
             <span class="t">账号列表</span>
             <span class="c" id="acctSectionCount"></span>
           </div>
-          <div id="acctList" class="acct-grid-global"></div>
+          <div id="acctList"></div>
         </section>
         <div class="summary-line" id="runResult"></div>
       </section>
@@ -473,21 +479,6 @@
               <input type="password" class="input mono" id="cfgWebhook" placeholder="https://open.feishu.cn/…" style="max-width:260px">
             </div>
           </div>
-          <div class="settings-group">
-            <header>面板访问保护</header>
-            <div class="setting-row">
-              <div><div class="setting-label">开启访问口令</div><div class="setting-desc">开启后打开面板需输入口令（本地轻量防护，非强加密）</div></div>
-              <label class="switch"><input type="checkbox" id="cfgAuthEnabled"><span class="track"></span></label>
-            </div>
-            <div class="setting-row">
-              <div><div class="setting-label">访问口令</div><div class="setting-desc" id="cfgAuthHint">留空 = 不修改；首次开启必须设置</div></div>
-              <input type="password" class="input mono" id="cfgAuthToken" placeholder="设置 / 修改口令" autocomplete="new-password" style="max-width:200px">
-            </div>
-            <div class="setting-row" id="cfgAuthLogoutRow" hidden>
-              <div><div class="setting-label">退出登录</div><div class="setting-desc">清除本机会话，下次打开需重新输入口令</div></div>
-              <button type="button" class="btn btn-mini" onclick="authLogout()">退出登录</button>
-            </div>
-          </div>
           <div class="settings-row">
             <span class="muted" id="cfgStatus"></span>
             <button class="btn primary" id="cfgSaveBtn" onclick="saveSettings()">保存设置</button>
@@ -511,19 +502,6 @@
 
     </div>
   </div>
-</div>
-
-<!-- 面板鉴权登录页（默认关闭；auth_enabled 且未登录时显示遮罩） -->
-<div id="authOverlay" style="display:none;position:fixed;inset:0;background:var(--bg);background-image:var(--bg-grad);z-index:2000;align-items:center;justify-content:center">
-  <form id="authForm" onsubmit="authLogin(); return false;" class="launcher-card">
-    <div class="launcher-logo">签</div>
-    <div class="launcher-title">签到中心</div>
-    <div class="launcher-sub">面板已开启访问保护，请输入访问口令</div>
-    <input class="input" type="password" id="authInput" placeholder="访问口令" autocomplete="current-password" style="text-align:center;margin-top:18px">
-    <div class="err" id="authErr" style="min-height:16px;margin:8px 0 0" hidden></div>
-    <button type="submit" class="btn primary" id="authBtn" style="width:100%;justify-content:center;margin-top:14px;padding:12px 18px;border-radius:14px">登录</button>
-    <div class="launcher-tip">本地轻量访问防护 · 会话保存在本机浏览器</div>
-  </form>
 </div>
 
 <!-- 交互登录弹窗（阶段3 A3：init → 状态/二维码占位 → 轮询 status → 成功刷新） -->
@@ -604,28 +582,17 @@
 const $ = (id) => document.getElementById(id);
 // 对齐 115网盘助手：API 走 fnOS 网关 /app/checkin/action/<name> 通道
 const API_BASE = "/app/checkin/action/";
-// 面板鉴权会话 token（localStorage 持久化；每次 action 以 Bearer 携带）
-const AUTH_KEY = "checkin_auth_token";
-function authToken() { try { return localStorage.getItem(AUTH_KEY) || ""; } catch { return ""; } }
-function setAuthToken(t) { try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch { /* 隐私模式忽略 */ } }
 async function call(action, method = "GET", body = null, timeoutMs = 15000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const opt = { method, headers: { Accept: "application/json" }, signal: ctrl.signal };
-    const tk = authToken();
-    if (tk) opt.headers["Authorization"] = "Bearer " + tk;
     if (body) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
     const r = await fetch(API_BASE + action, opt);
     let parsed;
     try { parsed = await r.json(); }
     catch { parsed = null; }
     if (parsed) {
-      // 面板鉴权门禁：会话失效/未登录 → 清除本地 token 并弹出登录页（登录端点自身不触发遮罩逻辑）
-      if (parsed.code === 401 && action !== "checkin/auth/login") {
-        setAuthToken("");
-        showAuthOverlay();
-      }
       return parsed;
     }
     {
@@ -725,29 +692,56 @@ function acctDetail(key, id) {
  * 函数名沿用 renderSiteCards（多处调用点保持不变）；站点总览卡已于 1.3.0 移除。 */
 function renderSiteCards(serverSites) {
   SITE_DATA = serverSites || {};
-  const added = Object.entries(SITE_DATA).filter(([k, st]) => Array.isArray(st && st.accounts) && st.accounts.length > 0);
-  renderAccountList(added);
+  renderAccountList();
 }
 
-/* 全局账号列表：把所有站点已配置账号混合为一个 3 列网格，站点来源用卡上色块小标签区分。
+/* 账号列表分组：固定 NewApi → WorkBuddy → 其他站点。
+ * 「其他站点」显式含 flzt/right_forum(恩山)/ypojie，并兜底收纳任何未归入前两组的站点，避免账号漏显。 */
+const ACCT_GROUPS = [
+  { title: "NewApi", keys: ["anyrouter"] },
+  { title: "WorkBuddy", keys: ["workbuddy"] },
+  { title: "其他站点", keys: ["flzt", "right_forum", "ypojie"] },
+];
+
+/* 分组账号列表：每组一个区块（组头 + 3 列账号卡网格），组内无账号仍显示组头 + 空提示。
  * 卡片内容与站点总览解耦：标题备注优先、workbuddy/anyrouter 显示积分/余额、其余站点无余额行，
  * 会话/最后签到状态与登录/启停/测试/删除操作保留。 */
-function renderAccountList(added) {
+function renderAccountList() {
   const list = $("acctList");
   const cnt = $("acctSectionCount");
   if (!list) return;
-  const cards = [];
-  for (const [key, st] of added) {
-    const accs = Array.isArray(st.accounts) ? st.accounts : [];
-    const cap = LOGIN_CAPS[key] === true;
-    for (const a of accs) cards.push(renderAcctCard(key, a, cap));
+  const data = SITE_DATA || {};
+  const grouped = new Set();  // 已归入前两组的站点 key，供「其他站点」兜底去重
+  for (const g of ACCT_GROUPS) {
+    if (g.title !== "其他站点") for (const k of g.keys) grouped.add(k);
   }
-  if (cards.length) {
-    list.innerHTML = cards.join("");
-  } else {
-    list.innerHTML = '<div class="empty" style="grid-column:1/-1">还没有添加任何账号，点击上方「＋ 添加账号」开始配置</div>';
+  const blocks = [];
+  let total = 0;
+  for (const g of ACCT_GROUPS) {
+    // 组内站点 key：显式列出的 + （仅「其他站点」）兜底收纳未归组的站点
+    let keys = g.keys.slice();
+    if (g.title === "其他站点") {
+      for (const k of Object.keys(data)) {
+        if (!grouped.has(k) && !keys.includes(k)) keys.push(k);
+      }
+    }
+    const cards = [];
+    for (const key of keys) {
+      const st = data[key];
+      const accs = Array.isArray(st && st.accounts) ? st.accounts : [];
+      const cap = LOGIN_CAPS[key] === true;
+      for (const a of accs) cards.push(renderAcctCard(key, a, cap));
+    }
+    total += cards.length;
+    const head = '<div class="acct-group-head"><span class="gt">' + esc(g.title) + '</span>' +
+      '<span class="gc">' + cards.length + ' 个账号</span></div>';
+    const bodyHtml = cards.length
+      ? '<div class="acct-grid-global">' + cards.join("") + "</div>"
+      : '<div class="acct-group-empty">该分组暂无账号，点击上方「＋ 添加账号」添加</div>';
+    blocks.push('<div class="acct-group">' + head + bodyHtml + "</div>");
   }
-  if (cnt) cnt.textContent = cards.length ? "共 " + cards.length + " 个账号 · 跨站点混合" : "";
+  list.innerHTML = blocks.join("");
+  if (cnt) cnt.textContent = total ? "共 " + total + " 个账号 · 分 3 组" : "";
 }
 
 /** 单个账号卡（全局账号列表用）：站点来源标签 + 标题（备注优先）+ 余额/积分 + 状态 + 操作。 */
@@ -1158,53 +1152,6 @@ async function addQrPoll(key, token) {
   ADD_CTX.qrTimer = setTimeout(() => addQrPoll(key, token), 2000);
 }
 
-/* ── 面板鉴权（阶段3 B）：登录页遮罩 + 会话生命周期 ── */
-function showAuthOverlay() {
-  const ov = $("authOverlay");
-  if (!ov) return;
-  ov.style.display = "flex";
-  const inp = $("authInput");
-  if (inp) { inp.value = ""; setTimeout(() => inp.focus(), 60); }
-}
-function hideAuthOverlay() {
-  const ov = $("authOverlay");
-  if (ov) ov.style.display = "none";
-}
-async function authLogin() {
-  const inp = $("authInput"), err = $("authErr"), btn = $("authBtn");
-  const token = (inp && inp.value) || "";
-  if (!token) { if (err) { err.hidden = false; err.textContent = "请输入访问口令"; } return; }
-  if (btn) btn.disabled = true;
-  if (err) err.hidden = true;
-  const r = await call("checkin/auth/login", "POST", { token });
-  if (btn) btn.disabled = false;
-  if (r && r.success && r.data && r.data.token) {
-    setAuthToken(r.data.token);
-    hideAuthOverlay();
-    toast("已登录", "ok");
-    loadAll();
-  } else {
-    if (err) { err.hidden = false; err.textContent = (r && r.message) || "口令错误"; }
-    setAuthToken("");
-  }
-}
-async function authLogout() {
-  await call("checkin/auth/logout", "POST", { token: authToken() });
-  setAuthToken("");
-  toast("已退出登录", "warn");
-  showAuthOverlay();
-}
-/** 启动引导：先探测鉴权状态；开启且未登录 → 登录页；否则正常加载 */
-async function bootstrap() {
-  const r = await call("checkin/auth/status");
-  if (r && r.success && r.data && r.data.auth_enabled && !r.data.authed) {
-    showAuthOverlay();
-    return;
-  }
-  hideAuthOverlay();
-  loadAll();
-}
-
 /** 账号行「测试」：复用 test_login（需已保存账号 id） */
 async function cardTestAccount(key, accountId) {
   if (!accountId) { toast("请先在编辑弹窗保存后再测试", "warn"); return; }
@@ -1576,7 +1523,7 @@ document.querySelectorAll(".nav button").forEach((b) => {
 });
 
 /* ── 初始化 ── */
-["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook", "cfgAuthEnabled", "cfgAuthToken"].forEach((id) => {
+["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook"].forEach((id) => {
   $(id).addEventListener("change", () => {
     $("cfgSaveBtn").textContent = "保存设置（有更改）";
     cfgDirty = true;
@@ -1607,26 +1554,16 @@ async function saveSettings() {
   };
   const w = $("cfgWebhook").value.trim();
   if (w) body.feishu_webhook = w;
-  // 面板鉴权：开关 + 口令（口令留空=不修改；首次开启且未设过口令时前端先行拦截）
-  const authOn = $("cfgAuthEnabled").checked === true;
-  const authTok = $("cfgAuthToken").value.trim();
-  body.auth_enabled = authOn;
-  if (authTok) body.auth_token = authTok;
-  if (authOn && !authTok && !AUTH_CONFIGURED) { toast("首次开启访问保护请先设置口令", "err"); return; }
   const r = await call("save_config", "POST", body);
   if (r.success) {
     toast("设置已保存", "ok");
     $("cfgWebhook").value = "";
-    $("cfgAuthToken").value = "";
-    AUTH_CONFIGURED = !!(r.data && r.data.auth_configured);
-    $("cfgAuthLogoutRow").hidden = !(r.data && r.data.auth_enabled);
     updateChip(body.enabled);
     $("cfgSaveBtn").textContent = "保存设置";
   } else {
     toast("保存失败：" + (r.message || ""), "err");
   }
 }
-let AUTH_CONFIGURED = false; // 是否已设面板口令（loadAll 回填；控制首次开启拦截）
 
 /* ── 初始化加载：get_config 回填全局设置/版本/站点；status 刷新总览与卡片徽标 ── */
 async function loadAll(attempt = 1) {
@@ -1646,11 +1583,6 @@ async function loadAll(attempt = 1) {
   set("cfgCron", (el) => { el.value = d.cron || "08:10"; });
   set("cfgRetry", (el) => { el.value = d.retry_count || "3"; });
   set("cfgNotify", (el) => { el.checked = !!d.notify_enabled; });
-  set("cfgAuthEnabled", (el) => { el.checked = !!d.auth_enabled; });
-  set("cfgAuthHint", (el) => { el.textContent = d.auth_configured ? "留空 = 不修改现有口令" : "留空 = 不修改；首次开启必须设置"; });
-  set("cfgAuthToken", (el) => { el.value = ""; });
-  set("cfgAuthLogoutRow", (el) => { el.hidden = !d.auth_enabled; });
-  AUTH_CONFIGURED = !!d.auth_configured;
   set("appVersion", (el) => { el.textContent = "v" + (d.version || "1.0.0"); });
   renderSiteCards(d.sites);
   updateChip(!!d.enabled);
@@ -1658,10 +1590,10 @@ async function loadAll(attempt = 1) {
   logPoll();
 }
 
-bootstrap();
+loadAll();
 // 实时日志轮询（4s；进入日志页时立即拉取）
 logState.timer = setInterval(logPoll, 4000);
-setInterval(() => { if ($("authOverlay").style.display === "flex") return; call("get_config").then((r) => { if (r.success) updateChip(!!r.data.enabled); }); refreshOverview(); }, 30000);
+setInterval(() => { call("get_config").then((r) => { if (r.success) updateChip(!!r.data.enabled); }); refreshOverview(); }, 30000);
 </script>
 </body>
 </html>
