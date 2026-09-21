@@ -448,7 +448,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.1.8</span>
+      <span class="ver" id="appVersion">v1.1.9</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -666,17 +666,17 @@
                 <option value="adopt">采用远端</option>
                 <option value="reupload">重传覆盖</option>
               </select>
-              <span class="muted" style="width:96px;flex:none">上传风控</span>
-              <select id="upRisk" onchange="markDirty('upload')">
+              <span class="muted" style="width:96px;flex:none" title="上传节奏：文件间隔 / 批大小 / 批间暂停（防账号风控）">上传节奏风控</span>
+              <select id="upRisk" onchange="markDirty('upload')" title="上传节奏：文件间隔 / 批大小 / 批间暂停（防账号风控）">
                 <option value="conservative">保守（每文件6s/每批5个）</option>
                 <option value="balanced">平衡（每文件3s/每批10个）</option>
                 <option value="aggressive">激进（每文件1.5s/每批20个）</option>
               </select>
-              <span class="muted" style="width:96px;flex:none">115 限流档位</span>
-              <select id="rateLimit" onchange="markDirty('upload')">
-                <option value="conservative">保守</option>
+              <span class="muted" style="width:96px;flex:none" title="115 接口节流：OpenAPI 请求 QPS 档位（请求级）；与上方上传节奏独立">115 接口节流</span>
+              <select id="rateLimit" onchange="markDirty('upload')" title="115 接口节流：OpenAPI 请求 QPS 档位（请求级）；与上方上传节奏独立">
+                <option value="conservative">保守（慢但稳）</option>
                 <option value="balanced">均衡（推荐）</option>
-                <option value="fast">激进</option>
+                <option value="fast">激进（更快）</option>
               </select>
             </div>
             <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
