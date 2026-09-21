@@ -1153,27 +1153,50 @@ const WORKBUDDY = {
     const r = await this._billingDo(cfg, this.usagePath);
     const j = parseJson(r.text);
     if (r.status < 200 || r.status > 299 || !this._okCode(j)) {
-      throw new Error(this._msg(j) || "积分响应解析失败");
+      // 状态码进错误消息，便于 _snapshotBalance 记 console.error（不含 token/敏感值）
+      throw new Error(this._msg(j) || `积分响应异常（HTTP ${r.status}）`);
     }
-    const data = (j && j.data) || {};
-    // WorkBuddy 计费结构：data.accounts[] 资源包，credits=ΣcapacityRemain，total=ΣcapacitySize
-    let credits = null, total = null;
-    const accounts = Array.isArray(data.accounts) ? data.accounts : (Array.isArray((data.response || {}).accounts) ? data.response.accounts : null);
-    if (accounts) {
-      credits = 0; total = 0;
-      for (const it of accounts) {
-        if (!it || typeof it !== "object") continue;
-        for (const [k, v] of Object.entries(it)) {
-          const lk = k.toLowerCase();
-          if (lk === "capacityremain") credits += Number(v) || 0;
-          if (lk === "capacitysize") total += Number(v) || 0;
-        }
+    // 有 data 包裹层用 data，否则退回整个信封（上游可能不套 data）
+    const root = (j && j.data != null) ? j.data : (j || {});
+    return this._extractCredits(root);
+  },
+
+  /**
+   * 从 get-user-resource 响应中宽容解析积分。
+   * 根因加固：不再假设资源包一定挂在 data.accounts[] —— 递归收集任意层级里带
+   * capacityRemain/capacitySize（及其大小写/下划线/连字符变体）的字段并求和，
+   * 兼容上游把数组改名为 resources / resourcePacks / packages / list 或加一层包裹。
+   * 若整树都没有资源包字段（单值余额结构），退回顶层扁平键扫描。
+   */
+  _extractCredits(root) {
+    const norm = (k) => String(k).toLowerCase().replace(/[_\s-]/g, "");
+    const num = (v) => {
+      if (typeof v === "number") return Number.isFinite(v) ? v : null;
+      if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v);
+      return null;
+    };
+    const REMAIN = new Set(["capacityremain", "remaincapacity", "remainingcapacity", "availablecapacity", "remainamount", "remaining", "remain"]);
+    const SIZE = new Set(["capacitysize", "totalcapacity", "capacitytotal", "totalsize", "maxcapacity"]);
+    let credits = null, total = null, matched = false;
+    const seen = new Set();
+    const walk = (node) => {
+      if (!node || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      if (Array.isArray(node)) { for (const it of node) walk(it); return; }
+      for (const [k, v] of Object.entries(node)) {
+        const nk = norm(k);
+        if (REMAIN.has(nk)) { const n = num(v); if (n != null) { credits = (credits || 0) + n; matched = true; continue; } }
+        if (SIZE.has(nk)) { const n = num(v); if (n != null) { total = (total || 0) + n; matched = true; continue; } }
+        if (v && typeof v === "object") walk(v);
       }
-    } else {
-      for (const [k, v] of Object.entries(data)) {
-        const lk = k.toLowerCase();
-        if (["credits", "credit", "remaining", "balance", "left", "quota"].includes(lk) && credits == null) credits = Number(v) || 0;
-        if (["credits_total", "total", "total_credits", "limit"].includes(lk) && total == null) total = Number(v) || 0;
+    };
+    walk(root);
+    // 回落：非资源包结构（单值余额）——扫顶层扁平键
+    if (!matched && root && typeof root === "object" && !Array.isArray(root)) {
+      for (const [k, v] of Object.entries(root)) {
+        const nk = norm(k);
+        if (credits == null && ["credits", "credit", "remaining", "balance", "left", "quota", "points", "point"].includes(nk)) { const n = num(v); if (n != null) credits = n; }
+        if (total == null && ["creditstotal", "total", "totalcredits", "limit", "quotatotal"].includes(nk)) { const n = num(v); if (n != null) total = n; }
       }
     }
     return { credits, total };

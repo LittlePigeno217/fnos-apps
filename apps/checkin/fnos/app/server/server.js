@@ -239,16 +239,25 @@ class Server {
    */
   async _snapshotBalance(adapter, acc) {
     if (!adapter || typeof adapter.queryBalance !== "function") return;
+    const label = adapter.balanceLabel || "余额";
     try {
       const val = await adapter.queryBalance(acc);
-      if (val == null || !Number.isFinite(Number(val))) return;
+      // 凭据有效但解析不出数值（例如上游结构变更）——过去被静默吞掉，现在明确记一行
+      if (val == null || !Number.isFinite(Number(val))) {
+        console.error(`${adapter.key} ${label}查询失败：接口返回空值（凭据有效但未解析出${label}，疑似上游响应结构变更）`);
+        return;
+      }
       const next = Number(val);
       const prev = (acc.balance == null) ? null : Number(acc.balance);
       acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
       acc.balance = next;
       acc.balance_ts = Date.now();
       this._store.save();
-    } catch { /* 余额快照失败不致命 */ }
+      console.log(`${adapter.key} ${label}快照成功：${label}=${next}`);
+    } catch (err) {
+      // 失败记状态码/错误消息（adapter 抛出的消息不含 token/敏感值）
+      console.error(`${adapter.key} ${label}查询失败：${(err && err.message) || err}`);
+    }
   }
 
   getHistory(limit) {
@@ -551,6 +560,8 @@ class Server {
           : null);
         if (sess) { acc.session = sess; acc.session_ts = Date.now(); this._store.save(); }
         this._loginSessions.delete(token);
+        // 扫码建号即拉一次积分/余额快照（不必等签到；失败不致命，仅记日志）
+        await this._snapshotBalance(adapter, acc);
         this._log(`扫码登录成功：${adapter.name}（${adapter.getAccountLabel(acc)}）`);
         return ok({ state: "ready", login_mode: "qr", account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: !!sess } });
       }
