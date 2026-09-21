@@ -1737,6 +1737,8 @@ class Server {
     if (!mappings.length) return error("没有启用的 STRM 映射");
     if (this._strmBusy) return error("已有 STRM 任务在执行中，请稍候");
     const incremental = config.strm_incremental !== false;
+    const mediaExts = extensionSet(config.upload_media_extensions);
+    const totals = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0 };
     // 解析 STRM 输出目录（多目录）：非空 → 生成到这些目录；空 → 维持映射目标目录
     const writeDirs = [];
     if (Array.isArray(config.strm_output_dirs)) {
@@ -1752,8 +1754,6 @@ class Server {
         writeDirs.push(r);
       }
     }
-    const mediaExts = extensionSet(config.upload_media_extensions);
-    const totals = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0 };
     this._strmBusy = true;
     try {
       const client = this._getClient();
