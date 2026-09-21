@@ -317,8 +317,9 @@ class FileWatcher {
 
 class UploadWorker {
   /** 后台上传：串行消费一次扫描请求，避免与 HTTP 请求互相阻塞。 */
-  constructor(runOnce) {
+  constructor(runOnce, onIdle) {
     this._runOnce = runOnce;
+    this._onIdle = onIdle || null;
     this._queue = [];
     this._running = false;
     this._cancelRequested = false;
@@ -343,9 +344,13 @@ class UploadWorker {
   }
 
   async _drain() {
+    let completed = true;
     try {
       while (this._queue.length) {
-        if (this._cancelRequested) break;
+        if (this._cancelRequested) {
+          completed = false;
+          break;
+        }
         const scope = this._queue.shift();
         try {
           await this._runOnce(scope);
@@ -356,6 +361,14 @@ class UploadWorker {
     } finally {
       this._running = false;
       this._cancelRequested = false;
+      // 队列自然清空（未被取消）→ 通知整轮上传完成（供「上传后生成 STRM」接线）
+      if (completed && typeof this._onIdle === "function") {
+        try {
+          this._onIdle();
+        } catch (err) {
+          console.error(`上传完成回调异常：${err.message}`);
+        }
+      }
     }
   }
 
@@ -378,7 +391,10 @@ class Server {
     this._checkinBusy = false;
     this._checkinToday = null;
     this._checkinCheckedDate = "";
-    this._uploadWorker = new UploadWorker((job) => this._runWorkerJob(job));
+    this._uploadWorker = new UploadWorker(
+      (job) => this._runWorkerJob(job),
+      () => this._maybeAutoStrmAfterUpload()
+    );
     this._fileWatcher = new FileWatcher(this);
     this._riskState = {
       limited: false,          // 风控触发
@@ -389,6 +405,7 @@ class Server {
     };
     this._logTail = [];
     this._strmBusy = false;          // STRM 生成的并发闸（同步与一次性任务共用）
+    this._uploadStrmSyncTimer = null; // 「上传后生成 STRM」防抖定时器（上传空闲回调触发）
     this._redirectUrlCache = new Map();   // 匿名 302 取链 URL 缓存（pickcode|ua → {url, expireAt}）
     this._redirectInflight = new Map();   // 匿名 302 singleflight 并发去重（同 key 共享一次取链）
     this._redirectCacheMax = 2048;        // 缓存容量上限（超限裁剪最旧）
@@ -2128,6 +2145,40 @@ class Server {
       return this._runUploadMapping(job.mapping);
     }
     return `未知任务: ${JSON.stringify(job)}`;
+  }
+
+  /**
+   * 「上传后生成 STRM」接线（1.1.3）：由 UploadWorker 队列自然清空后的空闲回调触发。
+   * 开关开启 → 防抖 3s 自动跑一次全量增量 strmSync（与手动「立即同步」同一路径，
+   * 输出目录复用 STRM 页 strm_output_dirs 多目录；增量受 strm_incremental 约束）；
+   * 开关关闭 → 什么都不做。手动 strmSync、基础连接变更自动同步、strm_once 一次性任务
+   * 行为均不受影响。
+   */
+  _maybeAutoStrmAfterUpload() {
+    try {
+      const config = this.store.getConfig();
+      if (config.upload_generate_strm !== true) return;
+      if (this._strmBusy) return; // 已有 STRM 任务在执行中，留给下一轮上传
+      clearTimeout(this._uploadStrmSyncTimer);
+      this._uploadStrmSyncTimer = setTimeout(() => {
+        this.strmSync({})
+          .then((res) => {
+            if (res && res.success) {
+              this.recordLog(`上传完成，自动生成 STRM：${res.message || "同步完成"}`, "INFO", "STRM");
+            } else if (
+              res && res.message &&
+              !String(res.message).includes("没有启用") &&
+              !String(res.message).includes("执行中")
+            ) {
+              // 「没有启用的 STRM 映射」/「已有 STRM 任务执行中」属预期静默；其余才提示
+              this.recordLog(`上传后自动 STRM 同步未执行：${res.message}`, "WARN", "STRM");
+            }
+          })
+          .catch((err) => console.warn(`上传后自动 STRM 同步失败：${err.message}`));
+      }, 3000);
+    } catch (err) {
+      console.warn(`上传后自动 STRM 同步启动失败：${err.message}`);
+    }
   }
 
 
