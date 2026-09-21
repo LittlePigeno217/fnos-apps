@@ -23,11 +23,13 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.1.9",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.2.0",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
   feishu_webhook: "",      // 飞书机器人 Webhook
+  auth_enabled: false,     // 面板鉴权总开关（阶段3 B，默认关闭）
+  auth_token: "",          // 面板访问口令（明文本地防护；开启鉴权时必须非空）
   sites: DEFAULT_SITES,
 };
 
@@ -54,6 +56,9 @@ class Store {
     // 不参与持久化合并，避免 config 文件旧版本号在「fpk 升级 / 热更未回写」时
     // 覆盖新字面量，导致重启后版本号不变（对齐 p115assistant 已验证机制）。
     cfg.version = DEFAULT_CONFIG.version;
+    // 面板鉴权字段类型规整（旧 config 无此字段时回落默认）
+    cfg.auth_enabled = !!raw.auth_enabled;
+    cfg.auth_token = String(raw.auth_token || "");
     cfg.sites = {};
     for (const k of SITE_KEYS) {
       const rawSite = (raw.sites || {})[k] || {};
@@ -136,6 +141,13 @@ class Store {
       const v = String(patch.feishu_webhook || "").trim();
       if (v) cfg.feishu_webhook = v; // 留空 = 不修改
     }
+    // 面板鉴权：口令留空=保留原值（与 feishu_webhook 一致的敏感字段惯例）；
+    // 开启前必须已有口令的校验由 Server.saveConfig 完成（store 层只落值）。
+    if (patch.auth_token !== undefined) {
+      const v = String(patch.auth_token || "").trim();
+      if (v) cfg.auth_token = v;
+    }
+    if (patch.auth_enabled !== undefined) cfg.auth_enabled = !!patch.auth_enabled;
     if (patch.sites && typeof patch.sites === "object") {
       for (const k of SITE_KEYS) {
         const site = patch.sites[k];

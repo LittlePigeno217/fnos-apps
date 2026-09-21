@@ -328,7 +328,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.1.9</span>
+      <span class="ver" id="appVersion">v1.2.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -403,6 +403,21 @@
               <input type="password" class="input mono" id="cfgWebhook" placeholder="https://open.feishu.cn/…" style="max-width:260px">
             </div>
           </div>
+          <div class="settings-group">
+            <header>面板访问保护</header>
+            <div class="setting-row">
+              <div><div class="setting-label">开启访问口令</div><div class="setting-desc">开启后打开面板需输入口令（本地轻量防护，非强加密）</div></div>
+              <label class="switch"><input type="checkbox" id="cfgAuthEnabled"><span class="track"></span></label>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">访问口令</div><div class="setting-desc" id="cfgAuthHint">留空 = 不修改；首次开启必须设置</div></div>
+              <input type="password" class="input mono" id="cfgAuthToken" placeholder="设置 / 修改口令" autocomplete="new-password" style="max-width:200px">
+            </div>
+            <div class="setting-row" id="cfgAuthLogoutRow" hidden>
+              <div><div class="setting-label">退出登录</div><div class="setting-desc">清除本机会话，下次打开需重新输入口令</div></div>
+              <button type="button" class="btn btn-mini" onclick="authLogout()">退出登录</button>
+            </div>
+          </div>
           <div class="settings-row">
             <span class="muted" id="cfgStatus"></span>
             <button class="btn primary" id="cfgSaveBtn" onclick="saveSettings()">保存设置</button>
@@ -424,6 +439,37 @@
         </div>
       </section>
 
+    </div>
+  </div>
+</div>
+
+<!-- 面板鉴权登录页（默认关闭；auth_enabled 且未登录时显示遮罩） -->
+<div id="authOverlay" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:2000;align-items:center;justify-content:center">
+  <form id="authForm" onsubmit="authLogin(); return false;" style="background:var(--card);border:1px solid var(--border);border-radius:16px;width:min(360px,92vw);padding:26px 24px;box-shadow:var(--shadow);text-align:center">
+    <div class="brand-mark" style="margin:0 auto 14px">签</div>
+    <div style="font-weight:700;font-size:16px">签到工具</div>
+    <div class="muted" style="font-size:12.5px;margin:4px 0 18px">面板已开启访问保护，请输入访问口令</div>
+    <input class="input" type="password" id="authInput" placeholder="访问口令" autocomplete="current-password" style="text-align:center">
+    <div class="err" id="authErr" style="min-height:16px;margin:8px 0 0" hidden></div>
+    <button type="submit" class="btn primary" id="authBtn" style="width:100%;justify-content:center;margin-top:14px">登录</button>
+  </form>
+</div>
+
+<!-- 交互登录弹窗（阶段3 A3：init → 状态/二维码占位 → 轮询 status → 成功刷新） -->
+<div id="loginModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:min(400px,94vw);padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;text-align:left">
+      <div class="site-tag" id="loginTag">ST</div>
+      <div style="flex:1;min-width:0">
+        <div class="site-name" id="loginTitle">交互登录</div>
+        <div class="muted" style="font-size:12px" id="loginSub"></div>
+      </div>
+      <button type="button" class="btn btn-mini" onclick="closeLoginModal()">✕</button>
+    </div>
+    <div id="loginQr" hidden style="margin:6px auto 10px;width:180px;height:180px;border:1px dashed var(--border);border-radius:10px;display:grid;place-items:center;color:var(--muted);font-size:12px"></div>
+    <div id="loginState" class="muted" style="font-size:13px;min-height:20px;margin:8px 0">正在发起登录…</div>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:12px">
+      <button type="button" class="btn" onclick="closeLoginModal()">关闭</button>
     </div>
   </div>
 </div>
@@ -466,15 +512,31 @@
 const $ = (id) => document.getElementById(id);
 // 对齐 115网盘助手：API 走 fnOS 网关 /app/checkin/action/<name> 通道
 const API_BASE = "/app/checkin/action/";
+// 面板鉴权会话 token（localStorage 持久化；每次 action 以 Bearer 携带）
+const AUTH_KEY = "checkin_auth_token";
+function authToken() { try { return localStorage.getItem(AUTH_KEY) || ""; } catch { return ""; } }
+function setAuthToken(t) { try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch { /* 隐私模式忽略 */ } }
 async function call(action, method = "GET", body = null, timeoutMs = 15000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const opt = { method, headers: { Accept: "application/json" }, signal: ctrl.signal };
+    const tk = authToken();
+    if (tk) opt.headers["Authorization"] = "Bearer " + tk;
     if (body) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
     const r = await fetch(API_BASE + action, opt);
-    try { return await r.json(); }
-    catch {
+    let parsed;
+    try { parsed = await r.json(); }
+    catch { parsed = null; }
+    if (parsed) {
+      // 面板鉴权门禁：会话失效/未登录 → 清除本地 token 并弹出登录页（登录端点自身不触发遮罩逻辑）
+      if (parsed.code === 401 && action !== "checkin/auth/login") {
+        setAuthToken("");
+        showAuthOverlay();
+      }
+      return parsed;
+    }
+    {
       try {
         const t = await r.text();
         const low = t.slice(0, 300).toLowerCase();
@@ -598,6 +660,7 @@ function renderSiteCards(serverSites) {
       const hasSession = d ? !!d.has_session : false;
       if (hasSession) loggedCount++;
       const label = a.remark || a.label || ("账号 " + (a.id || ""));
+      const enabled = a.enabled !== false;
       const last = d ? d.last : null;
       let dayBadge;
       if (last && last.status === "执行失败") {
@@ -619,9 +682,11 @@ function renderSiteCards(serverSites) {
           (hasSession ? "重新登录" : "登录") + "</button>";
       }
       const points = (d && d.points) ? '<span class="muted" style="font-size:11px;white-space:nowrap">' + esc(String(d.points)) + " 分</span>" : "";
-      return '<div class="acct-row">' +
+      const enToggle = '<button class="btn btn-mini" title="' + (enabled ? "点击停用该账号" : "点击启用该账号") + '" onclick="toggleAccountEnabled(\'' + key + "','" + esc(a.id || "") + "'," + (enabled ? "false" : "true") + ')">' +
+        (enabled ? "停用" : "启用") + "</button>";
+      return '<div class="acct-row"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
         '<span class="acct-label" title="' + esc(label) + '">' + esc(label) + "</span>" +
-        loginBadge + dayBadge + points + loginBtn +
+        loginBadge + dayBadge + points + loginBtn + enToggle +
         '<button class="btn btn-mini" onclick="cardTestAccount(\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
         '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
         "</div>";
@@ -657,16 +722,127 @@ async function probeLoginCaps() {
   renderSiteCards(SITE_DATA);
 }
 
-/** 账号行「登录」：触发交互登录（后端 form 模式一步产出 session）。不打真实站点由后端负责。 */
+/* ── 交互登录弹窗（阶段3 A3）─────────────────────────────────
+ * 流程：openLoginModal → init（POST {site}_login/init）→ 展示状态/二维码占位
+ *      → 若后端返回 pending（qr/url）则轮询 status（GET {site}_login/status）直到 ready
+ *      → 成功刷新总览（账号 has_session 变更）。
+ * 当前 form 模式后端一步产出会话（init 即 ready），弹窗直接反馈「已登录」；
+ * 轮询/二维码分支为 qr/url 模式预留（后端扩展时前端零改动即可点亮）。 */
+let LOGIN_CTX = { key: "", accountId: "", timer: null, tries: 0 };
+
+function closeLoginModal() {
+  if (LOGIN_CTX.timer) { clearTimeout(LOGIN_CTX.timer); LOGIN_CTX.timer = null; }
+  LOGIN_CTX = { key: "", accountId: "", timer: null, tries: 0 };
+  $("loginModal").style.display = "none";
+}
+
+/** 账号行「登录」：打开交互登录弹窗（后端负责触网，前端只驱动流程） */
 async function siteLogin(key, accountId) {
-  toast("正在登录…", "seal");
+  LOGIN_CTX = { key, accountId: accountId || "", timer: null, tries: 0 };
+  $("loginTag").textContent = siteShort(key);
+  $("loginTag").className = "site-tag " + siteTagClass(key);
+  $("loginTitle").textContent = siteName(key) + " · 交互登录";
+  $("loginSub").textContent = siteDesc(key) || siteMode(key);
+  $("loginQr").hidden = true;
+  $("loginQr").textContent = "";
+  $("loginState").textContent = "正在发起登录…";
+  $("loginState").className = "muted";
+  $("loginModal").style.display = "flex";
   const r = await call("checkin/" + key + "_login/init", "POST", accountId ? { account_id: accountId } : {}, 30000);
-  if (r.success) {
-    toast((r.data && r.data.message) || "已登录，可签到", "ok");
-    await refreshOverview();
-  } else {
-    toast(r.message || "登录失败", "err");
+  if (!r || !r.success) {
+    $("loginState").textContent = (r && r.message) || "登录失败";
+    $("loginState").className = "err";
+    return;
   }
+  const d = r.data || {};
+  // 二维码 / 跳转 URL（qr/url 模式预留）：有则渲染占位并进入轮询
+  if (d.qr || d.qr_url || d.login_url || d.status === "pending") {
+    const qr = $("loginQr");
+    qr.hidden = false;
+    qr.textContent = d.qr_url || d.login_url ? "请在新窗口完成登录" : "二维码占位";
+    if (d.login_url || d.url) { try { window.open(d.login_url || d.url, "_blank", "noopener"); } catch { /* 忽略弹窗拦截 */ } }
+    $("loginState").textContent = d.message || "等待登录确认…";
+    loginPoll(d.token || "");
+    return;
+  }
+  // form 模式：init 即 ready
+  $("loginState").textContent = (d.message || "已登录") + "，可立即签到";
+  $("loginState").className = "ok";
+  toast(d.message || "已登录，可签到", "ok");
+  await refreshOverview();
+  setTimeout(() => { if (LOGIN_CTX.key === key) closeLoginModal(); }, 1200);
+}
+
+/** 轮询交互登录状态（qr/url 模式）：ready → 成功；最多 ~60 次（约 2 分钟） */
+async function loginPoll(token) {
+  const key = LOGIN_CTX.key;
+  if (!key) return;
+  LOGIN_CTX.tries += 1;
+  if (LOGIN_CTX.tries > 60) { $("loginState").textContent = "登录超时，请重试"; $("loginState").className = "err"; return; }
+  const r = await call("checkin/" + key + "_login/status" + (token ? "?token=" + encodeURIComponent(token) : ""));
+  const state = r && r.success && r.data ? r.data.state : "";
+  if (state === "ready") {
+    $("loginState").textContent = "登录成功";
+    $("loginState").className = "ok";
+    $("loginQr").hidden = true;
+    toast("已登录，可签到", "ok");
+    await refreshOverview();
+    setTimeout(() => { if (LOGIN_CTX.key === key) closeLoginModal(); }, 1000);
+    return;
+  }
+  if (state === "expired" || (r && r.success === false)) {
+    $("loginState").textContent = (r && r.message) || "二维码已失效，请重试";
+    $("loginState").className = "err";
+    return;
+  }
+  LOGIN_CTX.timer = setTimeout(() => loginPoll(token), 2000);
+}
+
+/* ── 面板鉴权（阶段3 B）：登录页遮罩 + 会话生命周期 ── */
+function showAuthOverlay() {
+  const ov = $("authOverlay");
+  if (!ov) return;
+  ov.style.display = "flex";
+  const inp = $("authInput");
+  if (inp) { inp.value = ""; setTimeout(() => inp.focus(), 60); }
+}
+function hideAuthOverlay() {
+  const ov = $("authOverlay");
+  if (ov) ov.style.display = "none";
+}
+async function authLogin() {
+  const inp = $("authInput"), err = $("authErr"), btn = $("authBtn");
+  const token = (inp && inp.value) || "";
+  if (!token) { if (err) { err.hidden = false; err.textContent = "请输入访问口令"; } return; }
+  if (btn) btn.disabled = true;
+  if (err) err.hidden = true;
+  const r = await call("checkin/auth/login", "POST", { token });
+  if (btn) btn.disabled = false;
+  if (r && r.success && r.data && r.data.token) {
+    setAuthToken(r.data.token);
+    hideAuthOverlay();
+    toast("已登录", "ok");
+    loadAll();
+  } else {
+    if (err) { err.hidden = false; err.textContent = (r && r.message) || "口令错误"; }
+    setAuthToken("");
+  }
+}
+async function authLogout() {
+  await call("checkin/auth/logout", "POST", { token: authToken() });
+  setAuthToken("");
+  toast("已退出登录", "warn");
+  showAuthOverlay();
+}
+/** 启动引导：先探测鉴权状态；开启且未登录 → 登录页；否则正常加载 */
+async function bootstrap() {
+  const r = await call("checkin/auth/status");
+  if (r && r.success && r.data && r.data.auth_enabled && !r.data.authed) {
+    showAuthOverlay();
+    return;
+  }
+  hideAuthOverlay();
+  loadAll();
 }
 
 /** 账号行「测试」：复用 test_login（需已保存账号 id） */
@@ -689,6 +865,22 @@ async function cardDeleteAccount(key, accountId) {
   else toast("删除失败：" + (r.message || ""), "err");
 }
 
+/** 账号行「启用/停用」：save_config 提交该站点全部账号的 {id, enabled}（凭据留空=后端保留原值）。
+ *  必须显式带上每个账号当前 enabled，否则后端对缺省 enabled 的账号会回落为「启用」。 */
+async function toggleAccountEnabled(key, accountId, next) {
+  if (!accountId) return;
+  const st = SITE_DATA[key] || {};
+  const accs = Array.isArray(st.accounts) ? st.accounts : [];
+  const accounts = accs.map((a) => ({
+    id: a.id,
+    enabled: String(a.id) === String(accountId) ? next === true : (a.enabled !== false),
+  }));
+  const body = { sites: { [key]: { enabled: st.enabled === true, use_proxy: st.use_proxy === true, accounts } } };
+  const r = await call("save_config", "POST", body);
+  if (r.success) { toast(next ? "账号已启用" : "账号已停用", next ? "ok" : "warn"); await refreshOverview(); }
+  else toast("操作失败：" + (r.message || ""), "err");
+}
+
 /* ── 积分面板条（读 checkin/points；失败静默隐藏，不阻塞主流程）── */
 let pointsExpanded = false;
 async function refreshPoints() {
@@ -697,7 +889,9 @@ async function refreshPoints() {
   const r = await call("checkin/points");
   if (!r || !r.success || !r.data) { bar.hidden = true; return; }
   const d = r.data;
-  const sites = (d.sites || []).filter((s) => s.count > 0 || s.total_points);
+  const sites = (d.sites || [])
+    .filter((s) => s.count > 0 || s.total_points)
+    .sort((a, b) => (Number(b.total_points) || 0) - (Number(a.total_points) || 0)); // 按累计积分降序
   if (!sites.length) { bar.hidden = true; return; }
   const chips = sites.map((s) =>
     '<span class="points-chip">' + esc(s.site_name) + " <b>" + esc(String(s.total_points)) + "</b></span>").join("");
@@ -1079,7 +1273,7 @@ document.querySelectorAll(".nav button").forEach((b) => {
 });
 
 /* ── 初始化 ── */
-["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook"].forEach((id) => {
+["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook", "cfgAuthEnabled", "cfgAuthToken"].forEach((id) => {
   $(id).addEventListener("change", () => {
     $("cfgSaveBtn").textContent = "保存设置（有更改）";
     cfgDirty = true;
@@ -1107,16 +1301,26 @@ async function saveSettings() {
   };
   const w = $("cfgWebhook").value.trim();
   if (w) body.feishu_webhook = w;
+  // 面板鉴权：开关 + 口令（口令留空=不修改；首次开启且未设过口令时前端先行拦截）
+  const authOn = $("cfgAuthEnabled").checked === true;
+  const authTok = $("cfgAuthToken").value.trim();
+  body.auth_enabled = authOn;
+  if (authTok) body.auth_token = authTok;
+  if (authOn && !authTok && !AUTH_CONFIGURED) { toast("首次开启访问保护请先设置口令", "err"); return; }
   const r = await call("save_config", "POST", body);
   if (r.success) {
     toast("设置已保存", "ok");
     $("cfgWebhook").value = "";
+    $("cfgAuthToken").value = "";
+    AUTH_CONFIGURED = !!(r.data && r.data.auth_configured);
+    $("cfgAuthLogoutRow").hidden = !(r.data && r.data.auth_enabled);
     updateChip(body.enabled);
     $("cfgSaveBtn").textContent = "保存设置";
   } else {
     toast("保存失败：" + (r.message || ""), "err");
   }
 }
+let AUTH_CONFIGURED = false; // 是否已设面板口令（loadAll 回填；控制首次开启拦截）
 
 /* ── 初始化加载：get_config 回填全局设置/版本/站点；status 刷新总览与卡片徽标 ── */
 async function loadAll(attempt = 1) {
@@ -1136,6 +1340,11 @@ async function loadAll(attempt = 1) {
   set("cfgCron", (el) => { el.value = d.cron || "08:10"; });
   set("cfgRetry", (el) => { el.value = d.retry_count || "3"; });
   set("cfgNotify", (el) => { el.checked = !!d.notify_enabled; });
+  set("cfgAuthEnabled", (el) => { el.checked = !!d.auth_enabled; });
+  set("cfgAuthHint", (el) => { el.textContent = d.auth_configured ? "留空 = 不修改现有口令" : "留空 = 不修改；首次开启必须设置"; });
+  set("cfgAuthToken", (el) => { el.value = ""; });
+  set("cfgAuthLogoutRow", (el) => { el.hidden = !d.auth_enabled; });
+  AUTH_CONFIGURED = !!d.auth_configured;
   set("appVersion", (el) => { el.textContent = "v" + (d.version || "1.0.0"); });
   renderSiteCards(d.sites);
   updateChip(!!d.enabled);
@@ -1143,10 +1352,10 @@ async function loadAll(attempt = 1) {
   logPoll();
 }
 
-loadAll();
+bootstrap();
 // 实时日志轮询（4s；进入日志页时立即拉取）
 logState.timer = setInterval(logPoll, 4000);
-setInterval(() => { call("get_config").then((r) => { if (r.success) updateChip(!!r.data.enabled); }); refreshOverview(); }, 30000);
+setInterval(() => { if ($("authOverlay").style.display === "flex") return; call("get_config").then((r) => { if (r.success) updateChip(!!r.data.enabled); }); refreshOverview(); }, 30000);
 </script>
 </body>
 </html>

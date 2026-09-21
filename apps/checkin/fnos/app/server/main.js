@@ -10,12 +10,14 @@ const { Server } = require("./server");
 const notify = require("./notify");
 const { checkHotfix, applyHotfix } = require("./hotfix");
 const { ROUTES } = require("./router");
+const { AuthSessions, safeEq } = require("./auth");
 
 const DATA_DIR = process.env.CHECKIN_DATA_DIR || path.join(__dirname, "..", "..", "..", "@appdata", "checkin");
 const SOCKET_PATH = process.env.CHECKIN_SOCKET || path.join(__dirname, "..", "app.sock");
 const APP_DIR = path.join(__dirname, "..");
 
 const store = new Store(DATA_DIR);
+const auth = new AuthSessions(); // 面板鉴权内存会话（进程重启即失效）
 const api = new Server(store, notify, (msg) => {
   console.log(`${new Date().toISOString()} ${msg}`);
 });
@@ -133,6 +135,16 @@ function readBody(req) {
     });
   });
 }
+
+/** 从 Authorization 头提取 Bearer token（面板鉴权会话） */
+function bearer(req) {
+  const h = (req.headers && req.headers["authorization"]) || "";
+  const m = /^Bearer\s+(.+)$/i.exec(String(h));
+  return m ? m[1].trim() : "";
+}
+
+/* 面板鉴权开放端点：无论 auth_enabled 与否始终放行（登录入口 + 状态探测 + 登出） */
+const AUTH_OPEN = new Set(["checkin/auth/status", "checkin/auth/login", "checkin/auth/logout"]);
 
 /* ── HTTP 路由：/action/<name>（对齐 115网盘助手主应用做法）──────
  * fnOS 网关对微应用以 /app/checkin/action/* 转发动态 API（独立于静态页面路径），
@@ -256,6 +268,41 @@ async function handle(req, res) {
     } else {
       actionName = pathname.split("/").filter(Boolean).pop() || "";
     }
+    /* ── 面板鉴权（阶段3 B）─────────────────────────────────────
+     * 开放端点常驻放行；其余 action 在 auth_enabled 时需有效 Bearer 会话，否则回 code:401。
+     * 静态 UI（"/" 与 index.html）在上方已返回，不受门禁影响（登录页是 UI 的一部分）。 */
+    if (actionName === "checkin/auth/status") {
+      const cfg = store.getConfig();
+      return send({ success: true, data: { auth_enabled: !!cfg.auth_enabled, authed: !cfg.auth_enabled || auth.valid(bearer(req)) } });
+    }
+    if (actionName === "checkin/auth/login") {
+      if (method !== "POST") return send({ success: false, message: "405 方法不允许" });
+      const body = await readBody(req);
+      const cfg = store.getConfig();
+      if (!cfg.auth_enabled) return send({ success: true, data: { auth_enabled: false }, message: "鉴权未开启" });
+      if (!cfg.auth_token || !safeEq(String(body.token || ""), cfg.auth_token)) {
+        return send({ success: false, code: 401, message: "口令错误" });
+      }
+      const s = auth.issue();
+      return send({ success: true, data: { token: s.token, expires_in: s.expires_in } });
+    }
+    if (actionName === "checkin/auth/logout") {
+      if (method === "POST") {
+        const body = await readBody(req);
+        auth.revoke(body.token || bearer(req));
+      } else {
+        auth.revoke(bearer(req));
+      }
+      return send({ success: true, data: { ok: true } });
+    }
+    // 门禁：开启鉴权后，非开放端点无有效会话 → code:401（HTTP 仍 200，与既有 API 约定一致）
+    if (!AUTH_OPEN.has(actionName)) {
+      const cfg = store.getConfig();
+      if (cfg.auth_enabled && !auth.valid(bearer(req))) {
+        return send({ success: false, code: 401, message: "未登录" });
+      }
+    }
+
     const route = ROUTES.get(actionName);
     if (!route) {
       // 动态交互登录路由：checkin/{site}_login/{init|status}
