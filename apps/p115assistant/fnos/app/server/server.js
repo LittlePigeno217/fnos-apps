@@ -1029,6 +1029,72 @@ class Server {
     }
   }
 
+  // ---- 上传失败清单（1.2.1：失败文件可单条重试）----
+  _recordUploadFailure(mapping, filePath, errorMessage) {
+    try {
+      const failures = this.store.getUploadFailures();
+      failures[filePath] = {
+        name: path.basename(filePath),
+        mapping: String(mapping && mapping.name || ""),
+        error: String(errorMessage || "").slice(0, 200),
+        ts: Date.now(),
+      };
+      const keys = Object.keys(failures);
+      if (keys.length > 200) {
+        // 防膨胀：超出上限丢弃最旧的
+        const drop = keys.sort((a, b) => failures[a].ts - failures[b].ts).slice(0, keys.length - 200);
+        for (const k of drop) delete failures[k];
+      }
+      this.store.saveUploadFailures(failures);
+    } catch (err) {
+      console.warn(`记录上传失败清单异常：${err.message}`);
+    }
+  }
+
+  _clearUploadFailure(filePath) {
+    try {
+      const failures = this.store.getUploadFailures();
+      if (failures && Object.prototype.hasOwnProperty.call(failures, filePath)) {
+        delete failures[filePath];
+        this.store.saveUploadFailures(failures);
+      }
+    } catch (err) {
+      console.warn(`清理上传失败清单异常：${err.message}`);
+    }
+  }
+
+  // GET 上传失败清单
+  uploadFailures() {
+    const failures = this.store.getUploadFailures();
+    const items = Object.keys(failures).map((p) => Object.assign({ path: p }, failures[p]))
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    return ok({ count: items.length, items });
+  }
+
+  // POST 单文件重试：从失败清单移除 → 重新提交所属映射上传扫描（增量跳过已上传，效果=只重传该文件）
+  retryUploadFailure(payload) {
+    const data = payload || {};
+    const filePath = String(data.filePath || data.path || "").trim();
+    if (!filePath) return error("缺少要重试的文件路径");
+    const failures = this.store.getUploadFailures();
+    if (!Object.prototype.hasOwnProperty.call(failures, filePath)) {
+      return error("该文件不在失败清单中（可能已重试成功）");
+    }
+    const config = this.store.getConfig();
+    const sep = path.sep;
+    const mapping = (config.upload_mappings || []).find((m) => {
+      const src = String(m.source || "").replace(/\/+$/, "");
+      return filePath === src || filePath.startsWith(src + sep);
+    });
+    if (!mapping) return error("找不到该文件所属的上传映射");
+    delete failures[filePath];
+    this.store.saveUploadFailures(failures);
+    const mappingId = String(mapping.id || mapping.name || "");
+    this._uploadWorker.submit(mappingId);
+    this.recordLog(`已重试上传：${path.basename(filePath)}`, "INFO", "UPLOAD");
+    return ok({ filePath, mapping: mapping.name }, "已重新提交上传，结果见上传状态");
+  }
+
   uploadStatus() {
     return ok({
       active: this._uploadWorker.active(),
@@ -1252,6 +1318,7 @@ class Server {
             });
             console.log(`已上传 ${path.basename(filePath)}（${result.reused ? "秒传" : "上传"}）`);
             this._riskState.consecutiveFailures = 0;
+            this._clearUploadFailure(filePath);
             // 上传后生成 STRM（单文件粒度）：媒体落盘后立即生成对应 .strm
             // relPath 用本地相对源目录路径（remap 保持相对结构，云端/本地一致）
             this._maybeAutoStrmForFile(mapping, path.relative(source, filePath), {
@@ -1285,6 +1352,7 @@ class Server {
           if (err instanceof U115AccessLimitError) {
             // 参考插件 abort_on 模式：风控/授权错误立即中止整个扫描，不重试
             failed += 1;
+            this._recordUploadFailure(mapping, filePath, `风控中止：${err.message}`);
             this._riskPause(err.message);
             this.store.saveUploadRecords(records);
             const summary = `因风控中止：新增 ${uploaded}，秒传 ${reused}，失败 ${failed + 1}，冲突 ${conflicts}，未变更 ${unchanged}`;
@@ -1309,6 +1377,7 @@ class Server {
           // 其他异常仅计数，不中断（参照插件支持：普通上传失败不中止扫描）
           failed += 1;
           this._riskState.consecutiveFailures += 1;
+          this._recordUploadFailure(mapping, filePath, err.message);
           console.warn(`上传异常 ${path.basename(filePath)}：${err.message}`);
           await this._riskSleep(profile.fileIntervalMs);
         }

@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.2.0",
+  version: "1.2.1",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -273,6 +273,16 @@ class Store {
 
   saveUploadConflicts(conflicts) {
     this._writeJson(UPLOAD_CONFLICTS_KEY, conflicts);
+  }
+
+  // ---- 上传失败清单（1.2.1：失败文件可单条重试）----
+  getUploadFailures() {
+    const failures = this._readJson("p115assistant_upload_failures");
+    return failures && typeof failures === "object" && !Array.isArray(failures) ? failures : {};
+  }
+
+  saveUploadFailures(failures) {
+    this._writeJson("p115assistant_upload_failures", failures || {});
   }
 
   // ---- STRM 记录 ----

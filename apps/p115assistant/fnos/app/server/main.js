@@ -59,6 +59,8 @@ const ACTIONS = new Map([
   ["save_upload_mapping", ["POST", "saveUploadMapping"]],
   ["delete_upload_mapping", ["POST", "deleteUploadMapping"]],
   ["upload_status", ["GET", "uploadStatus"]],
+  ["upload_failures", ["GET", "uploadFailures"]],
+  ["upload_failures_retry", ["POST", "retryUploadFailure"]],
   ["upload_sweep", ["POST", "uploadSweep"]],
   ["watcher_start", ["POST", "watcherStart"]],
   ["watcher_stop", ["POST", "watcherStop"]],

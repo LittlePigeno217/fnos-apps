@@ -448,7 +448,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.0</span>
+      <span class="ver" id="appVersion">v1.2.1</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -619,6 +619,15 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
             取消任务
           </button>
+        </div>
+        <div id="uploadFailuresBox" style="display:none;margin:0 0 12px;padding:10px 14px;border:1px solid var(--border,#333);border-radius:10px;background:var(--surface,#0000)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="muted">上传失败清单（<span id="upFailCount">0</span>）</span>
+            <span class="grow"></span>
+            <button class="btn" style="font-size:12px;padding:2px 8px" onclick="retryAllFailures()">全部重试</button>
+            <button class="btn" style="font-size:12px;padding:2px 8px" onclick="refreshUploadFailures()">刷新</button>
+          </div>
+          <div id="upFailList" style="margin-top:6px;max-height:160px;overflow:auto;font-size:12px"></div>
         </div>
         <div class="pane" id="uploadOnceCard" hidden style="padding:14px 16px;margin-bottom:12px">
           <div class="field-row" style="align-items:center;gap:8px">
@@ -3741,7 +3750,33 @@ async function addMappingCard(){
   if (first) first.focus();
 }
 async function sweep(){ el("sweepState").textContent="已入队…"; const r=await call("upload_sweep","POST",{}); el("sweepState").textContent=r.message||"开始上传"; refreshWatchStatus(); if(r.success) uploadStatus(); }
-async function uploadStatus(){ const r=await call("upload_status"); if(r.success){ el("sweepState").textContent=`上传中:${r.data.active}, 待处理:${r.data.pending}`; updateCancelTaskBtn(r.data.active, r.data.pending); } }
+async function uploadStatus(){ const r=await call("upload_status"); if(r.success){ el("sweepState").textContent=`上传中:${r.data.active}, 待处理:${r.data.pending}`; updateCancelTaskBtn(r.data.active, r.data.pending); } refreshUploadFailures(); }
+// 上传失败清单（1.2.1）：失败文件可单条/全部重试
+async function refreshUploadFailures(){
+  const box = el("uploadFailuresBox"); if(!box) return;
+  const r = await call("upload_failures");
+  if(!r.success || !r.data) return;
+  const items = r.data.items || [];
+  el("upFailCount").textContent = r.data.count;
+  const list = el("upFailList");
+  if(!items.length){ box.style.display="none"; list.innerHTML=""; return; }
+  box.style.display="";
+  list.innerHTML = items.map((it) => `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border,#333)">
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(it.path)}">${esc(it.name)} <span class="muted">(${esc(it.mapping || "")}·${esc(it.error || "")})</span></span>
+    <span class="muted" style="flex:none;font-size:11px">${esc(new Date(it.ts || Date.now()).toLocaleTimeString())}</span>
+    <button class="btn" style="flex:none;font-size:12px;padding:2px 8px" onclick="retryUploadFailure('${escAttr(it.path)}')">重试</button>
+  </div>`).join("");
+}
+async function retryUploadFailure(filePath){
+  const r = await call("upload_failures_retry","POST",{filePath});
+  if(r.success){ refreshUploadFailures(); uploadStatus(); } else { alert(r.message || "重试失败"); }
+}
+async function retryAllFailures(){
+  const r = await call("upload_failures");
+  const items = (r.data && r.data.items) || [];
+  for (const it of items) await call("upload_failures_retry","POST",{filePath:it.path});
+  refreshUploadFailures(); uploadStatus();
+}
 /* 取消任务按钮：有进行中/待处理上传时显示，否则隐藏（T5 接线 task_cancel） */
 function updateCancelTaskBtn(active, pending){
   const btn=el("cancelTaskBtn"); if(!btn) return;
