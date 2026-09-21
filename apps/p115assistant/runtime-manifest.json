@@ -1,6 +1,6 @@
 {
-  "version": "1.1.6",
-  "generated_at": "2026-09-21T09:14:33Z",
+  "version": "1.1.7",
+  "generated_at": "2026-09-21T09:20:29Z",
   "files": {
     "server/client.js": {
       "sha256": "f79e50a308907ceeaf743c264fd4e8f451985381b739ff5e22a28bd556c048bb",
@@ -35,11 +35,11 @@
       "size": 4781
     },
     "server/server.js": {
-      "sha256": "2bb65c661d35fd20c8e84526f0b9e63cba56fd3c3a5a4a0136ce61cd7ae41296",
-      "size": 102046
+      "sha256": "4d9cc65c22bbb548e8b97aae5f2d16cc881287f2bc60990be4bbf10883fa0281",
+      "size": 101482
     },
     "server/store.js": {
-      "sha256": "37eb528c17e461e1bbf029194026889709681f39b097a704c985331a63affad2",
+      "sha256": "dbc45daf61ba5d965482e16deb3f7fd8c2fcb79cb731b422eb96c99c2011b7b9",
       "size": 11010
     },
     "server/update.js": {
@@ -47,7 +47,7 @@
       "size": 2946
     },
     "www/index.html": {
-      "sha256": "03320a87f4c2935f02303d15cab747d0ed3a1e443714e3fab8129b831fe43a7c",
+      "sha256": "fa6084df83ec0f0a61e0254b3dc2a148c81ed9065f8999679adaed75aebf54ce",
       "size": 171060
     },
     "www/qrcode.js": {
