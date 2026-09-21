@@ -544,9 +544,15 @@ class Server {
       const r = await flow.poll(entry.sess, { use_proxy: !!site_cfg.use_proxy });
       if (r.state === "ready") {
         const acc = this._upsertLoginAccount(site, adapter, r.account || {}, entry.account_id);
+        // 落会话：qr 流的 poll 回传 session（{access_token, refresh_token}），写入账号使
+        // has_session=true（对齐 form/password 流）；缺 session 时回落 r.account 兜底构造。
+        const sess = r.session || (r.account && r.account.access_token
+          ? { access_token: r.account.access_token, refresh_token: r.account.refresh_token || "" }
+          : null);
+        if (sess) { acc.session = sess; acc.session_ts = Date.now(); this._store.save(); }
         this._loginSessions.delete(token);
         this._log(`扫码登录成功：${adapter.name}（${adapter.getAccountLabel(acc)}）`);
-        return ok({ state: "ready", login_mode: "qr", account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: true } });
+        return ok({ state: "ready", login_mode: "qr", account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: !!sess } });
       }
       if (r.state === "expired") {
         this._loginSessions.delete(token);
@@ -621,6 +627,8 @@ class Server {
   /** 扫码登录落账号：优先按 account_id、其次按 uid 去重更新；否则新建。凭据写入 adapter 字段。 */
   _upsertLoginAccount(site, adapter, data, accountId) {
     const cfg = this._store.getConfig();
+    // 站点配置入口兜底：真实 store 恒预建全部站点键，但扫码流首个账号新建站点时不可依赖
+    if (!cfg.sites[site] || typeof cfg.sites[site] !== "object") cfg.sites[site] = { enabled: true, use_proxy: false, accounts: [] };
     if (!Array.isArray(cfg.sites[site].accounts)) cfg.sites[site].accounts = [];
     const arr = cfg.sites[site].accounts;
     const fieldKeys = adapter.fields.map((f) => f.key);

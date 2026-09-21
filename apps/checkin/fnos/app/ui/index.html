@@ -301,6 +301,23 @@
   .acct-bal .bd { font-size: 11.5px; font-weight: 600; }
   .acct-bal .bd.up { color: var(--ok); } .acct-bal .bd.down { color: var(--err); }
   .acct-bal.empty .bv { color: var(--muted-2); font-weight: 600; }
+  /* workbuddy 积分主视觉（大数字 chip + delta 徽标）：积分为卡片视觉焦点 */
+  .acct-hero { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
+               background: linear-gradient(135deg, rgba(37,99,235,.12), rgba(79,70,229,.14));
+               border: 1px solid var(--brand-soft); font-variant-numeric: tabular-nums; }
+  .acct-hero .hero-ico { width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center;
+                         background: var(--brand-grad); color: #fff; box-shadow: 0 4px 12px rgba(79,70,229,.32); }
+  .acct-hero .hero-ico svg { width: 17px; height: 17px; }
+  .acct-hero .hero-main { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+  .acct-hero .hero-lb { font-size: 10.5px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+  .acct-hero .hero-num { font-size: 26px; font-weight: 800; letter-spacing: -.5px;
+                         background: var(--brand-grad); -webkit-background-clip: text; background-clip: text;
+                         -webkit-text-fill-color: transparent; color: var(--brand-a); }
+  .acct-hero.empty .hero-num { background: none; -webkit-text-fill-color: initial; color: var(--muted-2); }
+  .acct-hero .hero-delta { margin-left: auto; flex: none; align-self: flex-start; font-size: 12px; font-weight: 700;
+                           padding: 2px 9px; border-radius: 999px; }
+  .acct-hero .hero-delta.up { color: var(--ok); background: var(--ok-glow); }
+  .acct-hero .hero-delta.down { color: var(--err); background: var(--err-bg); }
   .acct-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; }
   .acct-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
   /* 登录态徽标 */
@@ -382,7 +399,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.0</span>
+      <span class="ver" id="appVersion">v1.3.1</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -400,9 +417,9 @@
       <section id="tab-sites">
         <!-- 工具条 -->
         <div class="toolbar">
-          <button class="btn primary" onclick="addSiteFlow()">
+          <button class="btn primary" onclick="openAddAccount('')" title="选择已有站点添加账号">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            ＋ 添加站点
+            ＋ 添加账号
           </button>
           <button class="btn" onclick="runAll()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
@@ -417,11 +434,6 @@
           <div class="acct-section-head">
             <span class="t">账号列表</span>
             <span class="c" id="acctSectionCount"></span>
-            <span style="flex:1"></span>
-            <button class="btn btn-mini" onclick="openAddAccount('')" title="选择已有站点添加账号">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-              ＋ 添加账号
-            </button>
           </div>
           <div id="acctList" class="acct-grid-global"></div>
         </section>
@@ -729,7 +741,7 @@ function renderAccountList(added) {
   if (cards.length) {
     list.innerHTML = cards.join("");
   } else {
-    list.innerHTML = '<div class="empty" style="grid-column:1/-1">还没有添加任何账号，点击右上角「＋ 添加账号」或上方「＋ 添加站点」开始配置</div>';
+    list.innerHTML = '<div class="empty" style="grid-column:1/-1">还没有添加任何账号，点击上方「＋ 添加账号」开始配置</div>';
   }
   if (cnt) cnt.textContent = cards.length ? "共 " + cards.length + " 个账号 · 跨站点混合" : "";
 }
@@ -738,12 +750,15 @@ function renderAccountList(added) {
 function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
-  // 标题：备注优先，其次站点名（label 脱敏标识降级为副标题）
-  const title = a.remark || (d && d.site_name) || siteName(key) || ("账号 " + (a.id || ""));
-  const subLabel = a.label || (d && d.label) || "";
+  // 站点名仅由来源标签承载（见 siteTag）；标题只显示账号身份，三者不重叠：
+  //   标题 = 备注 → 账号标识(label 脱敏) → 「账号 N」；站点名不再进标题（去重）。
+  const acctLabel = a.label || (d && d.label) || "";
+  const title = a.remark || acctLabel || ("账号 " + (a.id || ""));
+  // 副标题只在与标题不同的账号标识存在时显示（有备注时补账号标识；无备注时标题已是标识，副标题留空避免重复）
+  const subLabel = (a.remark && acctLabel && acctLabel !== a.remark) ? acctLabel : "";
   const enabled = a.enabled !== false;
   const last = d ? d.last : null;
-  // 站点来源标签（色块 + 站点名）：跨站点混合列表中区分账号归属
+  // 站点来源标签（色块 + 站点名）：跨站点混合列表中区分账号归属，站点名唯一出处
   const siteTag = '<div class="acct-site">' +
     '<span class="site-tag ' + siteTagClass(key) + '" style="width:18px;height:18px;border-radius:6px;font-size:9px">' + esc(siteShort(key)) + "</span>" +
     '<span class="nm" title="' + esc(siteName(key)) + '">' + esc(siteName(key)) + "</span></div>";
@@ -761,11 +776,27 @@ function renderAcctCard(key, a, cap) {
       ? '<span class="login-badge on"><span class="dot"></span>已登录</span>'
       : '<span class="login-badge"><span class="dot"></span>未登录</span>';
   }
-  // 余额 / 积分行：仅 supports_balance 的账号（workbuddy 积分 / anyrouter 余额）显示
+  // 余额 / 积分行：仅 supports_balance 的账号显示。
+  //   workbuddy → 积分主视觉 hero（大数字 chip + delta 徽标）；其余站点 → 精简余额行（不动）。
   let balLine = "";
   if (d && d.supports_balance) {
     const bl = esc(d.balance_label || "余额");
-    if (d.balance_display) {
+    if (key === "workbuddy") {
+      const coin = '<span class="hero-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/></svg></span>';
+      if (d.balance_display) {
+        let delta = "";
+        if (d.balance_delta_display) {
+          const up = Number(d.balance_delta) > 0;
+          delta = '<span class="hero-delta ' + (up ? "up" : "down") + '">' + esc(d.balance_delta_display) + "</span>";
+        }
+        balLine = '<div class="acct-hero">' + coin +
+          '<span class="hero-main"><span class="hero-lb">' + bl + '</span><span class="hero-num">' + esc(d.balance_display) + "</span></span>" +
+          delta + "</div>";
+      } else {
+        balLine = '<div class="acct-hero empty">' + coin +
+          '<span class="hero-main"><span class="hero-lb">' + bl + '</span><span class="hero-num">—</span></span></div>';
+      }
+    } else if (d.balance_display) {
       let delta = "";
       if (d.balance_delta_display) {
         const up = Number(d.balance_delta) > 0;
@@ -1236,18 +1267,6 @@ function openSiteEditor(key) {
   const first = box.querySelector("input[type=text], input[type=password]");
   if (first) setTimeout(() => first.focus(), 60);
   $("siteModal").style.display = "flex";
-}
-
-/** 「＋ 添加站点」：选择未添加的站点 → 通用「添加账号」窗口（按 login_caps 渲染登录方式） */
-function addSiteFlow() {
-  const addedKeys = new Set(Object.keys(SITE_DATA).filter((k) => {
-    const st = SITE_DATA[k] || {};
-    return Array.isArray(st.accounts) && st.accounts.length > 0;
-  }));
-  const candidates = Object.keys(SITE_DATA).filter((k) => !addedKeys.has(k));
-  if (!candidates.length) { toast("所有站点都已添加", "warn"); return; }
-  if (candidates.length === 1) { openAddAccount(candidates[0]); return; }
-  openAddAccount("", candidates);
 }
 
 function closeSiteModal() {

@@ -1007,7 +1007,13 @@ const WORKBUDDY = {
         const ent = firstStr(cand, ["enterpriseId", "enterprise_id"]);
         if (ent) account.enterprise_id = ent;
       } catch { /* 账号信息拉取失败：仍以 tokens 完成登录 */ }
-      return { state: "ready", account };
+      // session 与 _billingDo/_pickAccess 读取形状一致（{access_token, refresh_token}）；
+      // 供 server 层落账号时写入 acc.session，使 has_session 判定为已登录（对齐 form/password 流）。
+      return {
+        state: "ready",
+        account,
+        session: { access_token: account.access_token, refresh_token: account.refresh_token || "" },
+      };
     },
   },
 
