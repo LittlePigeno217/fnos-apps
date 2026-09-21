@@ -673,13 +673,234 @@ const ANYROUTER = {
   },
 };
 
+/* ── 千问办公 / WorkBuddy（腾讯 CodeBuddy 每日签到）──────────────────
+ * 协议来源：开源仓库 github.com/veenyi/XingyunAPI（pkg/checkin/workbuddy.go、
+ * pkg/workbuddy/chat.go），公开可读，非逆向。三个上游端点：
+ *   - 签到：POST https://www.codebuddy.cn/v2/billing/meter/daily-checkin
+ *   - 积分：POST https://www.codebuddy.cn/v2/billing/meter/get-user-resource
+ *   - 刷新：POST https://copilot.tencent.com/v2/plugin/auth/token/refresh（体 {refresh_token}）
+ * 鉴权：Authorization: Bearer <access_token>；企业上下文 X-Enterprise-Id / X-Domain。
+ * 扫码登录（微信）为异步二维码流，本 adapter 不实现（loginFlow 是同步 form 模型）；
+ * 用户在账号表单手填 access_token / refresh_token，签到前若过期用 refresh_token 自动续期。
+ */
+const WORKBUDDY = {
+  key: "workbuddy",
+  name: "WorkBuddy",
+  short: "W",
+  mode: "Token",
+  desc: "www.codebuddy.cn · 腾讯 CodeBuddy 每日签到领积分（access/refresh token 自动续期）",
+  fields: [
+    { key: "access_token", label: "Access Token", type: "password", ph: "粘贴 access token（登录后抓包获取；留空不改）" },
+    { key: "refresh_token", label: "Refresh Token", type: "password", ph: "粘贴 refresh token（自动续期用；留空不改）" },
+    { key: "uid", label: "UID（可选）", type: "text", ph: "账号用户 ID，仅用于展示" },
+    { key: "enterprise_id", label: "Enterprise ID（可选）", type: "text", ph: "企业 / 租户 ID" },
+    { key: "domain", label: "Domain（可选）", type: "text", ph: "部门域名" },
+  ],
+  base: "https://www.codebuddy.cn",
+  authBase: "https://copilot.tencent.com",
+  checkinPath: "/v2/billing/meter/daily-checkin",
+  usagePath: "/v2/billing/meter/get-user-resource",
+  refreshPath: "/v2/plugin/auth/token/refresh",
+  // 浏览器惯例 UA（对齐 workbuddy.go wbHeaderUserAgent）
+  UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) CodeBuddy/1.0.0 Chrome/133.0.0.0 Safari/537.36",
+  ALREADY_MARKERS: ["已签到", "今日已签", "重复签到", "already", "checked_in", "checked in", "duplicate"],
+  CREDIT_MARKERS: ["积分不足", "积分用完", "额度用尽", "余额不足", "配额用尽", "每日上限", "insufficient", "out of credit", "quota exhaust"],
+
+  defaultConfig() {
+    return { enabled: false, use_proxy: false, access_token: "", refresh_token: "", uid: "", enterprise_id: "", domain: "" };
+  },
+  isConfigured(cfg) {
+    return !!(cfg && (cfg.access_token || (cfg.session && cfg.session.access_token)));
+  },
+  getAccountLabel(cfg) {
+    return (cfg && (cfg.uid || cfg.remark)) || "WorkBuddy";
+  },
+
+  /** 计费端点公共头（Bearer + 企业上下文） */
+  _billingHeaders(accessToken, cfg) {
+    const h = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": this.UA,
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      Authorization: "Bearer " + accessToken,
+    };
+    if (cfg && cfg.enterprise_id) h["X-Enterprise-Id"] = String(cfg.enterprise_id);
+    if (cfg && cfg.domain) h["X-Domain"] = String(cfg.domain);
+    return h;
+  },
+
+  /** 计费请求体：企业上下文透传，其余留空 */
+  _billingBody(cfg) {
+    const body = {};
+    if (cfg && cfg.enterprise_id) body.enterprise_id = String(cfg.enterprise_id);
+    if (cfg && cfg.domain) body.domain = String(cfg.domain);
+    return body;
+  },
+
+  _hasMarker(text, markers) {
+    const t = String(text || "").toLowerCase();
+    return markers.some((m) => t.includes(m.toLowerCase()));
+  },
+
+  /** 上游宽容包裹层：code 成功判定（0/200/success/ok/true 视为成功） */
+  _okCode(j) {
+    if (!j || typeof j !== "object") return false;
+    const c = j.code;
+    if (c !== undefined && c !== null) {
+      if (typeof c === "number" && c !== 0 && c !== 200) return false;
+      if (typeof c === "string" && c !== "" && c !== "0" && c !== "200" && !/^(success|ok)$/i.test(c)) return false;
+    }
+    if (typeof j.success === "boolean" && !j.success) return false;
+    if (typeof j.success === "string" && /^false$/i.test(j.success)) return false;
+    return true;
+  },
+
+  _msg(j) {
+    if (!j) return "";
+    return String(j.msg || j.message || (typeof j.error === "string" ? j.error : "") || j.status || "");
+  },
+
+  /** 用 refresh_token 换新 access_token（copilot.tencent.com，体仅 refresh_token，
+   *  响应 data 为 camelCase accessToken/refreshToken）。成功后回写 cfg.session。 */
+  async _refresh(cfg) {
+    const refresh = (cfg.refresh_token || (cfg.session && cfg.session.refresh_token) || "").trim();
+    if (!refresh) throw new Error("缺少 refresh_token，请重新登录 WorkBuddy 后补充凭据");
+    const s = new Session();
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": this.UA,
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      Authorization: "Bearer " + refresh,
+      "X-Refresh-Token": refresh,
+    };
+    if (cfg.enterprise_id) headers["X-Enterprise-Id"] = String(cfg.enterprise_id);
+    const r = await s.postJson(this.authBase + this.refreshPath, { refresh_token: refresh }, { headers, timeout: 15000, useProxy: cfg.use_proxy });
+    const j = parseJson(r.text);
+    const data = (j && j.data) || {};
+    if (!data.accessToken) {
+      throw new Error((j && this._msg(j)) || `WorkBuddy 令牌刷新失败（HTTP ${r.status}）`);
+    }
+    return { access_token: data.accessToken, refresh_token: data.refreshToken || refresh };
+  },
+
+  /** 会话优先取 access_token：有效 session 直接用；否则用字段值；调用方按 401 触发刷新 */
+  _pickAccess(cfg) {
+    if (sessionValid(cfg) && cfg.session && cfg.session.access_token) return cfg.session.access_token;
+    return (cfg.access_token || "").trim();
+  },
+  _pickRefresh(cfg) {
+    if (sessionValid(cfg) && cfg.session && cfg.session.refresh_token) return cfg.session.refresh_token;
+    return (cfg.refresh_token || "").trim();
+  },
+
+  /** 调计费端点：401/鉴权失效时用 refresh_token 续期后重试一次；成功续期回写内存 cfg.session。 */
+  async _billingDo(cfg, path) {
+    let access = this._pickAccess(cfg);
+    if (!access) throw new Error("缺少 access_token，请编辑签到账号补充凭据");
+    const s = new Session();
+    const call = (token) => s.postJson(this.base + path, this._billingBody(cfg), {
+      headers: this._billingHeaders(token, cfg), timeout: 15000, useProxy: cfg.use_proxy,
+    });
+    let r = await call(access);
+    // 访问令牌过期（401/鉴权错误）→ 尝试刷新一次
+    if (r.status === 401 || (r.status >= 400 && /token|unauthor|登录|鉴权|过期|expired|invalid/i.test(r.text || ""))) {
+      if (this._pickRefresh(cfg)) {
+        const fresh = await this._refresh(cfg);
+        cfg.session = { access_token: fresh.access_token, refresh_token: fresh.refresh_token };
+        cfg.session_ts = Date.now();
+        access = fresh.access_token;
+        r = await call(access);
+      }
+    }
+    return r;
+  },
+
+  async runCheckin(cfg) {
+    const r = await this._billingDo(cfg, this.checkinPath);
+    const j = parseJson(r.text);
+    const text = this._msg(j);
+    // 上游对「已签到」常回 HTTP 400（body code=10001 今天已签到）
+    if (r.status < 200 || r.status > 299) {
+      if (this._hasMarker(text || r.text, this.ALREADY_MARKERS)) {
+        return this._ok("今日已签到", text || "今天已签到", cfg);
+      }
+      throw new Error(text || `WorkBuddy 签到失败（HTTP ${r.status}）`);
+    }
+    if (!this._okCode(j)) {
+      if (this._hasMarker(text, this.ALREADY_MARKERS)) return this._ok("今日已签到", text, cfg);
+      if (this._hasMarker(text, this.CREDIT_MARKERS)) throw new Error(text);
+      throw new Error(text || "WorkBuddy 签到请求失败");
+    }
+    const data = (j && j.data) || {};
+    if (data.checked_in === true || data.checked === true) {
+      return this._ok("今日已签到", text || "今天已签到", cfg);
+    }
+    if (this._hasMarker(text, this.ALREADY_MARKERS)) return this._ok("今日已签到", text, cfg);
+    // 尝试附带积分（不致命）
+    let reward = "-";
+    try {
+      const credits = await this._queryCredits(cfg);
+      if (credits.credits != null) reward = String(credits.credits);
+    } catch { /* 积分取不到不影响签到结果 */ }
+    return this._ok("签到成功", text || "签到成功", cfg, reward);
+  },
+
+  /** 查询积分（get-user-resource），宽容解析剩余/总量 */
+  async _queryCredits(cfg) {
+    const r = await this._billingDo(cfg, this.usagePath);
+    const j = parseJson(r.text);
+    if (r.status < 200 || r.status > 299 || !this._okCode(j)) {
+      throw new Error(this._msg(j) || "积分响应解析失败");
+    }
+    const data = (j && j.data) || {};
+    // WorkBuddy 计费结构：data.accounts[] 资源包，credits=ΣcapacityRemain，total=ΣcapacitySize
+    let credits = null, total = null;
+    const accounts = Array.isArray(data.accounts) ? data.accounts : (Array.isArray((data.response || {}).accounts) ? data.response.accounts : null);
+    if (accounts) {
+      credits = 0; total = 0;
+      for (const it of accounts) {
+        if (!it || typeof it !== "object") continue;
+        for (const [k, v] of Object.entries(it)) {
+          const lk = k.toLowerCase();
+          if (lk === "capacityremain") credits += Number(v) || 0;
+          if (lk === "capacitysize") total += Number(v) || 0;
+        }
+      }
+    } else {
+      for (const [k, v] of Object.entries(data)) {
+        const lk = k.toLowerCase();
+        if (["credits", "credit", "remaining", "balance", "left", "quota"].includes(lk) && credits == null) credits = Number(v) || 0;
+        if (["credits_total", "total", "total_credits", "limit"].includes(lk) && total == null) total = Number(v) || 0;
+      }
+    }
+    return { credits, total };
+  },
+
+  async testConnection(cfg) {
+    const { credits, total } = await this._queryCredits(cfg);
+    const detail = credits != null ? `积分 ${credits}${total != null ? ` / ${total}` : ""}` : "凭据有效";
+    return { site: this.key, site_name: this.name, message: `连接成功，${detail}` };
+  },
+
+  _ok(status, message, cfg, reward, total) {
+    return {
+      site: this.key, site_name: this.name, status, message,
+      reward: reward != null ? reward : "-", total: total != null ? total : "-",
+      account: this.getAccountLabel(cfg), time: now(),
+    };
+  },
+};
+
 module.exports = {
   FLZT,
   RIGHT_FORUM,
   YPOJIE,
   ANYROUTER,
+  WORKBUDDY,
   isAlreadyCheckedIn,
   maskEmail,
   // ADAPTERS 单一事实源：store.js / server.js 均从这里导入，禁止各自维护拷贝
-  ADAPTERS: { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER },
+  ADAPTERS: { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER, workbuddy: WORKBUDDY },
 };
