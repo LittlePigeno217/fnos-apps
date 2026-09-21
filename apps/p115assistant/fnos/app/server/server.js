@@ -1600,7 +1600,9 @@ class Server {
       }
       const detail = `连续 ${result.continuous_day || 0} 天，获得 ${result.points_num || 0} 点`;
       console.log(`签到完成：${detail}`);
-      await this._notifier.notify("每日签到", detail);
+      if (this.store.getConfig().checkin_notify === true) {
+        await this._notifier.notify("每日签到", detail);
+      }
       this.store.appendHistory({
         ts: Date.now(),
         type: "checkin",
