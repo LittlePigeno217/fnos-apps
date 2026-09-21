@@ -1,6 +1,6 @@
 {
-  "version": "1.1.8",
-  "generated_at": "2026-09-21T17:41:26Z",
+  "version": "1.1.9",
+  "generated_at": "2026-09-21T18:11:38Z",
   "files": {
     "server/hotfix.js": {
       "sha256": "7a76e254897a5ff12ef37a94af26689737d51ebb03e0c111ced040f0a6be1d7b",
@@ -11,36 +11,36 @@
       "size": 7026
     },
     "server/main.js": {
-      "sha256": "0de8a7b71daf555fdc66f7ffb9519a450b016d2fe4cf031194397e37b63a2f63",
-      "size": 12380
+      "sha256": "26bcf71ef1791c0a297b83540ce29e6abc9c923419a58e9bd02c94946f39bab2",
+      "size": 13756
     },
     "server/notify.js": {
       "sha256": "fbbf8bee81cc15627a0f677f26983887089dd6538c43303e4873cb9b3a8ac2ac",
       "size": 1630
     },
     "server/router.js": {
-      "sha256": "4b76f87ae918cff7e82f0288fdd38e962547aec4560271ad75770debce06993f",
-      "size": 1993
+      "sha256": "594a2a31a0d721f2bdaabcf9b560478a8a57b5666d8350e22d99af4039699d00",
+      "size": 2479
     },
     "server/server.js": {
-      "sha256": "6bef7b81b4dc3c0a3dbfd04dbe3de239a15ba9535d0a73da265ccdc7c667bc91",
-      "size": 10815
+      "sha256": "f4aeea8bf9c8e70d4dd3ce6d5c4be0b1f4f0499673ddf3055086b20329843f58",
+      "size": 18265
     },
     "server/sites.js": {
-      "sha256": "44858fe9e0929a4a6fdbc93ce98577d79daccebf393fdc58b47152884dbdea99",
-      "size": 24493
+      "sha256": "e8e7c62c9ab719c3751702e13f6909af2000487f91c0768e1097bfb471de047d",
+      "size": 28632
     },
     "server/store.js": {
-      "sha256": "ae04e4deca6401807fe08a6317c425916ea0018a74bff1525d3bc5335b92530e",
-      "size": 8120
+      "sha256": "c55b2a298ea5670c083a0f97c0d05bbbd0730791d2f3349a5f8b91088bed25da",
+      "size": 9187
     },
     "server/update.js": {
-      "sha256": "77cc6d94d3227fb60f7a18f3feb372893ccc701856f1ce6cbb9a274468b40c67",
+      "sha256": "48c106c2ded17cde3e88995d750a50224af91e113590c99e77b1890800800139",
       "size": 19825
     },
     "www/index.html": {
-      "sha256": "2bc1a015a55de6f27b135d037fd9e0c269b3fe5ed49ee23494ce42eebea3970f",
-      "size": 47885
+      "sha256": "ee611fa608efc4d4c7fe117c7dbf8db5db447f361ada22f50b0b8b4d97b96887",
+      "size": 62000
     }
   }
 }

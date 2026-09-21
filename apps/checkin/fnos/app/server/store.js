@@ -23,7 +23,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.1.8",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.1.9",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -82,6 +82,9 @@ class Store {
         id: String(a.id || allocId()),
         enabled: a.enabled !== false,
         remark: String(a.remark || ""),
+        // session：登录产物（token/cookie），旧文件无此字段自动补 null（不强制清理）
+        session: (a.session && typeof a.session === "object") ? a.session : null,
+        session_ts: Number(a.session_ts) || 0,
       };
       // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）
       for (const f of accountFieldKeys(slug)) {
@@ -155,6 +158,21 @@ class Store {
                 enabled: a.enabled !== false,
                 remark: String(a.remark !== undefined ? a.remark : (prev.remark || "")).trim(),
               };
+              // session（登录产物）语义区别于明文字段：
+              //   undefined → 保留现值；null/空串 → 清空（登出）；对象 → 整体替换
+              if (a.session === undefined) {
+                merged.session = prev.session || null;
+                merged.session_ts = Number(prev.session_ts) || 0;
+              } else if (a.session === null || a.session === "") {
+                merged.session = null;
+                merged.session_ts = 0;
+              } else if (typeof a.session === "object") {
+                merged.session = a.session;
+                merged.session_ts = Number(a.session_ts) || Date.now();
+              } else {
+                merged.session = prev.session || null;
+                merged.session_ts = Number(prev.session_ts) || 0;
+              }
               for (const f of accountFieldKeys(k)) {
                 const rawV = a[f];
                 const prevV = prev[f] || "";

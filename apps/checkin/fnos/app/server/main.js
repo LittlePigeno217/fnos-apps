@@ -148,6 +148,15 @@ const ACTION_HANDLERS = {
   testLogin: (body) => api.testLogin(body.site, body.account_id),
   getHistory: (body, ctx) => api.getHistory(new URL(ctx.req.url, "http://x").searchParams.get("limit")),
   clearHistory: () => api.clearHistory(),
+  // 阶段2：账号运维
+  accountsList: () => api.accountsList(),
+  accountsReorder: (body) => api.accountsReorder(body),
+  accountsImport: (body) => api.accountsImport(body),
+  accountsExport: (body, ctx) => {
+    const sp = new URL(ctx.req.url, "http://x").searchParams;
+    return api.accountsExport({ site: sp.get("site"), include_secrets: sp.get("include_secrets") === "true" });
+  },
+  accountsClear: (body) => api.accountsClear(body),
   /** 实时运行日志：增量读取 app.log（after=上次字节偏移；文件轮转/截断自动重置） */
   getLogs: (body, ctx) => {
     const sp = new URL(ctx.req.url, "http://x").searchParams;
@@ -248,7 +257,25 @@ async function handle(req, res) {
       actionName = pathname.split("/").filter(Boolean).pop() || "";
     }
     const route = ROUTES.get(actionName);
-    if (!route) return send({ success: false, message: "404" });
+    if (!route) {
+      // 动态交互登录路由：checkin/{site}_login/{init|status}
+      //   init（POST）→ loginFlowInit；status（GET）→ loginFlowStatus。
+      //   未实现 loginFlow 的站点由 server 层返回「不支持交互登录」。
+      const m = actionName.match(/^(?:checkin\/)?([a-z_]+)_login\/(init|status)$/);
+      if (m) {
+        const site = m[1];
+        const phase = m[2];
+        if (phase === "init") {
+          if (method !== "POST") return send({ success: false, message: "405 方法不允许" });
+          const body = await readBody(req);
+          return send(await api.loginFlowInit({ site, account_id: body.account_id }));
+        }
+        if (method !== "GET") return send({ success: false, message: "405 方法不允许" });
+        const token = new URL(req.url, "http://x").searchParams.get("token");
+        return send(await api.loginFlowStatus({ site, token }));
+      }
+      return send({ success: false, message: "404" });
+    }
     const handlerKey = route[method];
     if (!handlerKey) return send({ success: false, message: "405 方法不允许" });
     const handler = ACTION_HANDLERS[handlerKey];

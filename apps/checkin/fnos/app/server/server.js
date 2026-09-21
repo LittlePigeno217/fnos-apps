@@ -242,7 +242,183 @@ class Server {
     return ok({ cleared: true });
   }
 
-  // 阶段 2 TODO: 账号运维方法（importAccounts/exportAccounts/reorderAccounts/clearAccounts）
+  /* ── 阶段 2：账号运维（list/reorder/import/export/clear）─────────────
+   * 统一 ok/fail 包裹；每个方法先校验 site 存在于 ADAPTERS。
+   * list/export 默认脱敏，绝不回吐凭据/session 明细。 */
+
+  /** 账号清单（脱敏）：只含 id/enabled/remark/label/configured/has_session/last/points */
+  accountsList() {
+    const cfg = this._store.getConfig();
+    const hist = this._store.getHistory(500) || [];
+    const sites = {};
+    for (const key of Object.keys(ADAPTERS)) {
+      const adapter = ADAPTERS[key];
+      const site = cfg.sites[key] || {};
+      const accs = Array.isArray(site.accounts) ? site.accounts : [];
+      sites[key] = {
+        accounts: accs.map((a) => {
+          const accHist = hist.filter((h) => h && h.site === key && String(h.account_id) === String(a.id));
+          const last = accHist[0] || null;
+          const points = Number(accHist.reduce((s, h) => s + parseReward(h.reward), 0).toFixed(4));
+          return {
+            id: a.id,
+            enabled: a.enabled !== false,
+            remark: a.remark || "",
+            label: adapter.getAccountLabel(a),
+            configured: adapter.isConfigured(a),
+            has_session: !!a.session,
+            last: last ? { time: last.time, status: last.status } : null,
+            points,
+          };
+        }),
+      };
+    }
+    return ok({ sites });
+  }
+
+  /** 重排账号顺序：ids 必须是该站现有账号 id 的一个排列 */
+  accountsReorder(body) {
+    const { site, ids } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    if (!Array.isArray(ids)) return fail("ids 必须为数组");
+    const cfg = this._store.getConfig();
+    const accs = Array.isArray(cfg.sites[site].accounts) ? cfg.sites[site].accounts : [];
+    const curIds = accs.map((a) => String(a.id));
+    const wantIds = ids.map(String);
+    if (
+      wantIds.length !== curIds.length ||
+      new Set(wantIds).size !== wantIds.length ||
+      !wantIds.every((id) => curIds.includes(id))
+    ) {
+      return fail("ids 必须是该站点现有账号 id 的一个排列");
+    }
+    const byId = new Map(accs.map((a) => [String(a.id), a]));
+    cfg.sites[site].accounts = wantIds.map((id) => byId.get(id));
+    this._store.save();
+    return ok({ site, order: wantIds }, "顺序已更新");
+  }
+
+  /** 导入账号（默认追加，id 重新分配不冲突）。导入允许带密（导入功能本身目的）。 */
+  accountsImport(body) {
+    const { site, data } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    let items;
+    try {
+      items = typeof data === "string" ? JSON.parse(data) : data;
+    } catch {
+      return fail("data 不是合法 JSON");
+    }
+    if (items && !Array.isArray(items) && typeof items === "object") items = [items];
+    if (!Array.isArray(items) || !items.length) return fail("导入数据为空");
+
+    const cfg = this._store.getConfig();
+    if (!Array.isArray(cfg.sites[site].accounts)) cfg.sites[site].accounts = [];
+    const cur = cfg.sites[site].accounts;
+    const fieldKeys = adapter.fields.map((f) => f.key);
+    const usedIds = new Set(cur.map((a) => String(a.id)));
+    const allocId = () => {
+      let max = 0;
+      for (const id of usedIds) {
+        const m = parseInt(String(id).replace(/\D/g, ""), 10);
+        if (Number.isFinite(m) && m > max) max = m;
+      }
+      const nid = "a" + (max + 1);
+      usedIds.add(nid);
+      return nid;
+    };
+    let added = 0;
+    for (const it of items) {
+      if (!it || typeof it !== "object") continue;
+      const acc = { id: allocId(), enabled: it.enabled !== false, remark: String(it.remark || "").trim() };
+      acc.session = (it.session && typeof it.session === "object") ? it.session : null;
+      acc.session_ts = acc.session ? (Number(it.session_ts) || Date.now()) : 0;
+      for (const f of fieldKeys) acc[f] = it[f] !== undefined ? String(it[f]) : "";
+      cur.push(acc);
+      added += 1;
+    }
+    this._store.save();
+    return ok({ site, added, total: cur.length }, `已导入 ${added} 个账号（追加）`);
+  }
+
+  /** 导出账号：默认脱敏（password 型字段与 session 打码）；include_secrets=true 才带密 */
+  accountsExport(body) {
+    const { site, include_secrets } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    const cfg = this._store.getConfig();
+    const accs = Array.isArray(cfg.sites[site].accounts) ? cfg.sites[site].accounts : [];
+    const fieldKeys = adapter.fields.map((f) => f.key);
+    const secretKeys = new Set(adapter.fields.filter((f) => f.type === "password").map((f) => f.key));
+    const withSecrets = include_secrets === true;
+    const accounts = accs.map((a) => {
+      const out = { id: a.id, enabled: a.enabled !== false, remark: a.remark || "" };
+      for (const f of fieldKeys) {
+        const v = a[f] || "";
+        out[f] = (secretKeys.has(f) && !withSecrets && v) ? "***" : v;
+      }
+      if (withSecrets) {
+        out.session = a.session || null;
+        out.session_ts = Number(a.session_ts) || 0;
+      } else {
+        out.session = a.session ? "***" : null;
+      }
+      return out;
+    });
+    return ok({ site, exported_at: new Date().toISOString(), include_secrets: withSecrets, accounts });
+  }
+
+  /** 清空某站点全部账号 */
+  accountsClear(body) {
+    const { site } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    const cfg = this._store.getConfig();
+    cfg.sites[site].accounts = [];
+    this._store.save();
+    return ok({ site, cleared: true }, "已清空该站点账号");
+  }
+
+  /* ── 阶段 2：交互登录（loginFlow，form 模式一步完成）───────────── */
+
+  /** 触发交互登录：产出 session 写入账号并落盘（不回吐 session 明文） */
+  async loginFlowInit(body) {
+    const { site, account_id } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    if (!adapter.loginFlow) return fail("该站点不支持交互登录（请用 Cookie 配置）");
+    const cfg = this._store.getConfig();
+    const accs = Array.isArray(cfg.sites[site].accounts) ? cfg.sites[site].accounts : [];
+    const acc = account_id
+      ? accs.find((a) => String(a.id) === String(account_id))
+      : accs.find((a) => a.enabled !== false);
+    if (!acc) return fail(account_id ? "未找到指定账号" : "该站点没有可用账号");
+    try {
+      const r = await adapter.loginFlow.init(acc);
+      if (!r || !r.session) return fail("登录未返回会话");
+      acc.session = r.session;
+      acc.session_ts = Date.now();
+      this._store.save();
+      return ok({
+        status: r.status || "ready",
+        session_type: r.session.type,
+        message: r.message || "登录成功",
+        account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: true },
+      });
+    } catch (err) {
+      return fail(err.message || "登录失败");
+    }
+  }
+
+  /** 交互登录状态（form 模式同步完成，恒 ready；token 占位备 qr/url 扩展） */
+  loginFlowStatus(body) {
+    const { site } = body || {};
+    const adapter = ADAPTERS[site];
+    if (!adapter) return fail(`未知站点：${site}`);
+    if (!adapter.loginFlow) return fail("该站点不支持交互登录（请用 Cookie 配置）");
+    return ok({ state: "ready" });
+  }
 }
 
 /**

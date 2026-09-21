@@ -19,7 +19,15 @@ const ROUTES = new Map([
   ["checkin/config", { GET: "getConfig", POST: "saveConfig" }],
   ["checkin/status", { GET: "status" }],
   ["checkin/run", { POST: "runOnce" }],
-  ["checkin/points", { GET: "points" }],   // 新增：积分聚合，无旧别名
+  ["checkin/points", { GET: "points" }],   // 阶段1：积分聚合，无旧别名
+
+  // ── 阶段2：账号运维（命名空间，无旧别名）────────────
+  ["checkin/accounts", { GET: "accountsList" }],
+  ["checkin/accounts/reorder", { POST: "accountsReorder" }],
+  ["checkin/accounts/import", { POST: "accountsImport" }],
+  ["checkin/accounts/export", { GET: "accountsExport" }],
+  ["checkin/accounts/clear", { POST: "accountsClear" }],
+  // 交互登录 checkin/{site}_login/{init|status} 为动态路由，由 main.js 正则处理
 
   // ── 旧扁平名兼容别名（前端零改动必须成立）─────────
   ["get_config", { GET: "getConfig" }],

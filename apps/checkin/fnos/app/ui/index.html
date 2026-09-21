@@ -236,6 +236,43 @@
   .res-line.ok { color: var(--ok); }
   .res-line.err { color: var(--err); }
 
+  /* ---------- 账号为中心卡片（阶段3） ---------- */
+  .site-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+               margin-bottom: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  .site-card-head { display: flex; align-items: center; gap: 10px; padding: 12px 15px; flex-wrap: wrap; }
+  .site-card-title { min-width: 0; flex: 1; }
+  .site-card-title .name { font-weight: 600; font-size: 14px; }
+  .acct-list { border-top: 1px solid var(--border); }
+  .acct-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+              padding: 9px 15px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+  .acct-row:last-child { border-bottom: none; }
+  .acct-label { flex: 1; min-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-empty { padding: 10px 15px; color: var(--muted); font-size: 12px; }
+  /* 登录态徽标 */
+  .login-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; white-space: nowrap;
+                 padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: transparent; }
+  .login-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .login-badge.on { color: var(--ok); border-color: var(--ok-border); }
+  .login-badge.on .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-glow); }
+  /* 积分面板条 */
+  .points-bar { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+                padding: 12px 16px; margin-bottom: 14px; }
+  .points-bar-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+  .points-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; font-size: 12px;
+                 border: 1px solid var(--border); border-radius: 999px; background: transparent;
+                 font-variant-numeric: tabular-nums; }
+  .points-chip b { color: var(--accent-strong); font-weight: 700; }
+  .points-detail { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
+  .points-detail table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .points-detail th, .points-detail td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  .points-detail th { color: var(--muted); font-weight: 600; }
+  /* 账号运维工具行（弹窗内） */
+  .acct-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 2px;
+                padding-bottom: 9px; border-bottom: 1px dashed var(--border); }
+  .acct-tools .grow { flex: 1; min-width: 8px; }
+  .modal-move { display: inline-flex; flex-direction: column; gap: 2px; }
+  .modal-move button { line-height: 1; padding: 1px 6px; font-size: 11px; }
+
   /* ---------- 历史 ---------- */
   .hist-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0;
                border-bottom: 1px dashed var(--border); font-size: 13px; }
@@ -291,7 +328,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.1.8</span>
+      <span class="ver" id="appVersion">v1.1.9</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -332,6 +369,7 @@
           <span style="flex:1"></span>
           <div class="muted" id="ovHint" style="font-size:11px"></div>
         </div>
+        <div id="pointsBar" class="points-bar" hidden></div>
         <div id="siteCards"></div>
         <div class="summary-line" id="runResult"></div>
       </section>
@@ -415,6 +453,7 @@
     <div class="creds-title" style="margin-top:10px">站点账号 <span class="hint">· 每个账号独立签到；凭据留空保存 = 保持当前</span></div>
     <div id="modalAccounts"></div>
     <button type="button" class="btn" style="margin-top:10px" onclick="addModalAccount()">＋ 添加账号</button>
+    <div class="muted" style="font-size:11px;margin-top:6px">可交互登录的站点在卡片上点「登录」自动获取会话；Cookie 站点请直接粘贴凭据。</div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;align-items:center">
       <span class="muted" id="modalStatus" style="font-size:12px"></span>
       <button type="button" class="btn" onclick="closeSiteModal()">取消</button>
@@ -500,7 +539,9 @@ function toast(message, type) {
 
 /* ── 总览条：今日 N/M + 失败名单（status 派生）── */
 async function refreshOverview() {
-  const r = await call("status");
+  // status（总览/站点 meta）与 accounts（per-account has_session/last/points）并行拉取
+  const [r, ar] = await Promise.all([call("status"), call("checkin/accounts")]);
+  if (ar && ar.success && ar.data && ar.data.sites) ACCT_DATA = ar.data.sites;
   if (!r.success || !r.data) return;
   const t = r.data.today || { done: 0, total: 0, failed: [] };
   const ov = document.getElementById("overviewBar");
@@ -519,10 +560,24 @@ async function refreshOverview() {
   // status 返回的 sites 含 last/today_ok（徽标数据源）；get_config 的 sites 仅含配置。
   // 必须传 r.data.sites，否则站点行徽标恒显「未签」。
   renderSiteCards(r.data.sites || SITE_DATA);
+  probeLoginCaps();
+  refreshPoints();
 }
 
 let SITE_DATA = {};
+let ACCT_DATA = {};   // checkin/accounts 派生：per-account has_session/last/points（脱敏）
+let LOGIN_CAPS = {};  // site -> bool，交互登录能力（探测 {site}_login/status 得出）
 
+/** 从 ACCT_DATA 取某账号的脱敏明细（has_session/last/points）；无则 null（退回站点级） */
+function acctDetail(key, id) {
+  const s = ACCT_DATA[key];
+  if (!s || !Array.isArray(s.accounts)) return null;
+  return s.accounts.find((a) => String(a.id) === String(id)) || null;
+}
+
+/* 账号为中心卡片：站点头（tag/名/模式/账号数·登录态摘要/启用/签到/编辑）+ 账号行列表。
+ * 数据源合并：SITE_DATA（status/get_config，含 meta/enabled/last）+ ACCT_DATA（accounts，含 has_session/last/points）。
+ * 交互登录按钮仅当 LOGIN_CAPS[key]===true 显示（恩山等 Cookie 站点无 loginFlow → 无按钮）。 */
 function renderSiteCards(serverSites) {
   SITE_DATA = serverSites || {};
   const box = $("siteCards");
@@ -536,33 +591,130 @@ function renderSiteCards(serverSites) {
   }
   for (const [key, st] of added) {
     const accs = Array.isArray(st.accounts) ? st.accounts : [];
-    const cfgCount = accs.filter((a) => a.configured).length;
-    const last = st.last || null;
-    let badge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">未签</span></span>';
-    if (last) {
-      if (last.status === "执行失败") {
-        badge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + esc(shortTime(last.time)) + "</span></span>";
-      } else if (st.today_ok) {
-        badge = '<span class="row-badge stamp" id="badge_' + key + '"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + esc(shortTime(last.time)) + "</span></span>";
+    const cap = LOGIN_CAPS[key] === true;
+    let loggedCount = 0;
+    const rows = accs.map((a) => {
+      const d = acctDetail(key, a.id);
+      const hasSession = d ? !!d.has_session : false;
+      if (hasSession) loggedCount++;
+      const label = a.remark || a.label || ("账号 " + (a.id || ""));
+      const last = d ? d.last : null;
+      let dayBadge;
+      if (last && last.status === "执行失败") {
+        dayBadge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + esc(shortTime(last.time)) + "</span></span>";
+      } else if (last) {
+        dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + esc(shortTime(last.time)) + "</span></span>";
+      } else {
+        dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">未签</span></span>';
       }
-    }
-    const cfgTxt = cfgCount ? cfgCount + "/" + accs.length + " 账号" : "未配置";
-    box.insertAdjacentHTML("beforeend", `
-      <div class="site-row" id="card_${key}" onclick="openSiteEditor('${key}')">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div class="site-tag ${siteTagClass(key)}">${esc(siteShort(key))}</div>
-          <div style="min-width:0;flex:1">
-            <div style="font-weight:600;font-size:14px">${esc(siteName(key))}</div>
-            <div class="muted" style="font-size:11.5px;margin-top:1px">${esc(siteDesc(key))} · ${esc(siteMode(key))}</div>
-          </div>
-          ${badge}
-          <span class="muted" style="font-size:11px;white-space:nowrap">${cfgTxt}</span>
-          <span class="muted" style="font-size:11px;white-space:nowrap">${st.enabled ? "已启用" : "已停用"}</span>
-          <button class="btn btn-mini" onclick="event.stopPropagation(); runSiteRow('${key}')" title="立即签到该站点（无需进入编辑）">签到</button>
-        </div>
-      </div>`);
+      let loginBadge = "";
+      if (cap || hasSession) {
+        loginBadge = hasSession
+          ? '<span class="login-badge on"><span class="dot"></span>已登录</span>'
+          : '<span class="login-badge"><span class="dot"></span>未登录</span>';
+      }
+      let loginBtn = "";
+      if (cap) {
+        loginBtn = '<button class="btn btn-mini" onclick="siteLogin(\'' + key + "','" + esc(a.id || "") + '\')">' +
+          (hasSession ? "重新登录" : "登录") + "</button>";
+      }
+      const points = (d && d.points) ? '<span class="muted" style="font-size:11px;white-space:nowrap">' + esc(String(d.points)) + " 分</span>" : "";
+      return '<div class="acct-row">' +
+        '<span class="acct-label" title="' + esc(label) + '">' + esc(label) + "</span>" +
+        loginBadge + dayBadge + points + loginBtn +
+        '<button class="btn btn-mini" onclick="cardTestAccount(\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
+        '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
+        "</div>";
+    }).join("");
+    const summary = accs.length + " 账号" + (cap ? " · " + loggedCount + " 已登录" : "");
+    box.insertAdjacentHTML("beforeend",
+      '<div class="site-card" id="card_' + key + '">' +
+        '<div class="site-card-head">' +
+          '<div class="site-tag ' + siteTagClass(key) + '">' + esc(siteShort(key)) + "</div>" +
+          '<div class="site-card-title">' +
+            '<div class="name">' + esc(siteName(key)) + "</div>" +
+            '<div class="muted" style="font-size:11.5px;margin-top:1px">' + esc(siteDesc(key)) + " · " + esc(siteMode(key)) + "</div>" +
+          "</div>" +
+          '<span class="muted" style="font-size:11px;white-space:nowrap">' + esc(summary) + "</span>" +
+          '<span class="muted" style="font-size:11px;white-space:nowrap">' + (st.enabled ? "已启用" : "已停用") + "</span>" +
+          '<button class="btn btn-mini" onclick="runSiteRow(\'' + key + '\')" title="立即签到该站点">签到</button>' +
+          '<button class="btn btn-mini" onclick="openSiteEditor(\'' + key + '\')">编辑 / 添加账号</button>' +
+        "</div>" +
+        '<div class="acct-list">' + (rows || '<div class="acct-empty">暂无账号</div>') + "</div>" +
+      "</div>");
   }
 }
+
+/** 探测各站点交互登录能力：GET {site}_login/status（纯能力检查，不触网）→ 缓存 LOGIN_CAPS → 重渲染 */
+async function probeLoginCaps() {
+  const keys = Object.keys(SITE_DATA || {});
+  if (!keys.length) return;
+  await Promise.all(keys.map(async (k) => {
+    if (k in LOGIN_CAPS) return;
+    const r = await call("checkin/" + k + "_login/status");
+    LOGIN_CAPS[k] = !!(r && r.success);
+  }));
+  renderSiteCards(SITE_DATA);
+}
+
+/** 账号行「登录」：触发交互登录（后端 form 模式一步产出 session）。不打真实站点由后端负责。 */
+async function siteLogin(key, accountId) {
+  toast("正在登录…", "seal");
+  const r = await call("checkin/" + key + "_login/init", "POST", accountId ? { account_id: accountId } : {}, 30000);
+  if (r.success) {
+    toast((r.data && r.data.message) || "已登录，可签到", "ok");
+    await refreshOverview();
+  } else {
+    toast(r.message || "登录失败", "err");
+  }
+}
+
+/** 账号行「测试」：复用 test_login（需已保存账号 id） */
+async function cardTestAccount(key, accountId) {
+  if (!accountId) { toast("请先在编辑弹窗保存后再测试", "warn"); return; }
+  const r = await call("test_login", "POST", { site: key, account_id: accountId });
+  toast(r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败"), r.success ? "ok" : "err");
+}
+
+/** 账号行「删除」：从当前账号集合剔除该 id 后 save_config（留空字段由后端保留原值）。 */
+async function cardDeleteAccount(key, accountId) {
+  if (!accountId) return;
+  if (!confirm("删除该账号？")) return;
+  const st = SITE_DATA[key] || {};
+  const accs = Array.isArray(st.accounts) ? st.accounts : [];
+  const keep = accs.filter((a) => String(a.id) !== String(accountId)).map((a) => ({ id: a.id }));
+  const body = { sites: { [key]: { enabled: st.enabled === true, use_proxy: st.use_proxy === true, accounts: keep } } };
+  const r = await call("save_config", "POST", body);
+  if (r.success) { toast("账号已删除", "warn"); await refreshOverview(); }
+  else toast("删除失败：" + (r.message || ""), "err");
+}
+
+/* ── 积分面板条（读 checkin/points；失败静默隐藏，不阻塞主流程）── */
+let pointsExpanded = false;
+async function refreshPoints() {
+  const bar = $("pointsBar");
+  if (!bar) return;
+  const r = await call("checkin/points");
+  if (!r || !r.success || !r.data) { bar.hidden = true; return; }
+  const d = r.data;
+  const sites = (d.sites || []).filter((s) => s.count > 0 || s.total_points);
+  if (!sites.length) { bar.hidden = true; return; }
+  const chips = sites.map((s) =>
+    '<span class="points-chip">' + esc(s.site_name) + " <b>" + esc(String(s.total_points)) + "</b></span>").join("");
+  const foot = '<span class="muted" style="font-size:11px;margin-left:auto">共 ' + sites.length + " 站 · 累计 " + esc(String(d.total_points)) + "</span>";
+  let detail = "";
+  if (pointsExpanded) {
+    const trs = sites.map((s) =>
+      "<tr><td>" + esc(s.site_name) + "</td><td>" + esc(String(s.count)) + "</td><td>" +
+      esc(String(s.total_points)) + "</td><td>" + esc(shortTime(s.last_time) || "—") + "</td></tr>").join("");
+    detail = '<div class="points-detail"><table><thead><tr><th>站点</th><th>次数</th><th>累计</th><th>最后</th></tr></thead><tbody>' +
+      trs + "</tbody></table></div>";
+  }
+  bar.innerHTML = '<div class="points-bar-head" onclick="togglePoints()">' +
+    '<span class="muted" style="font-size:12px">累计积分</span>' + chips + foot + "</div>" + detail;
+  bar.hidden = false;
+}
+function togglePoints() { pointsExpanded = !pointsExpanded; refreshPoints(); }
 function shortTime(t) {
   if (!t) return "";
   const m = String(t).match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
@@ -596,9 +748,10 @@ function openSiteEditor(key) {
   $("modalStatus").textContent = "";
   const box = $("modalAccounts");
   box.innerHTML = "";
+  box.appendChild(modalToolsEl(key));
   const accs = Array.isArray(st.accounts) ? st.accounts : [];
   if (!accs.length) {
-    box.innerHTML = '<div class="muted" style="font-size:12px;margin:8px 0">暂无账号，点击「添加账号」开始配置</div>';
+    box.insertAdjacentHTML("beforeend", '<div class="muted" style="font-size:12px;margin:8px 0">暂无账号，点击「添加账号」开始配置</div>');
   } else {
     for (const a of accs) box.appendChild(accountRowEl(key, a));
   }
@@ -650,6 +803,10 @@ function accountRowEl(key, acc) {
   const label = acc.remark || acc.label || ("账号 " + (acc.id || ""));
   div.innerHTML = `
       <div class="field-row" style="align-items:center;gap:8px">
+        <span class="modal-move">
+          <button type="button" class="btn btn-mini" onclick="moveModalAccount(this,-1)" title="上移">▲</button>
+          <button type="button" class="btn btn-mini" onclick="moveModalAccount(this,1)" title="下移">▼</button>
+        </span>
         <span class="muted" style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}">${esc(label)}</span>
         <details class="creds" style="margin-left:auto"><summary>凭据</summary>
           <div class="creds-body">
@@ -682,6 +839,85 @@ function removeModalAccount(btn) {
   row.remove();
   $("modalStatus").textContent = "";
   toast("账号已删除", "warn");
+}
+
+/* ── 弹窗账号运维工具行（导出/含密导出/导入/清空）── */
+function modalToolsEl(key) {
+  const wrap = document.createElement("div");
+  wrap.className = "acct-tools";
+  wrap.innerHTML =
+    '<button type="button" class="btn btn-mini" onclick="exportAccounts(\'' + key + "',false)\">导出</button>" +
+    '<button type="button" class="btn btn-mini" onclick="exportAccounts(\'' + key + "',true)\" title=\"含凭据，仅本机备份用\">含密导出</button>" +
+    '<label class="btn btn-mini" style="cursor:pointer;margin:0">导入<input type="file" accept=".json,application/json" hidden onchange="importAccounts(\'' + key + "', this)\"></label>" +
+    '<span class="grow"></span>' +
+    '<button type="button" class="btn btn-mini" style="color:var(--err);border-color:var(--err)" data-clear="0" onclick="clearAccountsInModal(\'' + key + "', this)\">清空</button>";
+  return wrap;
+}
+async function exportAccounts(key, withSecrets) {
+  if (withSecrets && !confirm("含密导出将包含账号凭据/会话，请妥善保管本地文件。继续？")) return;
+  const r = await call("checkin/accounts/export?site=" + encodeURIComponent(key) + "&include_secrets=" + (withSecrets ? "true" : "false"));
+  if (!r || !r.success || !r.data) { toast("导出失败：" + ((r && r.message) || ""), "err"); return; }
+  const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "checkin-" + key + "-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("已导出 " + ((r.data.accounts || []).length) + " 个账号" + (withSecrets ? "（含密）" : "（脱敏）"), "ok");
+}
+async function importAccounts(key, input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  let parsed;
+  try {
+    const obj = JSON.parse(await file.text());
+    parsed = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.accounts) ? obj.accounts : null);
+  } catch { toast("文件不是合法 JSON", "err"); input.value = ""; return; }
+  if (!parsed || !parsed.length) { toast("文件中没有账号数据", "err"); input.value = ""; return; }
+  const r = await call("checkin/accounts/import", "POST", { site: key, data: parsed });
+  input.value = "";
+  if (r && r.success) {
+    toast("已导入 " + ((r.data && r.data.added) || 0) + " 个账号", "ok");
+    await refreshOverview();
+    openSiteEditor(key);
+  } else {
+    toast("导入失败：" + ((r && r.message) || ""), "err");
+  }
+}
+/** 弹窗内账号上/下移：先 DOM 重排；若全部账号已有服务端 id 则即时调 reorder 持久化（不刷新弹窗，保留未存编辑）。 */
+async function moveModalAccount(btn, dir) {
+  const row = btn.closest(".account-box");
+  if (!row) return;
+  const parent = row.parentNode;
+  if (dir < 0) {
+    const prev = row.previousElementSibling;
+    if (prev && prev.classList.contains("account-box")) parent.insertBefore(row, prev); else return;
+  } else {
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains("account-box")) parent.insertBefore(next, row); else return;
+  }
+  const ids = Array.from(document.querySelectorAll("#modalAccounts .account-box")).map((b) => b.dataset.aid || "");
+  if (MODAL_KEY && ids.length && ids.every((x) => x)) {
+    const r = await call("checkin/accounts/reorder", "POST", { site: MODAL_KEY, ids });
+    if (!r || !r.success) toast("排序未即时持久化，保存时会写入", "warn");
+  }
+}
+async function clearAccountsInModal(key, btn) {
+  if (btn.dataset.clear !== "1") {
+    btn.dataset.clear = "1";
+    btn.textContent = "确认清空？再点一次";
+    setTimeout(() => { if (btn) { btn.dataset.clear = "0"; btn.textContent = "清空"; } }, 4000);
+    return;
+  }
+  const r = await call("checkin/accounts/clear", "POST", { site: key });
+  if (r && r.success) {
+    toast("已清空该站点账号", "warn");
+    await refreshOverview();
+    openSiteEditor(key);
+  } else {
+    toast("清空失败：" + ((r && r.message) || ""), "err");
+    btn.dataset.clear = "0"; btn.textContent = "清空";
+  }
 }
 function collectModalAccounts() {
   const rows = document.querySelectorAll("#modalAccounts .account-box");

@@ -35,6 +35,34 @@ function now() {
   return new Date().toLocaleString("zh-CN", { hour12: false });
 }
 
+/* ── 会话（loginFlow 产物）通用工具 ───────────────────────────
+ * session 是登录产物（token 或 cookie），存于账号 { session, session_ts }。
+ * runCheckin/testConnection 会话优先：有效 session → 直接构造认证，跳过重新登录；
+ * 无 session 或已过期 → 走原明文字段登录逻辑（行为不变）。 */
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 天（无 session_ts 或超期视为过期）
+
+/** 账号 session 是否有效：存在对象、有 session_ts、且未超过 30 天 */
+function sessionValid(cfg) {
+  const sess = cfg && cfg.session;
+  if (!sess || typeof sess !== "object") return false;
+  const ts = Number(cfg.session_ts || 0);
+  if (!ts) return false;
+  return Date.now() - ts < SESSION_MAX_AGE_MS;
+}
+
+/** 从 Cookie 串构造一个已带该 Cookie 的 Session（复用其 cookie jar） */
+function sessionFromCookie(cookieStr) {
+  const s = new Session();
+  for (const pair of String(cookieStr || "").split(";")) {
+    const idx = pair.indexOf("=");
+    if (idx < 0) continue;
+    const name = pair.slice(0, idx).trim();
+    const value = pair.slice(idx + 1).trim();
+    if (name) s.cookies[name] = value;
+  }
+  return s;
+}
+
 /* ── FLZT ─────────────────────────────────────────────────── */
 const FLZT = {
   key: "flzt",
@@ -70,8 +98,32 @@ const FLZT = {
     return { s, token: j.data.auth_data };
   },
 
-  async runCheckin(cfg) {
+  /** 会话优先取 token：有效 session（type=token）直接用；否则登录 */
+  async _resolveToken(cfg) {
+    if (sessionValid(cfg) && cfg.session.type === "token" && cfg.session.token) {
+      return cfg.session.token;
+    }
     const { token } = await this._login(cfg);
+    return token;
+  },
+
+  loginFlow: {
+    mode: "form",
+    desc: "账号密码自动登录产出会话（authorization token）",
+    async init(cfg) {
+      const { token } = await FLZT._login(cfg);
+      return {
+        mode: "form",
+        status: "ready",
+        session: { type: "token", token },
+        account_label: FLZT.getAccountLabel(cfg),
+        message: "登录成功",
+      };
+    },
+  },
+
+  async runCheckin(cfg) {
+    const token = await this._resolveToken(cfg);
     const s = new Session();
     const r = await s.get(this.base + this.checkinPath, {
       headers: { authorization: token, Accept: "application/json, text/plain, */*" },
@@ -96,7 +148,7 @@ const FLZT = {
   },
 
   async testConnection(cfg) {
-    const { token } = await this._login(cfg);
+    const token = await this._resolveToken(cfg);
     return { site: this.key, site_name: this.name, message: `登录测试成功（Token ${token.slice(0, 12)}…）` };
   },
 
@@ -356,8 +408,36 @@ const YPOJIE = {
     return { s, beforePage: vipPage.text };
   },
 
+  loginFlow: {
+    mode: "form",
+    desc: "账号密码自动登录产出会话（Cookie）",
+    async init(cfg) {
+      const { s } = await YPOJIE._login(cfg);
+      const cookie = s.cookieHeader();
+      if (!cookie) throw new Error("登录成功但未获取到会话 Cookie");
+      return {
+        mode: "form",
+        status: "ready",
+        session: { type: "cookie", cookie },
+        account_label: YPOJIE.getAccountLabel(cfg),
+        message: "登录成功",
+      };
+    },
+  },
+
+  /** 会话优先取登录态 Session：有效 session（type=cookie）→ 用 Cookie 构造并校验；否则登录 */
+  async _resolveSession(cfg) {
+    if (sessionValid(cfg) && cfg.session.type === "cookie" && cfg.session.cookie) {
+      const s = sessionFromCookie(cfg.session.cookie);
+      const vip = await this._getVip(s, cfg);
+      this._validateLoginPage(vip.text); // 会话失效则抛错（提示重新登录）
+      return { s, beforePage: vip.text };
+    }
+    return this._login(cfg);
+  },
+
   async runCheckin(cfg) {
-    const { s, beforePage } = await this._login(cfg);
+    const { s, beforePage } = await this._resolveSession(cfg);
     const r = await s.postForm(this.base + this.ajaxPath, { action: "epd_checkin" }, { headers: this._loginHeaders(), timeout: 15000, useProxy: cfg.use_proxy });
     const j = parseJson(r.text) || {};
     let afterPage = "";
@@ -393,7 +473,7 @@ const YPOJIE = {
   },
 
   async testConnection(cfg) {
-    await this._login(cfg);
+    await this._resolveSession(cfg);
     return { site: this.key, site_name: this.name, message: "登录测试成功，可用于签到" };
   },
 };
@@ -482,6 +562,38 @@ const ANYROUTER = {
     throw new Error("请配置账号密码，或 Cookie + api_user");
   },
 
+  /** 会话优先构造认证：有效 session（token/cookie）直接用；否则走 _authHeaders 登录 */
+  async _resolveAuth(cfg) {
+    if (sessionValid(cfg) && cfg.session && typeof cfg.session === "object") {
+      const sess = cfg.session;
+      if (sess.type === "token" && sess.token) {
+        return { type: "token", token: sess.token, base: sess.base || this._base(cfg) };
+      }
+      if (sess.type === "cookie" && sess.headers) {
+        return { type: "cookie", headers: sess.headers, base: sess.base || this._base(cfg) };
+      }
+    }
+    return this._authHeaders(cfg);
+  },
+
+  loginFlow: {
+    mode: "form",
+    desc: "账号密码 / Cookie 产出会话（token 或 cookie）",
+    async init(cfg) {
+      const auth = await ANYROUTER._authHeaders(cfg);
+      const session = auth.type === "token"
+        ? { type: "token", token: auth.token, base: auth.base }
+        : { type: "cookie", headers: auth.headers, base: auth.base };
+      return {
+        mode: "form",
+        status: "ready",
+        session,
+        account_label: ANYROUTER.getAccountLabel(cfg),
+        message: "登录成功",
+      };
+    },
+  },
+
   async _getUserInfo(auth, useProxy) {
     const s = new Session();
     const r = await s.get(auth.base + this.userInfoPath, { headers: this._headers(auth), timeout: 15000, useProxy });
@@ -496,7 +608,7 @@ const ANYROUTER = {
   },
 
   async runCheckin(cfg) {
-    const auth = await this._authHeaders(cfg);
+    const auth = await this._resolveAuth(cfg);
     let before = null;
     try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
 
@@ -550,7 +662,7 @@ const ANYROUTER = {
   },
 
   async testConnection(cfg) {
-    const auth = await this._authHeaders(cfg);
+    const auth = await this._resolveAuth(cfg);
     const info = await this._getUserInfo(auth, cfg.use_proxy);
     if (!info) throw new Error("登录态有效，但用户信息接口未返回 quota");
     return { site: this.key, site_name: this.name, message: `连接成功，${cfg.username ? maskEmail(cfg.username) : "Cookie"} 有效，余额 ${this._fmtUsd(info.quota)}` };
