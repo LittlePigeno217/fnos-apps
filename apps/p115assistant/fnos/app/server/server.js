@@ -2138,18 +2138,21 @@ class Server {
    *  未开开关、无匹配映射、输出目录无效 → 静默跳过。 */
   _maybeAutoStrmForFile(uploadMapping, cloudRelPath, fileInfo) {
     try {
-      if (this.store.getConfig().upload_generate_strm !== true) return;
-      const config = this.store.getConfig();
+      const gcfg = this.store.getConfig();
+      console.log(`[DBG] strm-for-file 入参: gen=${gcfg.upload_generate_strm} map=${uploadMapping && uploadMapping.name} rel=${cloudRelPath} pick=${fileInfo && fileInfo.pickcode}`);
+      if (gcfg.upload_generate_strm !== true) { console.log("[DBG] R1 开关未开"); return; }
+      const config = gcfg;
       const targetCid = String(uploadMapping.targetCid || uploadMapping.target_cid || "");
-      if (!targetCid) return;
+      if (!targetCid) { console.log("[DBG] R2 无目标cid"); return; }
       const mappings = Array.isArray(config.strm_mappings) ? config.strm_mappings : [];
       const mapping = mappings.find(
         (m) => m.enabled !== false && String(m.sourceCid || m.source_cid || "") === targetCid
       );
-      if (!mapping) return;
+      if (!mapping) { console.log(`[DBG] R3 无映射匹配 ${targetCid}`); return; }
       const targetDir = String(mapping.target_dir || mapping.targetDir || "").trim();
       if (!targetDir) return;
       const [dirOK, dirErr] = this._authorizedLocalPath(targetDir);
+      console.log(`[DBG] R4 输出目录 ${targetDir} → ${dirOK === null ? "无效" : dirOK}`);
       if (dirOK === null) {
         console.warn(`上传后生成 STRM 失败：输出目录无效 ${targetDir}：${dirErr}`);
         return;
@@ -2157,8 +2160,10 @@ class Server {
       const name = String(fileInfo.name || "");
       const suffix = path.extname(name).toLowerCase();
       const mediaExts = extensionSet(config.upload_media_extensions);
+      console.log(`[DBG] R5 媒体检查 ${suffix} → ${mediaExts.has(suffix)}`);
       if (suffix === "" || !mediaExts.has(suffix)) return; // 只对媒体文件生成
       const baseUrl = this._resolveStrmBaseUrl();
+      console.log(`[DBG] R6 baseUrl=${baseUrl}`);
       if (!baseUrl) {
         console.warn("上传后生成 STRM 失败：无法确定 STRM 基础地址");
         return;
