@@ -1,6 +1,6 @@
 {
-  "version": "1.2.0",
-  "generated_at": "2026-09-21T18:34:09Z",
+  "version": "1.2.1",
+  "generated_at": "2026-09-21T19:00:05Z",
   "files": {
     "server/auth.js": {
       "sha256": "7c26e7f919984bf580139c9e8877dd32a0cecec3e62b2381adc48d2a976e2267",
@@ -35,16 +35,16 @@
       "size": 28632
     },
     "server/store.js": {
-      "sha256": "fa546e3816019255a68b5da9c17cec2983ef5025c194d226f5ec4515fc240555",
+      "sha256": "ec84379c1271cdd836d642f1dd410a4640e3bde7baeae3b90299c36da2734862",
       "size": 9969
     },
     "server/update.js": {
-      "sha256": "74c7fb38e1f63790214f32e2ffd3193fd45dbdffca6573c629464a5d44375635",
+      "sha256": "ebbbf3941fb69b104c8b93c0e998604e46c6c0d382188655f0afa4bc01825784",
       "size": 19825
     },
     "www/index.html": {
-      "sha256": "9c3a87bcf3df420b10ea1d7cafccd8ffdcea912c1537983a282302c228939daf",
-      "size": 74006
+      "sha256": "3de8c34512186d563053ba2dfffbd6c96568564db72f64f4d91929ae47724a84",
+      "size": 81147
     }
   }
 }
