@@ -201,6 +201,10 @@ class Server {
         }
       }
       for (const h of history.reverse()) this._store.appendHistory(h);
+      // 账号对象落盘（一次全量，9KB 级）：_billingDo 401 续期只回写内存 cfg.session/session_ts，
+      // 若不在此持久化，热更/重启后 session 回退磁盘旧值 → 保活断链需重新扫码。放循环外一次足够。
+      // save 失败不应使签到结果报错（history 已落盘、结果已生成）——仅记日志。
+      try { this._store.save(); } catch (e) { console.error(`签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       const allOk = results.length > 0 && results.every((r) => r.status !== "执行失败");
       if (this._notifier && cfg.notify_enabled) {
         const text = this._notifier.buildNotifyText("签到工具", results);
@@ -253,6 +257,8 @@ class Server {
         this._log(`单账号签到 ${adapter.name}${who} 失败：${msg}`);
       }
       this._store.appendHistory(history);
+      // 同 runOnce：单账号签到亦落盘账号对象（持久化 _billingDo 续期后的 session），save 失败不阻断结果。
+      try { this._store.save(); } catch (e) { console.error(`单账号签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       if (this._notifier && cfg.notify_enabled) {
         const text = this._notifier.buildNotifyText("签到工具", [result]);
         const sent = await this._notifier.sendText(cfg.feishu_webhook, text);
@@ -276,6 +282,9 @@ class Server {
     try {
       const r = await adapter.testConnection(acc);
       await this._snapshotBalance(adapter, acc); // 测试连接成功后刷新余额快照（失败不致命）
+      // testConnection 内部 _billingDo 401 续期同样只回写内存 session；_snapshotBalance 仅在余额查询
+      // 成功时 save，查询失败则续期丢失。此处补一次落盘兜底（同类缺口），save 失败不阻断测试结果。
+      try { this._store.save(); } catch (e) { console.error(`测试连接后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       return ok({ ...r, account_id: acc.id, account: adapter.getAccountLabel(acc) });
     } catch (err) {
       return fail(err.message || "测试失败");
