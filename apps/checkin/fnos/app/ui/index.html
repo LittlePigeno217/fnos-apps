@@ -417,7 +417,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.2</span>
+      <span class="ver" id="appVersion">v1.4.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -880,11 +880,10 @@ function renderAcctCard(key, a, cap) {
       balLine = '<div class="acct-bal empty"><span class="bl">' + bl + '</span><span class="bv">—</span></div>';
     }
   }
-  let loginBtn = "";
-  if (cap) {
-    loginBtn = '<button class="btn btn-mini" onclick="siteLogin(\'' + key + "','" + esc(a.id || "") + '\')">' +
-      (hasSession ? "重新登录" : "登录") + "</button>";
-  }
+  // 账号卡「编辑」入口（1.4.3）：打开该账号的配置编辑弹窗并定位到该账号；改凭据保存即覆盖登录态。
+  const editBtn = '<button class="btn btn-mini" title="编辑该账号配置（凭据/备注/启用）" onclick="openSiteEditor(\'' + key + "','" + esc(a.id || "") + '\')">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>' +
+    "编辑</button>";
   // 单账号签到：仅为该账号触发（不影响全部签到）。停用账号禁用按钮。
   const checkinBtn = '<button class="btn btn-mini" title="' + (enabled ? "单独为该账号签到" : "该账号已停用") + '"' +
     (enabled ? "" : " disabled") +
@@ -898,7 +897,7 @@ function renderAcctCard(key, a, cap) {
     balLine +
     '<div class="acct-meta">' + dayBadge + "</div>" +
     '<div class="acct-actions">' +
-      loginBtn + checkinBtn +
+      editBtn + checkinBtn +
       '<button class="btn btn-mini" onclick="cardTestAccount(\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
       '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
     "</div>" +
@@ -1351,7 +1350,7 @@ function shortTime(t) {
 /* ── 站点编辑弹窗（meta 驱动；站点增删改最短路径）── */
 let MODAL_KEY = "";
 
-function openSiteEditor(key) {
+function openSiteEditor(key, accountId) {
   MODAL_KEY = key;
   const st = SITE_DATA[key] || {};
   $("modalTag").textContent = siteShort(key);
@@ -1370,10 +1369,26 @@ function openSiteEditor(key) {
   } else {
     for (const a of accs) box.appendChild(accountRowEl(key, a));
   }
+  // 定位到指定账号（账号卡「编辑」入口）：展开凭据、滚动到可见区并聚焦首字段。
+  let targetRow = null;
+  if (accountId) {
+    targetRow = Array.from(box.querySelectorAll(".account-box"))
+      .find((r) => String(r.dataset.aid) === String(accountId)) || null;
+  }
   $("modalForm").reset ? 0 : 0; // form 已由 HTML 包裹；此处保留空操作占位（reset 会覆盖开关状态，不用）
-  const first = box.querySelector("input[type=text], input[type=password]");
-  if (first) setTimeout(() => first.focus(), 60);
-  $("siteModal").style.display = "flex";
+  $("siteModal").style.display = "flex"; // 先显示，scrollIntoView 才有效
+  if (targetRow) {
+    const details = targetRow.querySelector("details.creds");
+    if (details) details.open = true;
+    targetRow.scrollIntoView({ block: "center", behavior: "smooth" });
+    targetRow.style.outline = "2px solid var(--accent,#4c8bf5)";
+    setTimeout(() => { targetRow.style.outline = ""; }, 1800);
+    const inp = targetRow.querySelector("input[type=text], input[type=password]");
+    if (inp) setTimeout(() => inp.focus(), 60);
+  } else {
+    const first = box.querySelector("input[type=text], input[type=password]");
+    if (first) setTimeout(() => first.focus(), 60);
+  }
 }
 
 function closeSiteModal() {
