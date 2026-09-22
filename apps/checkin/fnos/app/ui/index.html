@@ -93,17 +93,14 @@
   .row-badge .dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
   .dot-ok { background:var(--ok); } .dot-warn { background:var(--warn); }
   .dot-err { background:var(--err); } .dot-mute { background:var(--border); }
-  /* 弹窗凭据折叠区：label 上行小字 + 输入框全宽，竖排整洁 */
-  .creds { margin-top:4px; }
-  .creds summary { font-size:11.5px; color:var(--muted); cursor:pointer; padding:2px 0; user-select:none; list-style:none; }
-  .creds summary::before { content:"▸ "; font-size:10px; }
-  .creds[open] summary::before { content:"▾ "; }
-  .creds[open] summary { color:var(--ink); font-weight:600; }
-  .creds-body { border-top:1px dashed var(--border); margin-top:6px; padding-top:9px; }
+  /* 账号配置页字段行：label 上行小字 + 输入框全宽，竖排整洁 */
   .cred-row { display:flex; flex-direction:column; gap:4px; margin-bottom:9px; }
   .cred-row .cred-label { font-size:11px; color:var(--muted); }
   .cred-row input { width:100%; }
-  details.fail-detail summary { cursor:pointer; font-size:11.5px; color:var(--err); }
+  /* 账号配置页敏感字段「已配置（留空不更改）」小标签 */
+  .secret-tag { display:inline-block; align-self:flex-start; margin-top:2px; font-size:11px;
+                color:var(--accent-strong); background:var(--accent-soft);
+                border:1px solid var(--accent); border-radius:999px; padding:1px 9px; }
   /* 添加账号窗口：登录方式 tab（行云化胶囊） */
   .add-tabs .add-tab { padding:6px 14px; border-radius:999px; border:1px solid var(--border); background:transparent;
     color:var(--muted); font-size:12.5px; cursor:pointer; transition:all .16s; }
@@ -344,13 +341,6 @@
   .login-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
   .login-badge.on { color: var(--ok); border-color: var(--ok-border); }
   .login-badge.on .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-glow); }
-  /* 账号运维工具行（弹窗内） */
-  .acct-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 2px;
-                padding-bottom: 9px; border-bottom: 1px dashed var(--border); }
-  .acct-tools .grow { flex: 1; min-width: 8px; }
-  .modal-move { display: inline-flex; flex-direction: column; gap: 2px; }
-  .modal-move button { line-height: 1; padding: 1px 6px; font-size: 11px; }
-
   /* ---------- 历史 ---------- */
   .hist-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0;
                border-bottom: 1px dashed var(--border); font-size: 13px; }
@@ -417,7 +407,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.5</span>
+      <span class="ver" id="appVersion">v1.4.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -548,29 +538,25 @@
 <!-- Toast 浮层 -->
 <div id="toastBox" style="position:fixed;right:18px;bottom:22px;z-index:1001;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
 
-<!-- 站点编辑弹窗 -->
+<!-- 账号配置弹窗（单账号编辑页；账号卡「编辑」入口；无站点级功能） -->
 <div id="siteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;align-items:center;justify-content:center">
-  <form id="modalForm" onsubmit="saveSiteModal(); return false;" style="background:var(--card);border:1px solid var(--border);border-radius:18px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:20px 22px;box-shadow:var(--shadow-card);backdrop-filter:blur(10px)">
+  <form id="modalForm" onsubmit="saveAccountEditor(); return false;" style="background:var(--card);border:1px solid var(--border);border-radius:18px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:20px 22px;box-shadow:var(--shadow-card);backdrop-filter:blur(10px)">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <div class="site-tag" id="modalTag">ST</div>
-      <div>
-        <div class="site-name" id="modalTitle">站点</div>
+      <div style="flex:1;min-width:0">
+        <div class="site-name" id="modalTitle">账号配置</div>
         <div class="muted" style="font-size:12px" id="modalSub"></div>
       </div>
-      <span style="flex:1"></span>
       <button type="button" class="btn btn-mini" onclick="closeSiteModal()">✕</button>
     </div>
-    <div class="field-row" style="align-items:center;gap:8px;flex-wrap:wrap">
-      <span class="muted" style="font-size:12.5px">启用站点</span>
-      <label class="switch"><input type="checkbox" id="modalEnabled"><span class="track"></span></label>
-      <span class="muted" style="font-size:12.5px;margin-left:14px">代理访问</span>
-      <label class="switch"><input type="checkbox" id="modalProxy"><span class="track"></span></label>
-      <span class="muted">经系统代理</span>
-    </div>
-    <div class="creds-title" style="margin-top:10px">站点账号 <span class="hint">· 每个账号独立签到；凭据留空保存 = 保持当前</span></div>
+    <div class="creds-title" style="margin-top:4px">账号配置 <span class="hint">· 敏感字段留空保存 = 保持当前值</span></div>
     <div id="modalAccounts"></div>
-    <button type="button" class="btn" style="margin-top:10px" onclick="addModalAccount()">＋ 添加账号</button>
-    <div class="muted" style="font-size:11px;margin-top:6px">快捷添加请用站点卡上的「＋ 添加账号」（扫码 / 账号密码自动登录 / 手动 Cookie）；此处为手动编辑账号字段。</div>
+    <!-- 账号操作：测试 / 签到 / 删除（仅作用于当前账号） -->
+    <div class="acct-actions" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+      <button type="button" class="btn" onclick="testModalAccount(MODAL_KEY, MODAL_AID)">测试</button>
+      <button type="button" class="btn" onclick="checkinModalAccount()">签到</button>
+      <button type="button" class="btn" style="color:var(--err);border-color:var(--err)" onclick="deleteModalAccount()">删除</button>
+    </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;align-items:center">
       <span class="muted" id="modalStatus" style="font-size:12px"></span>
       <button type="button" class="btn" onclick="closeSiteModal()">取消</button>
@@ -880,8 +866,8 @@ function renderAcctCard(key, a, cap) {
       balLine = '<div class="acct-bal empty"><span class="bl">' + bl + '</span><span class="bv">—</span></div>';
     }
   }
-  // 账号卡「编辑」入口（1.4.3）：打开该账号的配置编辑弹窗并定位到该账号；改凭据保存即覆盖登录态。
-  const editBtn = '<button class="btn btn-mini" title="编辑该账号配置（凭据/备注/启用）" onclick="openSiteEditor(\'' + key + "','" + esc(a.id || "") + '\')">' +
+  // 账号卡「编辑」入口：打开该账号的纯账号配置页（无站点级功能）；改凭据保存即覆盖登录态。
+  const editBtn = '<button class="btn btn-mini" title="编辑该账号配置（凭据/备注/启用）" onclick="openAccountEditor(\'' + key + "','" + esc(a.id || "") + '\')">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>' +
     "编辑</button>";
   // 单账号签到：仅为该账号触发（不影响全部签到）。停用账号禁用按钮。
@@ -1306,17 +1292,18 @@ async function cardTestAccount(key, accountId) {
   toast(r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败"), r.success ? "ok" : "err");
 }
 
-/** 账号行「删除」：从当前账号集合剔除该 id 后 save_config（留空字段由后端保留原值）。 */
+/** 账号行「删除」：从当前账号集合剔除该 id 后 save_config（留空字段由后端保留原值）。返回是否删除成功。 */
 async function cardDeleteAccount(key, accountId) {
-  if (!accountId) return;
-  if (!confirm("删除该账号？")) return;
+  if (!accountId) return false;
+  if (!confirm("删除该账号？")) return false;
   const st = SITE_DATA[key] || {};
   const accs = Array.isArray(st.accounts) ? st.accounts : [];
   const keep = accs.filter((a) => String(a.id) !== String(accountId)).map((a) => ({ id: a.id }));
   const body = { sites: { [key]: { enabled: st.enabled === true, use_proxy: st.use_proxy === true, accounts: keep } } };
   const r = await call("save_config", "POST", body);
-  if (r.success) { toast("账号已删除", "warn"); await refreshOverview(); }
-  else toast("删除失败：" + (r.message || ""), "err");
+  if (r.success) { toast("账号已删除", "warn"); await refreshOverview(); return true; }
+  toast("删除失败：" + (r.message || ""), "err");
+  return false;
 }
 
 /** 账号行「签到」：仅为该账号触发单账号签到（POST checkin/run_account {site, account_id}）。
@@ -1347,87 +1334,66 @@ function shortTime(t) {
   return m ? m[1] + ":" + m[2] : t;
 }
 
-/* ── 站点编辑弹窗（meta 驱动；站点增删改最短路径）── */
+/* ── 账号配置页（单账号编辑；账号卡「编辑」入口；无站点级功能）── */
 let MODAL_KEY = "";
+let MODAL_AID = "";   // 当前编辑的目标账号 id（账号配置页专用）
 
-function openSiteEditor(key, accountId) {
+function openAccountEditor(key, accountId) {
+  if (!accountId) { toast("请从账号列表选择要编辑的账号", "warn"); return; }
   MODAL_KEY = key;
+  MODAL_AID = String(accountId);
   const st = SITE_DATA[key] || {};
+  const accsAll = Array.isArray(st.accounts) ? st.accounts : [];
+  const hit = accsAll.find((a) => String(a.id) === String(accountId));
+  // 标题 = 站点名 · 账号标识（remark||label，退回站点名）
+  const ident = hit ? (hit.remark || hit.label || ("账号 " + accountId)) : ("账号 " + accountId);
   $("modalTag").textContent = siteShort(key);
   $("modalTag").className = "site-tag " + siteTagClass(key);
-  // 账号编辑入口（带 accountId）：标题 = 站点名 · 账号标识，明确「这是该账号的配置页」。
-  let titleAcc = "";
-  if (accountId) {
-    const accsAll = Array.isArray(st.accounts) ? st.accounts : [];
-    const hit = accsAll.find((a) => String(a.id) === String(accountId));
-    titleAcc = hit ? (hit.remark || hit.label || ("账号 " + accountId)) : "";
-  }
-  $("modalTitle").textContent = titleAcc ? (siteName(key) + " · " + titleAcc) : siteName(key);
+  $("modalTitle").textContent = siteName(key) + " · " + ident;
   $("modalSub").textContent = siteMode(key) + " · " + siteDesc(key);
-  $("modalEnabled").checked = !!st.enabled;
-  $("modalProxy").checked = !!st.use_proxy;
   $("modalStatus").textContent = "";
   const box = $("modalAccounts");
   box.innerHTML = "";
-  box.appendChild(modalToolsEl(key));
-  const accs = Array.isArray(st.accounts) ? st.accounts : [];
-  if (!accs.length) {
-    box.insertAdjacentHTML("beforeend", '<div class="muted" style="font-size:12px;margin:8px 0">暂无账号，点击「添加账号」开始配置</div>');
-  } else {
-    for (const a of accs) box.appendChild(accountRowEl(key, a));
-  }
-  // 定位到指定账号（账号卡「编辑」入口）：展开凭据、滚动到可见区并聚焦首字段。
-  let targetRow = null;
-  if (accountId) {
-    targetRow = Array.from(box.querySelectorAll(".account-box"))
-      .find((r) => String(r.dataset.aid) === String(accountId)) || null;
-  }
-  $("modalForm").reset ? 0 : 0; // form 已由 HTML 包裹；此处保留空操作占位（reset 会覆盖开关状态，不用）
-  $("siteModal").style.display = "flex"; // 先显示，scrollIntoView 才有效
-  if (targetRow) {
-    const details = targetRow.querySelector("details.creds");
-    if (details) details.open = true;
-    targetRow.scrollIntoView({ block: "center", behavior: "smooth" });
-    targetRow.style.outline = "2px solid var(--accent,#4c8bf5)";
-    setTimeout(() => { targetRow.style.outline = ""; }, 1800);
-    const inp = targetRow.querySelector("input[type=text], input[type=password]");
-    if (inp) setTimeout(() => inp.focus(), 60);
-  } else if (accountId) {
+  if (!hit) {
     // 传了 accountId 却没匹配到（已被删除/数据未刷新）：明确提示，不静默打开空表单
-    $("modalStatus").textContent = "未找到该账号（可能已被删除），请刷新后重试";
+    box.insertAdjacentHTML("beforeend", '<div class="muted" style="font-size:12px;margin:8px 0">未找到该账号（可能已被删除），请关闭后刷新重试。</div>');
+    $("modalStatus").textContent = "未找到该账号";
   } else {
-    const first = box.querySelector("input[type=text], input[type=password]");
-    if (first) setTimeout(() => first.focus(), 60);
+    box.appendChild(accountEditEl(key, hit));
   }
+  $("siteModal").style.display = "flex"; // 先显示，聚焦才有效
+  const first = box.querySelector("input[type=text], input[type=password]");
+  if (first) setTimeout(() => first.focus(), 60);
 }
 
 function closeSiteModal() {
   $("siteModal").style.display = "none";
   MODAL_KEY = "";
+  MODAL_AID = "";
 }
 
-/** 弹窗内单个账号编辑区（折叠式：默认显示备注/启用/操作，凭据字段可展开） */
-function accountRowEl(key, acc) {
+/** 账号配置页表单体：仅渲染该账号的配置字段 + 备注/启用。
+ *  敏感字段（type=password）输入框留空：已配置时显示「已配置（留空不更改）」小标签（判定：field_masks 含该 key）；
+ *  未配置时无标签，placeholder 提示输入。非敏感字段（base_url/email/username 等）明文预填（field_values）。
+ *  1.4.6 起不再把脱敏串回填进输入框。 */
+function accountEditEl(key, acc) {
   const div = document.createElement("div");
   div.className = "account-box";
-  div.style.cssText = "border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-top:8px;background:rgba(127,127,127,.04)";
+  div.style.cssText = "border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px;background:rgba(127,127,127,.04)";
   div.dataset.aid = acc.id || "";
-  // 字段回填数据源：checkin/accounts（ACCT_DATA）——非敏感字段明文(field_values)，敏感字段脱敏串(field_masks)。
   const detail = acctDetail(key, acc.id) || {};
   const masks = detail.field_masks || {};
   const vals = detail.field_values || {};
   const fields = siteFields(key).map((f) => {
-    const isSecret = f.type === "password";
-    if (isSecret) {
-      const mask = masks[f.key] || "";
-      // 已配置：type=text 显示脱敏串（明文已在服务端抹除，回显安全）+ data-mask 供保存时判「未改」；
-      // 未配置：保持 password 输入 + 占位，新凭据输入隐藏。
-      const inpType = mask ? "text" : "password";
-      const dm = mask ? ' data-mask="' + esc(mask) + '"' : "";
+    if (f.type === "password") {
+      const has = !!masks[f.key]; // 已配置判定：accounts field_masks 含该 key
+      const badge = has ? '<span class="secret-tag">已配置（留空不更改）</span>' : "";
+      const ph = has ? "留空不更改" : (f.ph || "");
       return `
       <div class="cred-row">
         <div class="cred-label">${esc(f.label)}</div>
-        <input class="input mono" type="${inpType}" data-f="${f.key}"${dm} placeholder="${esc(f.ph || "")}" value="${esc(mask)}">
+        <input class="input mono" type="password" data-f="${f.key}" placeholder="${esc(ph)}" value="" autocomplete="off">
+        ${badge}
       </div>`;
     }
     // 非敏感字段：明文预填当前值（base_url/email/username 等）
@@ -1435,128 +1401,23 @@ function accountRowEl(key, acc) {
     return `
       <div class="cred-row">
         <div class="cred-label">${esc(f.label)}</div>
-        <input class="input mono" type="${f.type}" data-f="${f.key}" placeholder="${esc(f.ph || "")}" value="${esc(val)}">
+        <input class="input mono" type="${f.type}" data-f="${f.key}" placeholder="${esc(f.ph || "")}" value="${esc(val)}" autocomplete="off">
       </div>`;
   }).join("");
-  const label = acc.remark || acc.label || ("账号 " + (acc.id || ""));
-  div.innerHTML = `
-      <div class="field-row" style="align-items:center;gap:8px">
-        <span class="modal-move">
-          <button type="button" class="btn btn-mini" onclick="moveModalAccount(this,-1)" title="上移">▲</button>
-          <button type="button" class="btn btn-mini" onclick="moveModalAccount(this,1)" title="下移">▼</button>
-        </span>
-        <span class="muted" style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}">${esc(label)}</span>
-        <details class="creds" style="margin-left:auto"><summary>凭据</summary>
-          <div class="creds-body">
-            ${fields}
-            <div class="field-row" style="margin-top:2px;align-items:center;gap:6px">
-              <span class="muted" style="font-size:11px">启用</span>
-              <label class="switch"><input type="checkbox" data-f="enabled" ${acc.enabled === false ? "" : "checked"}><span class="track"></span></label>
-            </div>
-          </div>
-        </details>
-        <input class="input" style="flex:1;min-width:110px" data-f="remark" placeholder="备注" value="${esc(acc.remark || "")}">
-        <button type="button" class="btn btn-mini" onclick="testModalAccount('${key}','${esc(acc.id || "")}')">测试</button>
-        <button type="button" class="btn btn-mini" style="color:var(--danger,#f85149);border-color:var(--danger,#f85149)" onclick="removeModalAccount(this)">删除</button>
-      </div>`;
+  div.innerHTML = fields +
+    '<div class="cred-row">' +
+      '<div class="cred-label">备注</div>' +
+      '<input class="input" data-f="remark" placeholder="用于区分多账号，如「主号」" value="' + esc(acc.remark || "") + '">' +
+    '</div>' +
+    '<div class="field-row" style="margin-top:2px;align-items:center;gap:6px">' +
+      '<span class="muted" style="font-size:11px">启用</span>' +
+      '<label class="switch"><input type="checkbox" data-f="enabled" ' + (acc.enabled === false ? "" : "checked") + '><span class="track"></span></label>' +
+    '</div>';
   return div;
 }
 
-function addModalAccount() {
-  if (!MODAL_KEY) return;
-  const box = $("modalAccounts");
-  box.appendChild(accountRowEl(MODAL_KEY, { id: "", remark: "", enabled: true }));
-  const inp = box.querySelector(".account-box:last-child input[type=text], .account-box:last-child input[type=password]");
-  if (inp) inp.focus();
-  $("modalStatus").textContent = "新账号请填写凭据后保存";
-}
-function removeModalAccount(btn) {
-  const row = btn.closest(".account-box");
-  if (!row) return;
-  if (!confirm("删除该账号？")) return;
-  row.remove();
-  $("modalStatus").textContent = "";
-  toast("账号已删除", "warn");
-}
-
-/* ── 弹窗账号运维工具行（导出/含密导出/导入/清空）── */
-function modalToolsEl(key) {
-  const wrap = document.createElement("div");
-  wrap.className = "acct-tools";
-  wrap.innerHTML =
-    '<button type="button" class="btn btn-mini" onclick="exportAccounts(\'' + key + "',false)\">导出</button>" +
-    '<button type="button" class="btn btn-mini" onclick="exportAccounts(\'' + key + "',true)\" title=\"含凭据，仅本机备份用\">含密导出</button>" +
-    '<label class="btn btn-mini" style="cursor:pointer;margin:0">导入<input type="file" accept=".json,application/json" hidden onchange="importAccounts(\'' + key + "', this)\"></label>" +
-    '<span class="grow"></span>' +
-    '<button type="button" class="btn btn-mini" style="color:var(--err);border-color:var(--err)" data-clear="0" onclick="clearAccountsInModal(\'' + key + "', this)\">清空</button>";
-  return wrap;
-}
-async function exportAccounts(key, withSecrets) {
-  if (withSecrets && !confirm("含密导出将包含账号凭据/会话，请妥善保管本地文件。继续？")) return;
-  const r = await call("checkin/accounts/export?site=" + encodeURIComponent(key) + "&include_secrets=" + (withSecrets ? "true" : "false"));
-  if (!r || !r.success || !r.data) { toast("导出失败：" + ((r && r.message) || ""), "err"); return; }
-  const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = "checkin-" + key + "-" + new Date().toISOString().slice(0, 10) + ".json";
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast("已导出 " + ((r.data.accounts || []).length) + " 个账号" + (withSecrets ? "（含密）" : "（脱敏）"), "ok");
-}
-async function importAccounts(key, input) {
-  const file = input && input.files && input.files[0];
-  if (!file) return;
-  let parsed;
-  try {
-    const obj = JSON.parse(await file.text());
-    parsed = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.accounts) ? obj.accounts : null);
-  } catch { toast("文件不是合法 JSON", "err"); input.value = ""; return; }
-  if (!parsed || !parsed.length) { toast("文件中没有账号数据", "err"); input.value = ""; return; }
-  const r = await call("checkin/accounts/import", "POST", { site: key, data: parsed });
-  input.value = "";
-  if (r && r.success) {
-    toast("已导入 " + ((r.data && r.data.added) || 0) + " 个账号", "ok");
-    await refreshOverview();
-    openSiteEditor(key);
-  } else {
-    toast("导入失败：" + ((r && r.message) || ""), "err");
-  }
-}
-/** 弹窗内账号上/下移：先 DOM 重排；若全部账号已有服务端 id 则即时调 reorder 持久化（不刷新弹窗，保留未存编辑）。 */
-async function moveModalAccount(btn, dir) {
-  const row = btn.closest(".account-box");
-  if (!row) return;
-  const parent = row.parentNode;
-  if (dir < 0) {
-    const prev = row.previousElementSibling;
-    if (prev && prev.classList.contains("account-box")) parent.insertBefore(row, prev); else return;
-  } else {
-    const next = row.nextElementSibling;
-    if (next && next.classList.contains("account-box")) parent.insertBefore(next, row); else return;
-  }
-  const ids = Array.from(document.querySelectorAll("#modalAccounts .account-box")).map((b) => b.dataset.aid || "");
-  if (MODAL_KEY && ids.length && ids.every((x) => x)) {
-    const r = await call("checkin/accounts/reorder", "POST", { site: MODAL_KEY, ids });
-    if (!r || !r.success) toast("排序未即时持久化，保存时会写入", "warn");
-  }
-}
-async function clearAccountsInModal(key, btn) {
-  if (btn.dataset.clear !== "1") {
-    btn.dataset.clear = "1";
-    btn.textContent = "确认清空？再点一次";
-    setTimeout(() => { if (btn) { btn.dataset.clear = "0"; btn.textContent = "清空"; } }, 4000);
-    return;
-  }
-  const r = await call("checkin/accounts/clear", "POST", { site: key });
-  if (r && r.success) {
-    toast("已清空该站点账号", "warn");
-    await refreshOverview();
-    openSiteEditor(key);
-  } else {
-    toast("清空失败：" + ((r && r.message) || ""), "err");
-    btn.dataset.clear = "0"; btn.textContent = "清空";
-  }
-}
+/* 1.4.6 移除：站点级账号管理（账号列表/排序/导入导出/清空）不再属于账号配置页；
+ * 添加账号统一走「＋ 添加账号」弹窗，账号配置页仅编辑当前账号。 */
 function collectModalAccounts() {
   const rows = document.querySelectorAll("#modalAccounts .account-box");
   const accs = [];
@@ -1569,39 +1430,66 @@ function collectModalAccounts() {
     for (const f of siteFields(MODAL_KEY)) {
       const inp = row.querySelector('[data-f="' + f.key + '"]');
       if (!inp) continue;
-      const v = inp.value.trim();
-      // 敏感字段：值等于回显的脱敏串（未改）或空 → 送空串（后端保留原值）；否则送新明文（覆盖）。
-      const mask = inp.dataset.mask || "";
-      a[f.key] = (mask && v === mask) ? "" : v;
+      // 留空 → 送空串（后端保留原值）；填写 → 覆盖。1.4.6 起敏感字段不再回填脱敏串。
+      a[f.key] = inp.value.trim();
     }
     accs.push(a);
   });
   return accs;
 }
-async function saveSiteModal() {
+async function saveAccountEditor() {
   const key = MODAL_KEY;
   if (!key) return;
-  const st = $("modalStatus");
-  st.textContent = "保存中…";
+  const st = SITE_DATA[key] || {};
+  const stBox = $("modalStatus");
+  stBox.textContent = "保存中…";
+  // 账号配置页仅保存该账号配置；站点级 enabled/use_proxy 沿用当前值，不在账号页改动。
   const body = {
     sites: {
       [key]: {
-        enabled: $("modalEnabled").checked === true,
-        use_proxy: $("modalProxy").checked === true,
+        enabled: st.enabled === true,
+        use_proxy: st.use_proxy === true,
         accounts: collectModalAccounts(),
       },
     },
   };
   const r = await call("save_config", "POST", body);
   if (r.success) {
-    st.textContent = "已保存";
+    stBox.textContent = "已保存";
     toast("已保存", "ok");
     closeSiteModal();
     await refreshOverview();
   } else {
-    st.textContent = "保存失败：" + (r.message || "");
+    stBox.textContent = "保存失败：" + (r.message || "");
     toast("保存失败：" + (r.message || ""), "err");
   }
+}
+
+/** 账号配置页「签到」：仅签到当前账号（单账号签到接口；结果反馈到配置页状态行 + toast） */
+async function checkinModalAccount() {
+  if (!MODAL_KEY || !MODAL_AID) return;
+  const st = $("modalStatus");
+  st.textContent = "签到中…";
+  const r = await call("checkin/run_account", "POST", { site: MODAL_KEY, account_id: MODAL_AID }, 60000);
+  if (r && r.success) {
+    const res = (r.data && r.data.result) || {};
+    const reward = (res.reward != null && res.reward !== "") ? ("，奖励 " + res.reward) : "";
+    const msg = "✓ " + (res.status || r.message || "签到完成") + reward;
+    st.textContent = msg;
+    toast(msg, "ok");
+    await refreshOverview();
+  } else {
+    st.textContent = "✗ " + (r && r.message ? r.message : "签到失败");
+    toast(st.textContent, "err");
+  }
+}
+
+/** 账号配置页「删除」：从该站点账号集合剔除当前账号并关闭配置页 */
+async function deleteModalAccount() {
+  if (!MODAL_KEY || !MODAL_AID) return;
+  if (!confirm("删除该账号？")) return;
+  const ok = await cardDeleteAccount(MODAL_KEY, MODAL_AID);
+  if (ok) closeSiteModal();
 }
 async function testModalAccount(key, accountId) {
   const st = $("modalStatus");
