@@ -34,6 +34,7 @@ class Server {
     this._log = log || (() => {});
     this._running = false; // 防并发执行
     this._loginSessions = new Map(); // 扫码登录会话：token → { site, account_id, sess, expires_at }（进程内，重启即失效）
+    this._injectedProxy = new Set(); // 站点级 use_proxy 注入的账号对象（save 前还原，不落盘）
   }
 
   getConfig() {
@@ -182,6 +183,7 @@ class Server {
         const accs = (Array.isArray(site.accounts) ? site.accounts : []).filter((a) => a.enabled !== false);
         if (!accs.length) continue;
         for (const acc of accs) {
+          this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
           const accLabel = adapter.getAccountLabel(acc);
           const who = accLabel ? `（${accLabel}）` : "";
           this._log(`签到 ${adapter.name}${who}…`);
@@ -204,6 +206,7 @@ class Server {
       // 账号对象落盘（一次全量，9KB 级）：_billingDo 401 续期只回写内存 cfg.session/session_ts，
       // 若不在此持久化，热更/重启后 session 回退磁盘旧值 → 保活断链需重新扫码。放循环外一次足够。
       // save 失败不应使签到结果报错（history 已落盘、结果已生成）——仅记日志。
+      this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
       try { this._store.save(); } catch (e) { console.error(`签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       const allOk = results.length > 0 && results.every((r) => r.status !== "执行失败");
       if (this._notifier && cfg.notify_enabled) {
@@ -214,6 +217,7 @@ class Server {
       this._lastResults = results;
       return ok({ results, summary: allOk ? "全部成功" : (results.length ? "部分成功" : "无启用的站点"), total: results.length, success_count: results.filter((r) => r.status !== "执行失败").length });
     } finally {
+      this._restoreInjectedProxy(); // 异常逃逸兜底：确保注入字段不残留
       this._running = false;
     }
   }
@@ -238,6 +242,7 @@ class Server {
       const acc = accs.find((a) => String(a.id) === String(accountId));
       if (!acc) return fail("未找到指定账号");
       if (acc.enabled === false) return fail("该账号已停用");
+      this._applySiteProxy(st, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
       const accLabel = adapter.getAccountLabel(acc);
       const who = accLabel ? `（${accLabel}）` : "";
       this._log(`单账号签到 ${adapter.name}${who}…`);
@@ -258,6 +263,7 @@ class Server {
       }
       this._store.appendHistory(history);
       // 同 runOnce：单账号签到亦落盘账号对象（持久化 _billingDo 续期后的 session），save 失败不阻断结果。
+      this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
       try { this._store.save(); } catch (e) { console.error(`单账号签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       if (this._notifier && cfg.notify_enabled) {
         const text = this._notifier.buildNotifyText("签到工具", [result]);
@@ -267,6 +273,7 @@ class Server {
       const okRun = result.status !== "执行失败";
       return ok({ result, success_count: okRun ? 1 : 0, total: 1 }, okRun ? result.status : "执行失败");
     } finally {
+      this._restoreInjectedProxy(); // 异常逃逸兜底：确保注入字段不残留
       this._running = false;
     }
   }
@@ -279,14 +286,17 @@ class Server {
     const accs = (site && Array.isArray(site.accounts) ? site.accounts : []).filter((a) => a.enabled !== false);
     const acc = accountId ? accs.find((a) => String(a.id) === String(accountId)) : accs[0];
     if (!acc || !adapter.isConfigured(acc)) return fail(accountId ? "该账号尚未配置凭据" : "该站点没有可用账号");
+    this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
     try {
       const r = await adapter.testConnection(acc);
       await this._snapshotBalance(adapter, acc); // 测试连接成功后刷新余额快照（失败不致命）
       // testConnection 内部 _billingDo 401 续期同样只回写内存 session；_snapshotBalance 仅在余额查询
       // 成功时 save，查询失败则续期丢失。此处补一次落盘兜底（同类缺口），save 失败不阻断测试结果。
+      this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
       try { this._store.save(); } catch (e) { console.error(`测试连接后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       return ok({ ...r, account_id: acc.id, account: adapter.getAccountLabel(acc) });
     } catch (err) {
+      this._restoreInjectedProxy(); // 异常路径兜底：确保注入字段不残留
       return fail(err.message || "测试失败");
     }
   }
@@ -311,12 +321,39 @@ class Server {
       acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
       acc.balance = next;
       acc.balance_ts = Date.now();
+      this._restoreInjectedProxy(); // 注入字段不落盘：余额快照 save 前同样先还原
       this._store.save();
       console.log(`${adapter.key} ${label}快照成功：${label}=${next}`);
     } catch (err) {
       // 失败记状态码/错误消息（adapter 抛出的消息不含 token/敏感值）
       console.error(`${adapter.key} ${label}查询失败：${(err && err.message) || err}`);
     }
+  }
+
+  /* ── 站点级 use_proxy 注入（内存合并，不落盘）────────────────────
+   * adapter 请求统一读 cfg.use_proxy（cfg 即账号对象）决定走代理；账号对象本身无
+   * use_proxy 字段 → undefined → 直连（真机根因：站点已勾选「走代理」但账号请求全直连
+   * → anyrouter EPROTO）。调用 adapter 前以站点开关兜底注入：
+   *   - 账号无显式 use_proxy（字段不存在）→ 注入站点值（内存合并，不覆盖显式值）
+   *   - 账号已有显式 use_proxy → 不动（未来支持账号级覆盖）
+   * 注入字段在 store.save() 前统一还原（_restoreInjectedProxy），避免把运行时合并值
+   * 持久化进 config.json（零残留）。 */
+
+  /** 站点级 use_proxy 注入账号对象：账号无显式值时生效，仅记录本次注入的账号 */
+  _applySiteProxy(site, acc) {
+    if (!acc || !site) return;
+    if (acc.use_proxy === undefined) {
+      acc.use_proxy = !!site.use_proxy;
+      this._injectedProxy.add(acc);
+    }
+  }
+
+  /** 还原本次注入的 use_proxy 字段（delete 到无字段状态；账号显式值不受影响） */
+  _restoreInjectedProxy() {
+    for (const acc of this._injectedProxy) {
+      if (acc && "use_proxy" in acc) delete acc.use_proxy;
+    }
+    this._injectedProxy.clear();
   }
 
   getHistory(limit) {
@@ -597,11 +634,13 @@ class Server {
       ? accs.find((a) => String(a.id) === String(account_id))
       : accs.find((a) => a.enabled !== false);
     if (!acc) return fail(account_id ? "未找到指定账号" : "该站点没有可用账号");
+    this._applySiteProxy(cfg.sites[site], acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
     try {
       const r = await adapter.loginFlow.init(acc);
-      if (!r || !r.session) return fail("登录未返回会话");
+      if (!r || !r.session) { this._restoreInjectedProxy(); return fail("登录未返回会话"); }
       acc.session = r.session;
       acc.session_ts = Date.now();
+      this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
       this._store.save();
       return ok({
         status: r.status || "ready",
@@ -611,6 +650,7 @@ class Server {
         account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: true },
       });
     } catch (err) {
+      this._restoreInjectedProxy(); // 异常路径兜底：确保注入字段不残留
       return fail(err.message || "登录失败");
     }
   }
