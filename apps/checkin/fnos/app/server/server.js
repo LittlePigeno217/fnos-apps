@@ -45,6 +45,8 @@ class Server {
       notify_enabled: cfg.notify_enabled,
       retry_count: cfg.retry_count,
       feishu_configured: !!(cfg.feishu_webhook),
+      proxy_enabled: !!cfg.proxy_enabled,   // 全局代理开关
+      proxy_url: cfg.proxy_url || "",        // 全局代理地址（无敏感值，回吐供设置页回读）
       sites: {},
     };
     for (const key of Object.keys(ADAPTERS)) {
@@ -82,13 +84,20 @@ class Server {
 
   saveConfig(patch) {
     patch = patch || {};
-    const cfg = this._store.saveConfig(patch);
+    let cfg;
+    try {
+      cfg = this._store.saveConfig(patch);
+    } catch (err) {
+      return fail(err.message || "保存配置失败"); // 校验失败（如代理地址非法）→ 标准 fail 信封
+    }
     return ok({
       version: cfg.version,
       enabled: cfg.enabled,
       cron: cfg.cron,
       notify_enabled: cfg.notify_enabled,
       feishu_configured: !!cfg.feishu_webhook,
+      proxy_enabled: !!cfg.proxy_enabled,
+      proxy_url: cfg.proxy_url || "",
     });
   }
 

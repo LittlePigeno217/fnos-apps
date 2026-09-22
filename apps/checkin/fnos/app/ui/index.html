@@ -417,7 +417,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.6</span>
+      <span class="ver" id="appVersion">v1.3.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -486,6 +486,17 @@
             <div class="setting-row">
               <div><div class="setting-label">Webhook 地址</div><div class="setting-desc">已配置请留空</div></div>
               <input type="password" class="input mono" id="cfgWebhook" placeholder="https://open.feishu.cn/…" style="max-width:260px">
+            </div>
+          </div>
+          <div class="settings-group">
+            <header>代理</header>
+            <div class="setting-row">
+              <div><div class="setting-label">启用代理</div><div class="setting-desc">开启后，勾选「走代理」的站点统一使用下方代理地址</div></div>
+              <label class="switch"><input type="checkbox" id="cfgProxyEnabled"><span class="track"></span></label>
+            </div>
+            <div class="setting-row">
+              <div><div class="setting-label">代理地址</div><div class="setting-desc">http(s):// 或 socks5://（socks5 暂不支持 HTTPS 隧道）</div></div>
+              <input class="input mono" type="text" id="cfgProxyUrl" placeholder="http://127.0.0.1:7890" style="max-width:260px">
             </div>
           </div>
           <div class="settings-row">
@@ -1635,7 +1646,7 @@ document.querySelectorAll(".nav button").forEach((b) => {
 });
 
 /* ── 初始化 ── */
-["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook"].forEach((id) => {
+["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook", "cfgProxyEnabled", "cfgProxyUrl"].forEach((id) => {
   $(id).addEventListener("change", () => {
     $("cfgSaveBtn").textContent = "保存设置（有更改）";
     cfgDirty = true;
@@ -1664,6 +1675,12 @@ async function saveSettings() {
     retry_count: retry,
     notify_enabled: $("cfgNotify").checked === true,
   };
+  const proxyUrl = $("cfgProxyUrl").value.trim();
+  if (proxyUrl && !/^(https?|socks5h?):\/\//i.test(proxyUrl)) {
+    toast("代理地址需以 http://、https:// 或 socks5:// 开头", "err"); return;
+  }
+  body.proxy_enabled = $("cfgProxyEnabled").checked === true;
+  body.proxy_url = proxyUrl; // 无敏感值，随保存回写（留空即清空代理地址）
   const w = $("cfgWebhook").value.trim();
   if (w) body.feishu_webhook = w;
   const r = await call("save_config", "POST", body);
@@ -1695,6 +1712,8 @@ async function loadAll(attempt = 1) {
   set("cfgCron", (el) => { el.value = d.cron || "08:10"; });
   set("cfgRetry", (el) => { el.value = d.retry_count || "3"; });
   set("cfgNotify", (el) => { el.checked = !!d.notify_enabled; });
+  set("cfgProxyEnabled", (el) => { el.checked = !!d.proxy_enabled; });
+  set("cfgProxyUrl", (el) => { el.value = d.proxy_url || ""; });
   set("appVersion", (el) => { el.textContent = "v" + (d.version || "1.0.0"); });
   renderSiteCards(d.sites);
   updateChip(!!d.enabled);

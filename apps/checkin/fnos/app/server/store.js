@@ -6,6 +6,10 @@
 const fs = require("fs");
 const path = require("path");
 const { ADAPTERS } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
+const { setGlobalProxy } = require("./httpc"); // 全局代理配置注入（proxy_enabled + proxy_url）
+
+// 全局代理地址格式：http(s):// 或 socks5(h):// 开头（socks5 当前仅做校验，HTTPS 隧道暂不支持）
+const PROXY_URL_RE = /^(https?|socks5h?):\/\//i;
 
 const SITE_KEYS = Object.keys(ADAPTERS);
 
@@ -23,11 +27,13 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.3.6",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.3.7",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
   feishu_webhook: "",      // 飞书机器人 Webhook
+  proxy_enabled: false,    // 全局代理开关（勾选「走代理」的站点统一走 proxy_url）
+  proxy_url: "",           // 全局代理地址（http(s):// 或 socks5://）
   sites: DEFAULT_SITES,
 };
 
@@ -37,6 +43,12 @@ class Store {
     this._path = path.join(dataDir, "checkin_config.json");
     this._historyPath = path.join(dataDir, "checkin_history.json");
     this._cfg = this._load();
+    this._syncProxy(); // 启动即把持久化的全局代理配置注入 httpc（后续 saveConfig 变更时再同步）
+  }
+
+  /** 把当前全局代理配置注入 httpc 模块单例（启动加载 + 保存配置后调用） */
+  _syncProxy() {
+    setGlobalProxy(this._cfg.proxy_enabled, this._cfg.proxy_url);
   }
 
   _load() {
@@ -54,6 +66,9 @@ class Store {
     // 不参与持久化合并，避免 config 文件旧版本号在「fpk 升级 / 热更未回写」时
     // 覆盖新字面量，导致重启后版本号不变（对齐 p115assistant 已验证机制）。
     cfg.version = DEFAULT_CONFIG.version;
+    // 全局代理配置类型收敛（防止手改 config 写入异常类型）；非法 URL 视为空（不启用）
+    cfg.proxy_enabled = !!raw.proxy_enabled;
+    cfg.proxy_url = (typeof raw.proxy_url === "string" && PROXY_URL_RE.test(raw.proxy_url.trim())) ? raw.proxy_url.trim() : "";
     // 面板鉴权已移除：存量 config 中的 auth_enabled/auth_token 不再读取（物理值可残留，运行时忽略）
     delete cfg.auth_enabled;
     delete cfg.auth_token;
@@ -133,6 +148,13 @@ class Store {
   /** 保存配置（白名单键，敏感值允许写入） */
   saveConfig(patch) {
     const cfg = this._cfg;
+    // 先校验全局代理地址（非法直接抛错，避免部分字段已改入内存却因后续报错未落盘导致内存/磁盘不一致）
+    if (patch.proxy_url !== undefined) {
+      const v = String(patch.proxy_url || "").trim();
+      if (v && !PROXY_URL_RE.test(v)) {
+        throw new Error("代理地址格式非法：需以 http://、https:// 或 socks5:// 开头");
+      }
+    }
     if (patch.enabled !== undefined) cfg.enabled = !!patch.enabled;
     if (patch.cron !== undefined) cfg.cron = String(patch.cron || "08:10");
     if (patch.notify_enabled !== undefined) cfg.notify_enabled = !!patch.notify_enabled;
@@ -144,6 +166,9 @@ class Store {
       const v = String(patch.feishu_webhook || "").trim();
       if (v) cfg.feishu_webhook = v; // 留空 = 不修改
     }
+    // 全局代理（无敏感值，允许显式清空——留空即关闭代理地址）
+    if (patch.proxy_enabled !== undefined) cfg.proxy_enabled = !!patch.proxy_enabled;
+    if (patch.proxy_url !== undefined) cfg.proxy_url = String(patch.proxy_url || "").trim();
     if (patch.sites && typeof patch.sites === "object") {
       for (const k of SITE_KEYS) {
         const site = patch.sites[k];
@@ -209,6 +234,7 @@ class Store {
       }
     }
     this.save();
+    this._syncProxy(); // 代理配置变更即时生效（后续出站请求读到新值，无需重启）
     return this._cfg;
   }
 

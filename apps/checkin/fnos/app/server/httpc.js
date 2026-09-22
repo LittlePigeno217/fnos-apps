@@ -14,9 +14,22 @@ const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-/** use_proxy=true 时从环境变量取代理（https_proxy/http_proxy/all_proxy）；未配置返回 null（直连） */
+// 全局代理配置（运行设置页的 proxy_enabled + proxy_url）：模块级单例，
+// 由 store 在启动加载与保存配置时通过 setGlobalProxy 注入，避免把配置层层透传。
+let _globalProxy = { enabled: false, url: "" };
+
+/** 注入全局代理配置（运行配置：proxy_enabled + proxy_url）。url 已在 store 做格式校验 */
+function setGlobalProxy(enabled, url) {
+  _globalProxy = { enabled: !!enabled, url: String(url || "").trim() };
+}
+
+/**
+ * 站点 use_proxy=true 时选择代理地址；use_proxy=false 直连（返回 null）。
+ * 优先级：全局代理配置（proxy_enabled && proxy_url）> 环境变量（https_proxy 等，fallback）> null（直连）。
+ */
 function proxyFromEnv(useProxy) {
   if (!useProxy) return null;
+  if (_globalProxy.enabled && _globalProxy.url) return _globalProxy.url;
   return (
     process.env.https_proxy || process.env.HTTPS_PROXY ||
     process.env.http_proxy || process.env.HTTP_PROXY ||
@@ -32,6 +45,11 @@ function connectViaProxy(proxyUrl, targetHost, targetPort, timeout) {
       p = new URL(proxyUrl);
     } catch {
       reject(new Error(`代理地址无法解析：${proxyUrl}`));
+      return;
+    }
+    // 仅支持 http/https 代理的 CONNECT 隧道；SOCKS 代理暂不实现（如实报告，避免静默直连）
+    if (!/^https?:$/i.test(p.protocol)) {
+      reject(new Error(`暂不支持 ${p.protocol.replace(/:$/, "")} 代理的 HTTPS 隧道，请改用 http:// 或 https:// 代理`));
       return;
     }
     const socket = net.connect(Number(p.port) || 8080, p.hostname, () => {
@@ -220,4 +238,4 @@ function extractFormhash(text) {
   return m ? m[1] : null;
 }
 
-module.exports = { Session, getJson, parseJson, cleanText, extractFormhash, DEFAULT_UA, proxyFromEnv };
+module.exports = { Session, getJson, parseJson, cleanText, extractFormhash, DEFAULT_UA, proxyFromEnv, setGlobalProxy };
