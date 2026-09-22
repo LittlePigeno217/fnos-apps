@@ -8,7 +8,26 @@ const http = require("http");
 const https = require("https");
 const net = require("net");
 const tls = require("tls");
+const zlib = require("zlib");
 const { URL } = require("url");
+
+/**
+ * 按 Content-Encoding 解压响应体（gzip / deflate / br）。
+ * WAF 挑战页常以 gzip 压缩下发，不解压会被当乱码文本 → parseJson 失败误报。
+ * 任何解压失败一律安全回退原始 buffer（不抛异常），避免影响非压缩/异常响应。
+ */
+function decodeBody(headers, buf) {
+  const enc = String((headers && headers["content-encoding"]) || "").trim().toLowerCase();
+  if (!enc || enc === "identity" || !buf || buf.length === 0) return buf;
+  try {
+    if (enc === "gzip" || enc === "x-gzip") return zlib.gunzipSync(buf);
+    if (enc === "deflate") return zlib.inflateSync(buf);
+    if (enc === "br") return zlib.brotliDecompressSync(buf);
+  } catch {
+    return buf; // 解压失败：回退原文，绝不抛异常
+  }
+  return buf;
+}
 
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -186,7 +205,8 @@ class Session {
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
           if (activeSocket) activeSocket.destroy(); // 响应读完即关闭隧道，避免连接残留
-          const buf = Buffer.concat(chunks);
+          // Content-Encoding: gzip/deflate/br → 解压后再取文本（失败安全回退原文）
+          const buf = decodeBody(res.headers, Buffer.concat(chunks));
           resolve({ status: res.statusCode, headers: res.headers, text: buf.toString("utf8"), buffer: buf });
         });
       };

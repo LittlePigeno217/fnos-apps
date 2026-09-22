@@ -700,6 +700,7 @@ const ANYROUTER = {
   ],
   base: "https://anyrouter.top",
   loginPath: "/api/user/login",
+  logoutPath: "/api/user/logout",
   signInPath: "/api/user/sign_in",
   fallbackSignInPath: "/api/user/checkin", // 个别 anyrouter 部署走 OneAPI 协议
 
@@ -798,10 +799,76 @@ const ANYROUTER = {
     return napiUsd(quota);
   },
 
-  /* runCheckin：anyrouter.top 常规流程 POST sign_in → fallback checkin；
-   * AgentRouter 查询 user_info 即自动签到；登录态失效且有 email/password 时强制重登一次。 */
-  async runCheckin(cfg, forceLogin) {
-    const auth = await this._resolveAuth(cfg, forceLogin);
+  /** 是否配置了可用于登录的账号密码（email 或 username + password）——决定能否自动重登拿奖励 */
+  _hasCreds(cfg) {
+    if (!cfg || !cfg.password || !String(cfg.password).trim()) return false;
+    return !!((cfg.email && String(cfg.email).trim()) || (cfg.username && String(cfg.username).trim()));
+  },
+  /** 登录标识：优先 email，回落 username（anyrouter 登录 body 的 username 字段） */
+  _loginIdent(cfg) {
+    return firstStr(cfg, ["email", "username"]);
+  },
+  /** 当前会话认证（不触发登录）：有效 session > 配置 Cookie > null（供 logout 尽力而为，不为登出而先登录） */
+  _currentAuth(cfg) {
+    const base = this._base(cfg);
+    if (sessionValid(cfg) && cfg.session && typeof cfg.session === "object") {
+      const sess = cfg.session;
+      if (sess.type === "token" && sess.token) return { type: "token", token: sess.token, base: sess.base || base };
+      if (sess.type === "cookie" && sess.headers) return { type: "cookie", headers: sess.headers, base: sess.base || base };
+    }
+    if (cfg.cookie && String(cfg.cookie).trim()) return cookieAuth(cfg, base);
+    return null;
+  },
+
+  /* runCheckin：AnyRouter/AgentRouter 奖励须「退出→重新登录」才发放。
+   * 有账密 → 执行 logout→login 重登签到（登录成功即视为签到成功，奖励随重登发放）；
+   * 无账密 → 保留原 Cookie 流程（sign_in / AgentRouter user_info），失效时提示补账密自动重登。 */
+  async runCheckin(cfg) {
+    if (this._hasCreds(cfg)) return this._runReloginCheckin(cfg);
+    return this._runCookieCheckin(cfg);
+  },
+
+  /* 重登签到（AnyRouter/AgentRouter 奖励机制）：logout（尽力而为，失败/404 忽略）→ login（账密）
+   * → 新 token 写回 cfg.session → 登录成功即签到成功 → 余额快照。 */
+  async _runReloginCheckin(cfg) {
+    const base = this._base(cfg);
+    // 1) 退出当前会话：带现有 token/cookie POST /api/user/logout；不存在/失败一律忽略，继续 login
+    const cur = this._currentAuth(cfg);
+    if (cur) {
+      try {
+        const s = new Session();
+        await s.postRaw(base + this.logoutPath, "{}", {
+          headers: newApiHeaders(cur, { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }),
+          timeout: 15000, useProxy: cfg.use_proxy,
+        });
+      } catch { /* logout 失败/接口不存在：忽略，继续重新登录 */ }
+    }
+    // 2) 账号密码重新登录 → 新 token → 写回 session（奖励随本次重登发放）
+    const ident = this._loginIdent(cfg);
+    const s2 = new Session();
+    const r = await s2.postJson(base + this.loginPath, { username: ident, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
+    if (isWafChallenge(r.text)) {
+      throw new Error(`平台有 WAF 人机验证，账号密码重登被拦截：请在浏览器访问 ${base} 后改用「Cookie + api_user」方式配置`);
+    }
+    const j = parseJson(r.text);
+    if (!j || !j.success || !(j.data || {}).access_token) {
+      throw new Error((j && (j.message || j.msg)) || `重新登录失败（HTTP ${r.status}）`);
+    }
+    const auth = { type: "token", token: j.data.access_token, base };
+    cfg.session = { type: "token", token: auth.token, base };
+    cfg.session_ts = Date.now();
+    // 3) 登录成功即视为签到成功；余额快照（取不到不致命）
+    let info = null;
+    try { info = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 余额取不到不致命 */ }
+    const balanceMsg = napiBalanceMsg(info);
+    const detail = balanceMsg ? `签到成功（重新登录发放奖励），${balanceMsg}` : "签到成功（重新登录发放奖励）";
+    return this._ok("签到成功", detail, "-", balanceMsg || "-", cfg, auth);
+  },
+
+  /* Cookie 流程（无账密）：anyrouter.top POST sign_in → fallback checkin；AgentRouter 查 user_info 即签到。
+   * 登录态失效且无账密无法自动重登 → 明确提示配置账号密码或重取 Cookie。 */
+  async _runCookieCheckin(cfg) {
+    const auth = await this._resolveAuth(cfg);
 
     // AgentRouter：无独立签到接口，查询 user_info 即自动完成当日签到。
     // 单次权威查询：失败（401 等）直接抛明确错误，不误报成功；余额随响应展示
@@ -834,14 +901,8 @@ const ANYROUTER = {
       throw new Error(`平台 WAF 拦截（Cookie 缺人机验证）：请在浏览器访问 ${auth.base} 通过验证后重新复制完整 Cookie`);
     }
     if (isLoginExpired(r.status, r.text)) {
-      // 登录态失效：有 email/password 时强制重登换新 token 再试一次（对齐 anyrouter-check-in 重登拿余额）；
-      // 无凭据 → 明确提示重新获取 Cookie + api_user
-      if (cfg.email && cfg.password && !forceLogin) {
-        cfg.session = null;
-        cfg.session_ts = 0;
-        return this.runCheckin(cfg, true);
-      }
-      throw new Error(`登录态失效（HTTP ${r.status}）：Cookie 过期或 Token 无效，请在浏览器重新获取 Cookie + api_user`);
+      // 无账密无法自动 logout→login 重登：明确提示补账密（可自动重登拿奖励）或浏览器重取 Cookie
+      throw new Error(`登录态失效（HTTP ${r.status}）：Cookie 过期或 Token 无效。请配置账号密码以自动「退出→重新登录」领取奖励，或在浏览器重新获取 Cookie + api_user`);
     }
 
     const j = parseJson(r.text);

@@ -407,7 +407,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.6</span>
+      <span class="ver" id="appVersion">v1.4.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -809,12 +809,32 @@ function switchAcctTab(i) {
 function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
-  // 站点名仅由来源标签承载（见 siteTag）；标题只显示账号身份，三者不重叠：
-  //   标题 = 备注 → 账号标识(label 脱敏) → 「账号 N」；站点名不再进标题（去重）。
+  // 卡片标题（备注优先）：
+  //   · anyrouter/agentrouter：无备注 → 「站点名 · 账号标识」（AnyRouter/AgentRouter 由 base_url host 区分）
+  //   · newapi：无备注 → 「NewAPI」（有 base_url 时附 host），账号标识落副标题
+  //   · 其余站点：无备注 → 账号标识(label 脱敏) → 「账号 N」（站点名仅由来源标签 siteTag 承载）
   const acctLabel = a.label || (d && d.label) || "";
-  const title = a.remark || acctLabel || ("账号 " + (a.id || ""));
-  // 副标题只在与标题不同的账号标识存在时显示（有备注时补账号标识；无备注时标题已是标识，副标题留空避免重复）
-  const subLabel = (a.remark && acctLabel && acctLabel !== a.remark) ? acctLabel : "";
+  const baseUrl = (d && d.field_values && d.field_values.base_url) || "";
+  const hostOf = (u) => {
+    const m = String(u || "").match(/^https?:\/\/([^/]+)/i);
+    return (m ? m[1] : String(u || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).trim();
+  };
+  let title, subLabel;
+  if (a.remark) {
+    title = a.remark;
+    subLabel = (acctLabel && acctLabel !== a.remark) ? acctLabel : "";
+  } else if (key === "anyrouter") {
+    const sn = hostOf(baseUrl).toLowerCase().includes("agentrouter") ? "AgentRouter" : "AnyRouter";
+    title = acctLabel ? (sn + " · " + acctLabel) : sn;
+    subLabel = "";
+  } else if (key === "newapi") {
+    const host = hostOf(baseUrl);
+    title = host ? ("NewAPI · " + host) : "NewAPI";
+    subLabel = (acctLabel && acctLabel !== title) ? acctLabel : "";
+  } else {
+    title = acctLabel || ("账号 " + (a.id || ""));
+    subLabel = "";
+  }
   const enabled = a.enabled !== false;
   const last = d ? d.last : null;
   // 站点来源标签（色块 + 站点名）：跨站点混合列表中区分账号归属，站点名唯一出处
