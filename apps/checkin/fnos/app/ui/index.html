@@ -399,7 +399,7 @@
       <div class="brand-mark">签</div>
       <div>
         <div class="brand-name">签到工具</div>
-        <div class="brand-sub">FLZT / 恩山 / 易破解 / AnyRouter</div>
+        <div class="brand-sub">FLZT / 恩山 / 易破解 / NewApi / AnyRouter</div>
       </div>
     </div>
     <nav class="nav" id="tabs" aria-label="主导航">
@@ -417,7 +417,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.3</span>
+      <span class="ver" id="appVersion">v1.4.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -744,7 +744,7 @@ function renderSiteCards(serverSites) {
 /* 账号列表分组：固定 NewApi → WorkBuddy → 其他站点。
  * 「其他站点」显式含 flzt/right_forum(恩山)/ypojie，并兜底收纳任何未归入前两组的站点，避免账号漏显。 */
 const ACCT_GROUPS = [
-  { title: "NewApi", keys: ["anyrouter"] },
+  { title: "NewApi", keys: ["newapi", "anyrouter"] },
   { title: "WorkBuddy", keys: ["workbuddy"] },
   { title: "其他站点", keys: ["flzt", "right_forum", "ypojie"] },
 ];
@@ -1080,7 +1080,7 @@ function renderAddOAuthPanel(key) {
   $("addPanel").innerHTML =
     '<div class="add-panel-tip">用 GitHub / LinuxDO 账号授权登录：点击按钮在新窗口完成授权，再把浏览器地址栏的回调链接（含 code）粘贴回来。</div>' +
     (baseField
-      ? '<div class="cred-row"><div class="cred-label">平台地址</div><input class="input mono" id="addoauth_base" value="https://anyrouter.top" placeholder="' + esc(baseField.ph || "") + '"></div>'
+      ? '<div class="cred-row"><div class="cred-label">平台地址</div><input class="input mono" id="addoauth_base" value="" placeholder="' + esc(baseField.ph || "") + '"></div>'
       : "") +
     provs.map((p) =>
       '<button type="button" class="btn" style="width:100%;margin-top:6px" id="oauthBtn_' + esc(p.id) +

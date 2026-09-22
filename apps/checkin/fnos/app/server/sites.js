@@ -73,6 +73,90 @@ function firstStr(obj, keys) {
   return "";
 }
 
+/* ── NewAPI 家族共享（anyrouter / newapi 两个站点适配器共用）────────
+ * anyrouter.top / AgentRouter 与通用 NewAPI/OneAPI/Sub2API 共用同一批协议工具：
+ * 请求头构造、WAF / 登录失效识别、签到成功判定、$ 余额换算、/api/user/self 查询。
+ * 单一事实源：两个 adapter 只引用这些纯函数/常量，不各自复制实现。 */
+const NEWAPI_WAF_MARKERS = ["acw_sc__v2", "var arg1=", "cdn_sec_tc", "acw_tc"];
+
+/** 认证对象（{type:"token",token}|{type:"cookie",headers}）→ 请求头 */
+function newApiHeaders(auth, extra) {
+  const h = { Accept: "application/json, text/plain, */*", ...(extra || {}) };
+  if (auth.type === "token") h.Authorization = "Bearer " + auth.token;
+  else Object.assign(h, auth.headers);
+  return h;
+}
+
+/** 阿里云盾 WAF JS 挑战页识别（缺 WAF cookie 时被拦，anyrouter.top/agentrouter 常见） */
+function isWafChallenge(text) {
+  const t = String(text || "").toLowerCase();
+  return NEWAPI_WAF_MARKERS.some((m) => t.includes(m.toLowerCase()));
+}
+
+/** 登录态失效判定：HTTP 401 或 body 含会话/token 过期文案 */
+function isLoginExpired(status, text) {
+  if (Number(status) === 401) return true;
+  const t = String(text || "").toLowerCase();
+  return /session.*(invalid|expired)|token.*(invalid|expired)|未登录|登录已过期|invalid session/i.test(t);
+}
+
+/** base_url 归一：去尾斜杠；缺省回落 fallback（anyrouter 用自有默认，newapi 不回落） */
+function napiBase(cfg, fallback) {
+  return String((cfg && cfg.base_url) || fallback || "").trim().replace(/\/+$/, "");
+}
+
+/** 从 base_url 提取纯 host（去协议/路径，小写），用于平台/签到模式判定 */
+function napiHost(cfg, fallback) {
+  const base = napiBase(cfg, fallback);
+  const m = base.match(/^https?:\/\/([^/]+)/i);
+  return (m ? m[1] : base).toLowerCase();
+}
+
+/** 签到成功判定：NewAPI sign_in/checkin 响应 ret/code/success 任一成立（对齐 anyrouter-check-in execute_check_in） */
+function napiSignInSuccess(j) {
+  return !!(j && (j.ret === 1 || j.code === 0 || j.success === true));
+}
+
+/** NewAPI quota：500000 点 = $1（美元） */
+function napiUsd(quota) {
+  return "$" + (Number(quota || 0) / 500000).toFixed(2);
+}
+
+/** GET {base}/api/user/self → {quota, used_quota}；401 抛明确失效文案（供上层定位凭据问题），其余解析失败 → null */
+async function fetchUserInfo(base, auth, useProxy) {
+  const s = new Session();
+  const r = await s.get(base + "/api/user/self", { headers: newApiHeaders(auth), timeout: 15000, useProxy });
+  if (r.status === 401) throw new Error("登录态失效（HTTP 401）：Cookie 过期或 Token 无效，请重新获取（session 约 1 个月有效）");
+  const j = parseJson(r.text);
+  if (!j || !j.success || !(j.data || {}).quota) return null;
+  return { quota: Number(j.data.quota) || 0, used_quota: Number(j.data.used_quota) || 0 };
+}
+
+/** Cookie + api_user → 认证对象（带 new-api-user 请求头） */
+function cookieAuth(cfg, base) {
+  const h = { Cookie: String(cfg.cookie).trim() };
+  if (cfg.api_user) h["new-api-user"] = String(cfg.api_user).trim();
+  return { type: "cookie", headers: h, base };
+}
+
+/** 签到前后余额对比 → 本次签到奖励 $ 文案；无法对比 → 空串。
+ *  对齐 anyrouter-check-in：总分配 = 余额 + 累计消耗；奖励 = 签到后总分配 - 签到前总分配（期间消耗已抵扣）。 */
+function napiRewardMsg(before, after) {
+  if (!(before && after)) return "";
+  const totalBefore = before.quota + before.used_quota;
+  const totalAfter = after.quota + after.used_quota;
+  const reward = Number((totalAfter - totalBefore).toFixed(6));
+  if (reward <= 0) return "";
+  return `本次签到 +${napiUsd(reward)}`;
+}
+
+/** 用户信息 → 余额展示文案（$，含累计消耗） */
+function napiBalanceMsg(info) {
+  if (!info) return "";
+  const s = `余额 ${napiUsd(info.quota)}`;
+  return info.used_quota ? `${s}，累计消耗 ${napiUsd(info.used_quota)}` : s;
+}
+
 /* ── FLZT ─────────────────────────────────────────────────── */
 const FLZT = {
   key: "flzt",
@@ -577,29 +661,269 @@ const YPOJIE = {
   },
 };
 
-/* ── AnyRouter / NewAPI 通用（anyrouter-check-in 移植）────────────── */
+/* ── AnyRouter / NewAPI 站点拆分（09-23 任务书）────────────────
+ * 原「ANYROUTER 通用适配器」拆为两个独立站点类型：
+ *   · anyrouter —— anyrouter.top / AgentRouter 专用（对齐开源 anyrouter-check-in：
+ *     手动 Cookie + api_user 为主，email/password 可选——登录重试拿余额；余额 $ 显示；
+ *     不引入其 WAF 浏览器自动化——Node 无浏览器引擎，WAF 站点保持手动 Cookie）
+ *   · newapi   —— NewAPI / OneAPI / Sub2API 通用（OAuth + 账号密码 + Cookie +
+ *     Sub2API access_token 全能力保留）
+ * 协议/工具（请求头、WAF/失效识别、成功判定、$ 换算、user_info）集中在上面
+ * 「NewAPI 家族共享」，两个适配器只做组合，不复制实现。 */
+
+/* ── AnyRouter（anyrouter.top / AgentRouter）────────────────── */
 const ANYROUTER = {
   key: "anyrouter",
-  name: "AnyRouter / NewAPI 通用",
+  name: "AnyRouter",
   short: "AR",
   mode: "Cookie / 账号",
+  // 对齐 anyrouter-check-in 认证优先级：Cookie + api_user 为主（WAF 站点浏览器手动获取）；
+  // email/password 可选，登录态失效时自动重登换新 token 拿余额（password_cookie 直登产出会话）。
+  login_caps: ["password_cookie", "cookie"],
+  desc: "anyrouter.top / AgentRouter · Cookie + api_user 签到；email/password 可选（登录重试获取余额）",
+  fields: [
+    { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（AgentRouter 填 https://agentrouter.org）" },
+    { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（WAF 站点需完整复制）" },
+    { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
+    { key: "email", label: "账号 / 邮箱", type: "text", ph: "可选：登录重试 / 获取余额用" },
+    { key: "password", label: "密码", type: "password", ph: "可选：与账号配合登录（留空不改）" },
+  ],
+  base: "https://anyrouter.top",
+  loginPath: "/api/user/login",
+  signInPath: "/api/user/sign_in",
+  fallbackSignInPath: "/api/user/checkin", // 个别 anyrouter 部署走 OneAPI 协议
+
+  defaultConfig() {
+    return {
+      enabled: false, use_proxy: false,
+      base_url: "https://anyrouter.top",
+      cookie: "", api_user: "", email: "", password: "",
+    };
+  },
+  isConfigured(cfg) {
+    if (!cfg) return false;
+    if (cfg.cookie && String(cfg.cookie).trim()) return true;  // Cookie 方式（主）
+    if (cfg.email && cfg.password) return true;                // 账号密码方式（可选）
+    return false;
+  },
+  getAccountLabel(cfg) {
+    if (cfg && cfg.email) return maskEmail(cfg.email);
+    if (cfg && cfg.api_user) return "User " + cfg.api_user;
+    return "Cookie";
+  },
+  /** base_url → 归一 base（缺省回落 anyrouter.top） */
+  _base(cfg) {
+    return napiBase(cfg, this.base);
+  },
+  /** base_url → 纯 host（小写），用于平台判定 */
+  _host(cfg) {
+    return napiHost(cfg, this.base);
+  },
+  /** AgentRouter 平台判定：host 含 agentrouter → 查询 user_info 即自动完成当日签到（无独立签到接口） */
+  _isAgentRouter(cfg) {
+    return this._host(cfg).includes("agentrouter");
+  },
+  /** 构造认证：email/password → /api/user/login 拿 token；否则 Cookie（+api_user） */
+  async _auth(cfg) {
+    const base = this._base(cfg);
+    if (cfg.email && cfg.password) {
+      const s = new Session();
+      const r = await s.postJson(base + this.loginPath, { username: cfg.email, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
+      if (isWafChallenge(r.text)) {
+        throw new Error(`平台有 WAF 人机验证，账号密码方式被拦截：请在浏览器访问 ${base} 后改用「Cookie + api_user」方式配置`);
+      }
+      const j = parseJson(r.text);
+      if (!j || !j.success || !(j.data || {}).access_token) {
+        throw new Error((j && (j.message || j.msg)) || `登录失败（HTTP ${r.status}）`);
+      }
+      return { type: "token", token: j.data.access_token, base };
+    }
+    if (cfg.cookie && String(cfg.cookie).trim()) {
+      return cookieAuth(cfg, base);
+    }
+    throw new Error("请配置 Cookie + api_user（或 email/password）");
+  },
+  /** 会话优先构造认证：有效 session 直接用；否则走 _auth 登录（产物写回 session，供后续复用） */
+  async _resolveAuth(cfg, forceLogin) {
+    if (!forceLogin && sessionValid(cfg) && cfg.session && typeof cfg.session === "object") {
+      const sess = cfg.session;
+      if (sess.type === "token" && sess.token) {
+        return { type: "token", token: sess.token, base: sess.base || this._base(cfg) };
+      }
+      if (sess.type === "cookie" && sess.headers) {
+        return { type: "cookie", headers: sess.headers, base: sess.base || this._base(cfg) };
+      }
+    }
+    const auth = await this._auth(cfg);
+    // 登录产物写回 session（与 loginFlow 语义一致），后续会话优先复用，避免每次重登
+    cfg.session = auth.type === "token"
+      ? { type: "token", token: auth.token, base: auth.base }
+      : { type: "cookie", headers: auth.headers, base: auth.base };
+    cfg.session_ts = Date.now();
+    return auth;
+  },
+
+  loginFlow: {
+    mode: "form",
+    desc: "Cookie 直接产出 cookie 会话；email/password 产出 token 会话",
+    async init(cfg) {
+      const auth = await ANYROUTER._auth(cfg);
+      const session = auth.type === "token"
+        ? { type: "token", token: auth.token, base: auth.base }
+        : { type: "cookie", headers: auth.headers, base: auth.base };
+      return {
+        mode: "form",
+        status: "ready",
+        session,
+        account_label: ANYROUTER.getAccountLabel(cfg),
+        message: "登录成功",
+      };
+    },
+  },
+
+  async _getUserInfo(auth, useProxy) {
+    return fetchUserInfo(auth.base, auth, useProxy);
+  },
+  _fmtUsd(quota) {
+    return napiUsd(quota);
+  },
+
+  /* runCheckin：anyrouter.top 常规流程 POST sign_in → fallback checkin；
+   * AgentRouter 查询 user_info 即自动签到；登录态失效且有 email/password 时强制重登一次。 */
+  async runCheckin(cfg, forceLogin) {
+    const auth = await this._resolveAuth(cfg, forceLogin);
+
+    // AgentRouter：无独立签到接口，查询 user_info 即自动完成当日签到。
+    // 单次权威查询：失败（401 等）直接抛明确错误，不误报成功；余额随响应展示
+    // （签到前基线无从获取，reward 记 "-"，与 anyrouter-check-in 该平台行为一致）。
+    if (this._isAgentRouter(cfg)) {
+      const info = await this._getUserInfo(auth, cfg.use_proxy);
+      const balanceMsg = napiBalanceMsg(info);
+      const detail = balanceMsg ? `签到成功，${balanceMsg}` : "签到成功";
+      return this._ok("签到成功", detail, "-", balanceMsg || "-", cfg, auth);
+    }
+
+    // 签到前余额（取不到不致命）
+    let before = null;
+    try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
+
+    const doSign = (path) => {
+      const s = new Session();
+      return s.postRaw(path, null, {
+        headers: newApiHeaders(auth, { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }),
+        timeout: 15000, useProxy: cfg.use_proxy,
+      });
+    };
+    let r = await doSign(auth.base + this.signInPath);
+    // OneAPI 协议平台没有 /api/user/sign_in → fallback /api/user/checkin
+    if (r.status === 404 || /not found|接口不存在|invalid action/i.test(String(r.text || ""))) {
+      r = await doSign(auth.base + this.fallbackSignInPath);
+    }
+
+    if (isWafChallenge(r.text)) {
+      throw new Error(`平台 WAF 拦截（Cookie 缺人机验证）：请在浏览器访问 ${auth.base} 通过验证后重新复制完整 Cookie`);
+    }
+    if (isLoginExpired(r.status, r.text)) {
+      // 登录态失效：有 email/password 时强制重登换新 token 再试一次（对齐 anyrouter-check-in 重登拿余额）；
+      // 无凭据 → 明确提示重新获取 Cookie + api_user
+      if (cfg.email && cfg.password && !forceLogin) {
+        cfg.session = null;
+        cfg.session_ts = 0;
+        return this.runCheckin(cfg, true);
+      }
+      throw new Error(`登录态失效（HTTP ${r.status}）：Cookie 过期或 Token 无效，请在浏览器重新获取 Cookie + api_user`);
+    }
+
+    const j = parseJson(r.text);
+    if (!j || typeof j !== "object") {
+      throw new Error(`签到接口没回 JSON：${cleanText(r.text).slice(0, 60) || "空响应"}`);
+    }
+    const msg = String(j.msg || j.message || "").trim();
+    const success = napiSignInSuccess(j);
+    const data = (j.data && typeof j.data === "object") ? j.data : null;
+
+    // 结构化解读（NewApiCheckInStatus）：data.enabled===false → 禁用；data.checked_in===true → 已签到
+    if (data && data.enabled === false) {
+      throw new Error(msg || "签到功能已被平台禁用（enabled=false）");
+    }
+    if (data && data.checked_in === true) {
+      return this._ok("今日已签到", msg || "今日已签到", "-", "-", cfg, auth);
+    }
+
+    // 签到后余额（对比奖励）
+    let after = null;
+    try { after = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
+    const balanceMsg = napiBalanceMsg(after);
+    // 奖励优先取接口直接回写的 quota_awarded（NewApiCheckInRecord 字段），否则用签到前后总分配差
+    let rewardMsg = "";
+    if (data && data.quota_awarded != null && data.quota_awarded !== "") {
+      rewardMsg = `本次签到 +${this._fmtUsd(Number(data.quota_awarded) || 0)}`;
+    } else {
+      rewardMsg = napiRewardMsg(before, after);
+    }
+
+    if (success) {
+      const detail = [rewardMsg, balanceMsg].filter(Boolean).join("；") || msg || "签到成功";
+      return this._ok("签到成功", detail, rewardMsg || "-", balanceMsg || "-", cfg, auth);
+    }
+    if (isAlreadyCheckedIn(msg) || /已经签到|重复签到|already checked|already signed/i.test(msg)) {
+      const detail = [balanceMsg || msg, rewardMsg].filter(Boolean).join("；") || "今日已签到";
+      return this._ok("今日已签到", detail, "-", balanceMsg || "-", cfg, auth);
+    }
+    throw new Error(msg || `签到失败（ret=${j.ret} code=${j.code}）`);
+  },
+
+  async testConnection(cfg) {
+    const auth = await this._resolveAuth(cfg);
+    const info = await this._getUserInfo(auth, cfg.use_proxy);
+    if (!info) throw new Error("登录态有效，但用户信息接口未返回 quota");
+    const who = cfg.email ? maskEmail(cfg.email) : (cfg.api_user ? "User " + cfg.api_user : "Cookie");
+    return { site: this.key, site_name: this.name, message: `连接成功，${who} 有效，余额 ${this._fmtUsd(info.quota)}` };
+  },
+
+  /* 账号级余额快照（server 在签到/测试成功后调用）：返回原始数值 quota（点数，500000 点 = $1） */
+  balanceLabel: "余额",
+  async queryBalance(cfg) {
+    const auth = await this._resolveAuth(cfg);
+    const info = await this._getUserInfo(auth, cfg.use_proxy);
+    if (!info) return null;
+    return Number(info.quota) || 0;
+  },
+  /** 余额数值 → 展示串（USD）；delta 同单位 */
+  fmtBalance(v) {
+    return this._fmtUsd(Number(v) || 0);
+  },
+
+  _ok(status, message, reward, total, cfg, auth) {
+    const account = (cfg && cfg.email) ? maskEmail(cfg.email)
+      : ((cfg && cfg.api_user) ? "User " + cfg.api_user
+        : ((auth && auth.type === "cookie") ? "Cookie" : "-"));
+    return { site: this.key, site_name: this.name, status, message, reward, total, account, time: now() };
+  },
+};
+
+/* ── NewAPI 通用（NewAPI / OneAPI / Sub2API）────────────────── */
+const NEWAPI = {
+  key: "newapi",
+  name: "NewAPI 通用",
+  short: "NP",
+  mode: "Cookie / 账号 / OAuth",
   // GitHub / LinuxDO OAuth（NewAPI 统一 OAuth）优先；账号密码直登 + 登录后自动产出会话；WAF 站点回落手动 Cookie
   login_caps: ["oauth_github", "oauth_linuxdo", "password", "password_cookie", "cookie"],
-  desc: "anyrouter.top / NewAPI / OneAPI / Sub2API 通用 · Cookie 或账号密码签到，Sub2API 用 access_token",
+  desc: "NewAPI / OneAPI / Sub2API 通用 · Cookie 或账号密码签到，Sub2API 用 access_token",
   fields: [
-    { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（自建 NewAPI 填内网地址）" },
+    { key: "base_url", label: "平台地址", type: "text", ph: "https://your-new-api.com（自建 NewAPI 填内网地址）" },
     { key: "username", label: "账号", type: "text", ph: "账号密码方式（二选一，无 WAF 平台可用）" },
     { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
     { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（二选一，WAF 站点用这个）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
     { key: "access_token", label: "Sub2API Token", type: "password", ph: "Sub2API 平台填 access_token（如填则走 /api/v1/redeem/checkin）" },
   ],
-  base: "https://anyrouter.top",
+  base: "", // NewAPI 无默认地址（base_url 必填，缺失时明确报错，避免请求假占位域名）
   loginPath: "/api/user/login",
   signInPath: "/api/user/sign_in",
   fallbackSignInPath: "/api/user/checkin", // OneAPI / NewAPI 平台
   userInfoPath: "/api/user/self",
-  WAF_MARKERS: ["acw_sc__v2", "var arg1=", "cdn_sec_tc"],
   // Sub2API 平台（access_token 直登，/api/v1 协议；协议来自 all-api-hub sub2api 系列）
   sub2MePath: "/api/v1/auth/me",
   sub2SignInPath: "/api/v1/redeem/checkin",
@@ -632,7 +956,7 @@ const ANYROUTER = {
   defaultConfig() {
     return {
       enabled: false, use_proxy: false,
-      base_url: "https://anyrouter.top",
+      base_url: "",
       username: "", password: "", cookie: "", api_user: "", access_token: "",
     };
   },
@@ -668,7 +992,7 @@ const ANYROUTER = {
     const s = new Session();
     // 1) 状态探测：enabled=false → 禁用；已签到 → 直接返回
     const st = await s.get(auth.base + this.sub2SignInStatusPath, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
-    if (this._isLoginExpired(st.status, st.text)) {
+    if (isLoginExpired(st.status, st.text)) {
       throw new Error("登录态失效（HTTP " + st.status + "）：access_token 无效或已过期，请重新获取");
     }
     const sj = parseJson(st.text);
@@ -683,7 +1007,7 @@ const ANYROUTER = {
     }
     // 2) 提交签到
     const r = await s.postJson(auth.base + this.sub2SignInPath, {}, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
-    if (this._isLoginExpired(r.status, r.text)) {
+    if (isLoginExpired(r.status, r.text)) {
       throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
     }
     const j = parseJson(r.text);
@@ -706,36 +1030,17 @@ const ANYROUTER = {
     throw new Error((j.message || `签到失败（code=${j.code} ret=${j.ret}）`));
   },
 
+  /** base_url → 归一 base（NewAPI 无默认：缺失留空，由 _authHeaders 明确报错） */
   _base(cfg) {
-    return String((cfg && cfg.base_url) || this.base || "").trim().replace(/\/+$/, "");
+    return napiBase(cfg);
   },
-  /** 从 base_url 提取纯 host（去协议/路径），用于签到模式判定 */
+  /** base_url → 纯 host（小写），用于平台判定 */
   _host(cfg) {
-    const base = this._base(cfg);
-    const m = base.match(/^https?:\/\/([^/]+)/i);
-    return (m ? m[1] : base).toLowerCase();
-  },
-  /** 签到模式判定：host 含 anyrouter.top → relogin（登录即签到）；其他 NewAPI → checkin（原流程） */
-  _isReloginMode(cfg) {
-    return this._host(cfg).includes("anyrouter.top");
-  },
-  /** 阿里云盾 WAF JS 挑战页识别（anyrouter.top 无 WAF cookie 时被拦） */
-  _isWafChallenge(text) {
-    const t = String(text || "").toLowerCase();
-    return this.WAF_MARKERS.some((m) => t.includes(m.toLowerCase()));
-  },
-  _isLoginExpired(status, text) {
-    if (status === 401) return true;
-    const t = String(text || "").toLowerCase();
-    return /session.*(invalid|expired)|token.*(invalid|expired)|未登录|登录已过期|invalid session/i.test(t);
+    return napiHost(cfg);
   },
   _headers(auth, extra) {
-    const h = { Accept: "application/json, text/plain, */*", ...(extra || {}) };
-    if (auth.type === "token") h.Authorization = "Bearer " + auth.token;
-    else Object.assign(h, auth.headers);
-    return h;
+    return newApiHeaders(auth, extra);
   },
-
   /** 构造认证：账号密码 → /api/user/login 拿 token；Cookie → 直接带 Cookie（+new-api-user） */
   async _authHeaders(cfg) {
     const base = this._base(cfg);
@@ -743,7 +1048,7 @@ const ANYROUTER = {
     if (cfg.username && cfg.password) {
       const s = new Session();
       const r = await s.postJson(base + this.loginPath, { username: cfg.username, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
-      if (this._isWafChallenge(r.text)) {
+      if (isWafChallenge(r.text)) {
         throw new Error(`平台有 WAF 人机验证，账号密码方式被拦截：请在浏览器访问 ${base} 后改用「Cookie + api_user」方式配置`);
       }
       const j = parseJson(r.text);
@@ -753,9 +1058,7 @@ const ANYROUTER = {
       return { type: "token", token: j.data.access_token, base };
     }
     if (cfg.cookie && String(cfg.cookie).trim()) {
-      const h = { Cookie: String(cfg.cookie).trim() };
-      if (cfg.api_user) h["new-api-user"] = String(cfg.api_user).trim();
-      return { type: "cookie", headers: h, base };
+      return cookieAuth(cfg, base);
     }
     throw new Error("请配置账号密码，或 Cookie + api_user");
   },
@@ -776,9 +1079,9 @@ const ANYROUTER = {
 
   loginFlow: {
     mode: "form",
-    desc: "账号密码 / Cookie 产出会话（token 或 cookie）",
+    desc: "账号密码 / Cookie 产出会话（token 或 cookie）；支持 NewAPI 统一 OAuth",
     async init(cfg) {
-      const auth = await ANYROUTER._authHeaders(cfg);
+      const auth = await NEWAPI._authHeaders(cfg);
       const session = auth.type === "token"
         ? { type: "token", token: auth.token, base: auth.base }
         : { type: "cookie", headers: auth.headers, base: auth.base };
@@ -786,7 +1089,7 @@ const ANYROUTER = {
         mode: "form",
         status: "ready",
         session,
-        account_label: ANYROUTER.getAccountLabel(cfg),
+        account_label: NEWAPI.getAccountLabel(cfg),
         message: "登录成功",
       };
     },
@@ -794,16 +1097,16 @@ const ANYROUTER = {
     /* OAuth 发起（oauth_github / oauth_linuxdo）：探 /api/status 拿 client_id + 开关，
      * POST /api/oauth/state 拿 flow_token（state），拼授权 URL 返给前端。不触发真实授权。 */
     async oauthInit(provider, cfg) {
-      const p = ANYROUTER.OAUTH_PROVIDERS[provider];
+      const p = NEWAPI.OAUTH_PROVIDERS[provider];
       if (!p) throw new Error("不支持的 OAuth 提供方：" + provider);
-      const base = ANYROUTER._base(cfg);
+      const base = NEWAPI._base(cfg);
       if (!base) throw new Error("请先配置平台地址（base_url）");
       const s = new Session();
       // 1) /api/status：确认该 provider 已启用并取 client_id
-      const stR = await s.get(base + ANYROUTER.statusPath, {
+      const stR = await s.get(base + NEWAPI.statusPath, {
         headers: { Accept: "application/json, text/plain, */*" }, timeout: 15000, useProxy: cfg && cfg.use_proxy,
       });
-      if (ANYROUTER._isWafChallenge(stR.text)) {
+      if (isWafChallenge(stR.text)) {
         throw new Error("平台有 WAF 人机验证，服务端无法直接发起 OAuth：请在浏览器登录后改用「手动 Cookie」方式");
       }
       const stj = parseJson(stR.text);
@@ -812,10 +1115,10 @@ const ANYROUTER = {
       const clientId = firstStr(sd, [p.client_key]);
       if (!clientId) throw new Error("平台未返回 " + p.name + " client_id（可能未配置 OAuth 或非 NewAPI 平台）");
       // 2) POST /api/oauth/state {provider,intent:login} → data.flow_token（state）
-      const flowR = await s.postJson(base + ANYROUTER.oauthStatePath, { provider, intent: "login" }, {
+      const flowR = await s.postJson(base + NEWAPI.oauthStatePath, { provider, intent: "login" }, {
         headers: { Accept: "application/json, text/plain, */*" }, timeout: 15000, useProxy: cfg && cfg.use_proxy,
       });
-      if (ANYROUTER._isWafChallenge(flowR.text)) {
+      if (isWafChallenge(flowR.text)) {
         throw new Error("平台有 WAF 人机验证，OAuth state 接口被拦截：请改用「手动 Cookie」方式");
       }
       const fj = parseJson(flowR.text);
@@ -831,15 +1134,15 @@ const ANYROUTER = {
      * 服务端换 token + 建/登用户 → data.access_token（NewAPI 会话 token）。产出 token 型 session。 */
     async oauthComplete(args) {
       const { provider, code, state, cfg } = args || {};
-      const p = ANYROUTER.OAUTH_PROVIDERS[provider];
+      const p = NEWAPI.OAUTH_PROVIDERS[provider];
       if (!p) throw new Error("不支持的 OAuth 提供方：" + provider);
       if (!code) throw new Error("回调链接缺少 code 参数（请粘贴完整的授权回调地址）");
-      const base = ANYROUTER._base(cfg);
+      const base = NEWAPI._base(cfg);
       const s = new Session();
-      const url = base + ANYROUTER.oauthCallbackPath + encodeURIComponent(provider) +
+      const url = base + NEWAPI.oauthCallbackPath + encodeURIComponent(provider) +
         "?code=" + encodeURIComponent(code) + (state ? "&state=" + encodeURIComponent(state) : "");
       const r = await s.get(url, { headers: { Accept: "application/json, text/plain, */*" }, timeout: 20000, useProxy: cfg && cfg.use_proxy });
-      if (ANYROUTER._isWafChallenge(r.text)) {
+      if (isWafChallenge(r.text)) {
         throw new Error("平台 WAF 拦截了 OAuth 回调：请在浏览器完成登录后改用「手动 Cookie」方式");
       }
       const j = parseJson(r.text);
@@ -868,44 +1171,14 @@ const ANYROUTER = {
   },
 
   async _getUserInfo(auth, useProxy) {
-    const s = new Session();
-    const r = await s.get(auth.base + this.userInfoPath, { headers: this._headers(auth), timeout: 15000, useProxy });
-    if (r.status === 401) throw new Error("登录态失效（HTTP 401）：Cookie 过期或 Token 无效，请重新获取（session 约 1 个月有效）");
-    const j = parseJson(r.text);
-    if (!j || !j.success || !(j.data || {}).quota) return null;
-    return { quota: Number(j.data.quota) || 0, used_quota: Number(j.data.used_quota) || 0 };
+    return fetchUserInfo(auth.base, auth, useProxy);
   },
-
   _fmtUsd(quota) {
-    return "$" + (Number(quota || 0) / 500000).toFixed(2); // NewAPI quota：500000 点 = $1
-  },
-
-  /* relogin 模式（anyrouter.top）：无 sign_in/checkin 接口语义，重新登录即当日签到。
-   * 强制走账号密码登录（跳过 session 缓存），成功即视为当日额度到账，随后取余额。 */
-  async _runReloginCheckin(cfg) {
-    // 无账密（如仅 Cookie 填写的账号）无法重新登录，不假装成功
-    if (!(cfg.username && cfg.password)) {
-      throw new Error("该账号需账号密码才能重新登录获取余额（Cookie 方式无法自动 relogin）");
-    }
-    // 强制重新登录：_authHeaders 在有账密时总是走 /api/user/login（跳过 session 缓存），
-    // 复用其现有成功判定与 WAF / 登录失败 / 401 明确文案
-    const auth = await this._authHeaders(cfg);
-    // 写回新 session（token），供后续会话优先复用
-    cfg.session = { type: "token", token: auth.token, base: auth.base };
-    cfg.session_ts = Date.now();
-    // 登录成功即当日额度到账；随后取余额（取不到不致命）
-    let info = null;
-    try { info = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
-    const balanceMsg = info
-      ? `余额 ${this._fmtUsd(info.quota)}` + (info.used_quota ? `，累计消耗 ${this._fmtUsd(info.used_quota)}` : "")
-      : "";
-    const detail = balanceMsg ? `登录成功，当日额度已到账；${balanceMsg}` : "登录成功，当日额度已到账";
-    return this._ok("签到成功", detail, "-", balanceMsg || "-", cfg, auth);
+    return napiUsd(quota);
   },
 
   async runCheckin(cfg) {
     if (this._isSub2Api(cfg)) return this._runSub2Checkin(cfg);
-    if (this._isReloginMode(cfg)) return this._runReloginCheckin(cfg);
     const auth = await this._resolveAuth(cfg);
     let before = null;
     try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
@@ -923,10 +1196,10 @@ const ANYROUTER = {
       r = await doSign(auth.base + this.fallbackSignInPath);
     }
 
-    if (this._isWafChallenge(r.text)) {
+    if (isWafChallenge(r.text)) {
       throw new Error(`平台 WAF 拦截（Cookie 缺人机验证）：请在浏览器访问 ${auth.base} 通过验证后重新复制完整 Cookie`);
     }
-    if (this._isLoginExpired(r.status, r.text)) {
+    if (isLoginExpired(r.status, r.text)) {
       throw new Error(`登录态失效（HTTP ${r.status}）：Cookie 过期或 Token 无效，请重新获取（session 约 1 个月有效）`);
     }
 
@@ -935,7 +1208,7 @@ const ANYROUTER = {
       throw new Error(`签到接口没回 JSON：${cleanText(r.text).slice(0, 60) || "空响应"}`);
     }
     const msg = String(j.msg || j.message || "").trim();
-    const success = j.ret === 1 || j.code === 0 || j.success === true;
+    const success = napiSignInSuccess(j);
     const data = (j.data && typeof j.data === "object") ? j.data : null;
 
     // 结构化解读（NewApiCheckInStatus）：data.enabled===false → 禁用；data.checked_in===true → 已签到
@@ -949,9 +1222,7 @@ const ANYROUTER = {
     // 签到后余额（对比奖励）
     let after = null;
     try { after = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
-    const balanceMsg = after
-      ? `余额 ${this._fmtUsd(after.quota)}` + (after.used_quota ? `，累计消耗 ${this._fmtUsd(after.used_quota)}` : "")
-      : "";
+    const balanceMsg = napiBalanceMsg(after);
     // 奖励优先取接口直接回写的 quota_awarded（NewApiCheckInRecord 字段），否则用签到前后余额差
     let rewardMsg = "";
     if (data && data.quota_awarded != null && data.quota_awarded !== "") {
@@ -976,7 +1247,7 @@ const ANYROUTER = {
       const auth = this._sub2Auth(cfg);
       const s = new Session();
       const r = await s.get(auth.base + this.sub2MePath, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
-      if (this._isLoginExpired(r.status, r.text)) throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
+      if (isLoginExpired(r.status, r.text)) throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
       const j = parseJson(r.text);
       if (!j || Number(j.code) !== 0) throw new Error((j && (j.message || j.msg)) || "Sub2API Token 校验失败（auth/me）");
       return { site: this.key, site_name: this.name, message: "连接成功，Sub2API Token 有效" };
@@ -1003,7 +1274,11 @@ const ANYROUTER = {
   },
 
   _ok(status, message, reward, total, cfg, auth) {
-    return { site: this.key, site_name: this.name, status, message, reward, total, account: (cfg && cfg.username) ? maskEmail(cfg.username) : (auth && auth.type === "cookie" ? (cfg.api_user ? "User " + cfg.api_user : "Cookie") : "-"), time: now() };
+    const account = (cfg && cfg.username) ? maskEmail(cfg.username)
+      : ((auth && auth.type === "cookie")
+        ? (cfg && cfg.api_user ? "User " + cfg.api_user : "Cookie")
+        : "-");
+    return { site: this.key, site_name: this.name, status, message, reward, total, account, time: now() };
   },
 };
 
@@ -1370,10 +1645,11 @@ module.exports = {
   FLZT,
   RIGHT_FORUM,
   YPOJIE,
+  NEWAPI,
   ANYROUTER,
   WORKBUDDY,
   isAlreadyCheckedIn,
   maskEmail,
   // ADAPTERS 单一事实源：store.js / server.js 均从这里导入，禁止各自维护拷贝
-  ADAPTERS: { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, anyrouter: ANYROUTER, workbuddy: WORKBUDDY },
+  ADAPTERS: { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, newapi: NEWAPI, anyrouter: ANYROUTER, workbuddy: WORKBUDDY },
 };
