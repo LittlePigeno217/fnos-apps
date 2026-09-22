@@ -417,7 +417,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.9</span>
+      <span class="ver" id="appVersion">v1.4.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -498,6 +498,8 @@
               <div><div class="setting-label">代理地址</div><div class="setting-desc">http(s):// 或 socks5://（socks5 暂不支持 HTTPS 隧道）</div></div>
               <input class="input mono" type="text" id="cfgProxyUrl" placeholder="http://127.0.0.1:7890" style="max-width:260px">
             </div>
+            <!-- 站点代理开关：每站点一行，开启 = 该站点全部连接走上方全局代理（写入 sites.{site}.use_proxy） -->
+            <div id="cfgProxySites"></div>
           </div>
           <div class="settings-row">
             <span class="muted" id="cfgStatus"></span>
@@ -669,6 +671,30 @@ function siteDesc(key) {
 function siteLoginCaps(key) {
   const m = getSiteMeta(key);
   return Array.isArray(m.login_caps) ? m.login_caps : [];
+}
+
+/* ── 站点代理开关列表：固定顺序（NewApi→WorkBuddy→其他站点，兜底收纳新站点），
+ *    开启某站点 = 该站点全部连接走全局代理（写入 sites.{site}.use_proxy）。数据源 get_config.sites。 */
+function proxySiteOrder(data) {
+  const order = [];
+  for (const g of ACCT_GROUPS) {
+    for (const k of g.keys) if (data[k] && !order.includes(k)) order.push(k);
+  }
+  for (const k of Object.keys(data)) if (!order.includes(k)) order.push(k);
+  return order;
+}
+function renderProxySites(sites) {
+  const box = document.getElementById("cfgProxySites");
+  if (!box) return;
+  const data = sites || SITE_DATA || {};
+  box.innerHTML = proxySiteOrder(data).map((k) => {
+    const on = data[k] && data[k].use_proxy === true;
+    return '<div class="setting-row">' +
+      '<div><div class="setting-label">' + esc(siteName(k)) + '</div>' +
+      '<div class="setting-desc">开启后该站点所有连接走代理</div></div>' +
+      '<label class="switch"><input type="checkbox" class="cfg-proxy-site" data-site="' + esc(k) + '"' +
+      (on ? " checked" : "") + '><span class="track"></span></label></div>';
+  }).join("");
 }
 
 /* ── Toast 浮层（统一反馈通道；替换 alert/角落小字）── */
@@ -1681,6 +1707,14 @@ async function saveSettings() {
   }
   body.proxy_enabled = $("cfgProxyEnabled").checked === true;
   body.proxy_url = proxyUrl; // 无敏感值，随保存回写（留空即清空代理地址）
+  // 站点代理开关：随设置页一起提交（与全局代理同一保存按钮，交互一致）。
+  // 仅回传 use_proxy，后端按字段合并，不触碰各站点 enabled/accounts。
+  const proxySiteInputs = document.querySelectorAll(".cfg-proxy-site");
+  if (proxySiteInputs.length) {
+    const sites = {};
+    proxySiteInputs.forEach((el) => { sites[el.dataset.site] = { use_proxy: el.checked === true }; });
+    body.sites = sites;
+  }
   const w = $("cfgWebhook").value.trim();
   if (w) body.feishu_webhook = w;
   const r = await call("save_config", "POST", body);
@@ -1716,6 +1750,7 @@ async function loadAll(attempt = 1) {
   set("cfgProxyUrl", (el) => { el.value = d.proxy_url || ""; });
   set("appVersion", (el) => { el.textContent = "v" + (d.version || "1.0.0"); });
   renderSiteCards(d.sites);
+  renderProxySites(d.sites);  // 站点代理开关回显（依赖 SITE_DATA 已由 renderSiteCards 写入，取 meta.name）
   updateChip(!!d.enabled);
   refreshOverview();
   logPoll();
