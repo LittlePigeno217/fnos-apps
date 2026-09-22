@@ -709,6 +709,16 @@ const ANYROUTER = {
   _base(cfg) {
     return String((cfg && cfg.base_url) || this.base || "").trim().replace(/\/+$/, "");
   },
+  /** 从 base_url 提取纯 host（去协议/路径），用于签到模式判定 */
+  _host(cfg) {
+    const base = this._base(cfg);
+    const m = base.match(/^https?:\/\/([^/]+)/i);
+    return (m ? m[1] : base).toLowerCase();
+  },
+  /** 签到模式判定：host 含 anyrouter.top → relogin（登录即签到）；其他 NewAPI → checkin（原流程） */
+  _isReloginMode(cfg) {
+    return this._host(cfg).includes("anyrouter.top");
+  },
   /** 阿里云盾 WAF JS 挑战页识别（anyrouter.top 无 WAF cookie 时被拦） */
   _isWafChallenge(text) {
     const t = String(text || "").toLowerCase();
@@ -870,8 +880,32 @@ const ANYROUTER = {
     return "$" + (Number(quota || 0) / 500000).toFixed(2); // NewAPI quota：500000 点 = $1
   },
 
+  /* relogin 模式（anyrouter.top）：无 sign_in/checkin 接口语义，重新登录即当日签到。
+   * 强制走账号密码登录（跳过 session 缓存），成功即视为当日额度到账，随后取余额。 */
+  async _runReloginCheckin(cfg) {
+    // 无账密（如仅 Cookie 填写的账号）无法重新登录，不假装成功
+    if (!(cfg.username && cfg.password)) {
+      throw new Error("该账号需账号密码才能重新登录获取余额（Cookie 方式无法自动 relogin）");
+    }
+    // 强制重新登录：_authHeaders 在有账密时总是走 /api/user/login（跳过 session 缓存），
+    // 复用其现有成功判定与 WAF / 登录失败 / 401 明确文案
+    const auth = await this._authHeaders(cfg);
+    // 写回新 session（token），供后续会话优先复用
+    cfg.session = { type: "token", token: auth.token, base: auth.base };
+    cfg.session_ts = Date.now();
+    // 登录成功即当日额度到账；随后取余额（取不到不致命）
+    let info = null;
+    try { info = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
+    const balanceMsg = info
+      ? `余额 ${this._fmtUsd(info.quota)}` + (info.used_quota ? `，累计消耗 ${this._fmtUsd(info.used_quota)}` : "")
+      : "";
+    const detail = balanceMsg ? `登录成功，当日额度已到账；${balanceMsg}` : "登录成功，当日额度已到账";
+    return this._ok("签到成功", detail, "-", balanceMsg || "-", cfg, auth);
+  },
+
   async runCheckin(cfg) {
     if (this._isSub2Api(cfg)) return this._runSub2Checkin(cfg);
+    if (this._isReloginMode(cfg)) return this._runReloginCheckin(cfg);
     const auth = await this._resolveAuth(cfg);
     let before = null;
     try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
