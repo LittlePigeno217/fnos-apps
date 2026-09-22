@@ -22,6 +22,16 @@ function maskEmail(email) {
   return `${masked}@${domain}`;
 }
 
+/** 敏感字段脱敏（cookie/token/password 等，仅用于编辑页回显；服务端计算，绝不回吐明文）：
+ *  长度>8 → 前4+"***"+后4；长度≤8 → 前2+"***"+后2（短值也不泄露）；空值 → ""。 */
+function maskSecret(v) {
+  const s = String(v == null ? "" : v);
+  if (!s) return "";
+  if (s.length > 8) return s.slice(0, 4) + "***" + s.slice(-4);
+  if (s.length > 4) return s.slice(0, 2) + "***" + s.slice(-2);
+  return "***"; // 极短值（≤4）连头尾都不给，仅示意「已配置」
+}
+
 function fmtTraffic(v) {
   const n = Number(v || 0);
   if (!n) return "0";
@@ -1650,6 +1660,7 @@ module.exports = {
   WORKBUDDY,
   isAlreadyCheckedIn,
   maskEmail,
+  maskSecret,
   // ADAPTERS 单一事实源：store.js / server.js 均从这里导入，禁止各自维护拷贝
   ADAPTERS: { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, newapi: NEWAPI, anyrouter: ANYROUTER, workbuddy: WORKBUDDY },
 };

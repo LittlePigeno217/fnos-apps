@@ -5,7 +5,7 @@
  * 统一返回 { success, message, data }。
  */
 const crypto = require("crypto");
-const { ADAPTERS } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
+const { ADAPTERS, maskSecret } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
 const qrcode = require("./qrcode");        // 纯 JS 二维码编码（扫码登录 auth_url → 图片）
 
 /** auth_url → data:image/gif base64 二维码（离线本地生成，不外传登录票据） */
@@ -408,7 +408,8 @@ class Server {
    * 统一 ok/fail 包裹；每个方法先校验 site 存在于 ADAPTERS。
    * list/export 默认脱敏，绝不回吐凭据/session 明细。 */
 
-  /** 账号清单（脱敏）：只含 id/enabled/remark/label/configured/has_session/last/points */
+  /** 账号清单（脱敏）：id/enabled/remark/label/configured/has_session/last/points/balance；
+   *  另含 field_values（非敏感字段明文，编辑页预填）与 field_masks（type=password 字段脱敏串，仅展示）。 */
   accountsList() {
     const cfg = this._store.getConfig();
     const hist = this._store.getHistory(500) || [];
@@ -428,11 +429,23 @@ class Server {
           const rawBal = (a.balance == null) ? null : Number(a.balance);
           const rawDelta = (a.balance_delta == null) ? null : Number(a.balance_delta);
           const fmt = (v) => (typeof adapter.fmtBalance === "function" ? adapter.fmtBalance(v) : String(v));
+          // 编辑页字段回显：非敏感文本字段回显明文，type=password 字段回显脱敏串。
+          //   服务端计算 mask，绝不回吐明文；空值字段两个对象都不含该 key（前端留空显 placeholder）。
+          const field_masks = {};
+          const field_values = {};
+          for (const f of (Array.isArray(adapter.fields) ? adapter.fields : [])) {
+            const v = a[f.key];
+            if (v == null || v === "") continue;
+            if (f.type === "password") field_masks[f.key] = maskSecret(v);
+            else field_values[f.key] = String(v);
+          }
           return {
             id: a.id,
             enabled: a.enabled !== false,
             remark: a.remark || "",
             label: adapter.getAccountLabel(a),
+            field_masks,
+            field_values,
             site_name: adapter.name,
             configured: adapter.isConfigured(a),
             has_session: !!a.session,

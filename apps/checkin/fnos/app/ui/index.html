@@ -417,7 +417,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.4</span>
+      <span class="ver" id="appVersion">v1.4.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1355,7 +1355,14 @@ function openSiteEditor(key, accountId) {
   const st = SITE_DATA[key] || {};
   $("modalTag").textContent = siteShort(key);
   $("modalTag").className = "site-tag " + siteTagClass(key);
-  $("modalTitle").textContent = siteName(key);
+  // 账号编辑入口（带 accountId）：标题 = 站点名 · 账号标识，明确「这是该账号的配置页」。
+  let titleAcc = "";
+  if (accountId) {
+    const accsAll = Array.isArray(st.accounts) ? st.accounts : [];
+    const hit = accsAll.find((a) => String(a.id) === String(accountId));
+    titleAcc = hit ? (hit.remark || hit.label || ("账号 " + accountId)) : "";
+  }
+  $("modalTitle").textContent = titleAcc ? (siteName(key) + " · " + titleAcc) : siteName(key);
   $("modalSub").textContent = siteMode(key) + " · " + siteDesc(key);
   $("modalEnabled").checked = !!st.enabled;
   $("modalProxy").checked = !!st.use_proxy;
@@ -1385,6 +1392,9 @@ function openSiteEditor(key, accountId) {
     setTimeout(() => { targetRow.style.outline = ""; }, 1800);
     const inp = targetRow.querySelector("input[type=text], input[type=password]");
     if (inp) setTimeout(() => inp.focus(), 60);
+  } else if (accountId) {
+    // 传了 accountId 却没匹配到（已被删除/数据未刷新）：明确提示，不静默打开空表单
+    $("modalStatus").textContent = "未找到该账号（可能已被删除），请刷新后重试";
   } else {
     const first = box.querySelector("input[type=text], input[type=password]");
     if (first) setTimeout(() => first.focus(), 60);
@@ -1402,11 +1412,32 @@ function accountRowEl(key, acc) {
   div.className = "account-box";
   div.style.cssText = "border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-top:8px;background:rgba(127,127,127,.04)";
   div.dataset.aid = acc.id || "";
-  const fields = siteFields(key).map((f) => `
+  // 字段回填数据源：checkin/accounts（ACCT_DATA）——非敏感字段明文(field_values)，敏感字段脱敏串(field_masks)。
+  const detail = acctDetail(key, acc.id) || {};
+  const masks = detail.field_masks || {};
+  const vals = detail.field_values || {};
+  const fields = siteFields(key).map((f) => {
+    const isSecret = f.type === "password";
+    if (isSecret) {
+      const mask = masks[f.key] || "";
+      // 已配置：type=text 显示脱敏串（明文已在服务端抹除，回显安全）+ data-mask 供保存时判「未改」；
+      // 未配置：保持 password 输入 + 占位，新凭据输入隐藏。
+      const inpType = mask ? "text" : "password";
+      const dm = mask ? ' data-mask="' + esc(mask) + '"' : "";
+      return `
       <div class="cred-row">
         <div class="cred-label">${esc(f.label)}</div>
-        <input class="input mono" type="${f.type}" data-f="${f.key}" placeholder="${esc(f.ph || "")}" value="${esc(acc[f.key] || "")}">
-      </div>`).join("");
+        <input class="input mono" type="${inpType}" data-f="${f.key}"${dm} placeholder="${esc(f.ph || "")}" value="${esc(mask)}">
+      </div>`;
+    }
+    // 非敏感字段：明文预填当前值（base_url/email/username 等）
+    const val = vals[f.key] != null ? vals[f.key] : (acc[f.key] || "");
+    return `
+      <div class="cred-row">
+        <div class="cred-label">${esc(f.label)}</div>
+        <input class="input mono" type="${f.type}" data-f="${f.key}" placeholder="${esc(f.ph || "")}" value="${esc(val)}">
+      </div>`;
+  }).join("");
   const label = acc.remark || acc.label || ("账号 " + (acc.id || ""));
   div.innerHTML = `
       <div class="field-row" style="align-items:center;gap:8px">
@@ -1537,7 +1568,11 @@ function collectModalAccounts() {
     a.remark = rm ? rm.value.trim() : "";
     for (const f of siteFields(MODAL_KEY)) {
       const inp = row.querySelector('[data-f="' + f.key + '"]');
-      if (inp) a[f.key] = inp.value.trim();
+      if (!inp) continue;
+      const v = inp.value.trim();
+      // 敏感字段：值等于回显的脱敏串（未改）或空 → 送空串（后端保留原值）；否则送新明文（覆盖）。
+      const mask = inp.dataset.mask || "";
+      a[f.key] = (mask && v === mask) ? "" : v;
     }
     accs.push(a);
   });
