@@ -732,8 +732,8 @@ const YPOJIE = {
 /* ── AnyRouter（anyrouter.top / AgentRouter）────────────────── */
 const ANYROUTER = {
   key: "anyrouter",
-  name: "AnyRouter",
-  short: "AR",
+  name: "其他 NewAPI",
+  short: "其他",
   mode: "Cookie / 账号 / OAuth",
   // 登录方式与 NEWAPI 通用一致（OAuth 在 WAF 下可能失败属运行时问题，选项保留）
   login_caps: NEWAPI_LOGIN_CAPS,
@@ -1570,5 +1570,5 @@ module.exports = {
   maskEmail,
   maskSecret,
   // ADAPTERS 单一事实源：store.js / server.js 均从这里导入，禁止各自维护拷贝
-  ADAPTERS: { flzt: FLZT, right_forum: RIGHT_FORUM, ypojie: YPOJIE, newapi: NEWAPI, anyrouter: ANYROUTER, workbuddy: WORKBUDDY },
+  ADAPTERS: { newapi: NEWAPI, anyrouter: ANYROUTER, ypojie: YPOJIE, right_forum: RIGHT_FORUM, flzt: FLZT, workbuddy: WORKBUDDY },
 };
