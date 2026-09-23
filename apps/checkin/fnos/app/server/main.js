@@ -277,6 +277,39 @@ const ACTION_HANDLERS = {
   },
 };
 
+/* ── 安全防线：敏感/写端点要求 fnOS 网关鉴权（1.4.10，不重引入 1.3.4 前的登录遮罩/面板口令）──
+ * 现状威胁：socket chmod 0777 → 本地任意进程可直连 socket，绕过 fnOS 网关的会话校验，
+ * 任意触发 accountsExport?include_secrets=true / apply_hotfix / run / save_config 等。
+ * 防线两层（均不破坏既有 UI/桌面打开/热更流程）：
+ *   1) 主防线：socket 权限从 0777 收紧到 0660（对齐 p115assistant 已验证值；两个应用同以
+ *      root 运行，fnOS 网关（root）照常连接，本地非 root 进程无法再直连）。
+ *   2) 纵深防御：fnOS 统一网关在转发 `/app/checkin/*` 前校验用户会话，并注入可信头
+ *      X-Trim-Userid / X-Trim-Isadmin / X-Trim-Username（fnOS 官方文档确认；
+ *      p115assistant 后端已读取 x-trim-userid 作网关身份，现有实践佐证）。
+ *      敏感/写端点校验 X-Trim-Userid 非空即放行，缺失拒绝（阻断「能连上 socket 但
+ *      未走网关」的本地进程）。读端点（get_config 已脱敏 / status / get_logs / points /
+ *      history / accounts_list / check_hotfix）保持开放，不影响只读巡检与 UI 渲染。
+ * 注意：网关只确认登录状态，业务权限仍由本应用负责；这里不做跨 fnOS 用户区分。 */
+const GATEWAY_HEADER = "x-trim-userid";
+function viaGateway(req) {
+  return String((req && req.headers && req.headers[GATEWAY_HEADER]) || "").trim().length > 0;
+}
+const GATEWAY_DENY_MSG = "未授权：仅允许经 fnOS 网关访问（请从 fnOS 桌面打开应用）";
+/** 敏感/写端点（ACTION_HANDLERS 的 key 级白名单）：保存/签到/测试/账号运维/登录流/历史清理/清日志/热更 */
+const SENSITIVE_HANDLERS = new Set([
+  "saveConfig",
+  "runOnce",
+  "runAccount",
+  "testLogin",
+  "accountsReorder",
+  "accountsImport",
+  "accountsExport",
+  "accountsClear",
+  "clearHistory",
+  "clearLogs",
+  "applyHotfix",
+]);
+
 async function handle(req, res) {
   const send = (obj) => {
     // 禁止缓存 API 响应：否则网关/浏览器可能命中旧的 get_config 等 JSON，
@@ -330,6 +363,8 @@ async function handle(req, res) {
       //   未实现 loginFlow 的站点由 server 层返回「不支持交互登录」。
       const m = actionName.match(/^(?:checkin\/)?([a-z_]+)_login\/(init|status|password|oauth)$/);
       if (m) {
+        // 登录流涉及凭据提交/会话落盘，全部阶段（含 status 轮询）纳入敏感端点
+        if (!viaGateway(req)) return send({ success: false, message: GATEWAY_DENY_MSG, data: {} });
         const site = m[1];
         const phase = m[2];
         if (phase === "init") {
@@ -357,6 +392,10 @@ async function handle(req, res) {
     }
     const handlerKey = route[method];
     if (!handlerKey) return send({ success: false, message: "405 方法不允许" });
+    // 敏感/写端点必须经 fnOS 网关（X-Trim-Userid 非空）；直连 socket 的本地进程缺失该头 → 拒绝
+    if (SENSITIVE_HANDLERS.has(handlerKey) && !viaGateway(req)) {
+      return send({ success: false, message: GATEWAY_DENY_MSG, data: {} });
+    }
     const handler = ACTION_HANDLERS[handlerKey];
     if (typeof handler !== "function") return send({ success: false, message: "500 未找到处理器" });
 
@@ -380,7 +419,9 @@ try {
 } catch { /* ignore */ }
 
 server.listen(SOCKET_PATH, () => {
-  fs.chmodSync(SOCKET_PATH, 0o777);
+  // 1.4.10 安全：socket 权限从 0777 收紧到 0660（对齐 p115assistant 已验证值；
+  // fnOS 网关以 root 转发仍可连接，本地非 root 进程无法再直连绕过网关鉴权）
+  fs.chmodSync(SOCKET_PATH, 0o660);
   console.log(`${new Date().toISOString()} 启动 checkin 后端，socket=${SOCKET_PATH}，data=${DATA_DIR}`);
   console.log(`${new Date().toISOString()} 后端已就绪（功能版本 ${store.getConfig().version}）`);
 });

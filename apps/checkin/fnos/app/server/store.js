@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.4.9",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.5.0",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -57,11 +57,45 @@ class Store {
   }
 
   _load() {
+    let rawText = null;
     try {
-      const raw = JSON.parse(fs.readFileSync(this._path, "utf8"));
-      return this._mergeDefaults(raw);
-    } catch {
+      rawText = fs.readFileSync(this._path, "utf8");
+    } catch (err) {
+      // 文件不存在（首次运行）→ 正常回落默认；文件存在但读取失败（权限/IO）→ 同样走损坏备份
+      if (err && err.code !== "ENOENT") this._backupCorruptConfig(err);
       return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    }
+    try {
+      return this._mergeDefaults(JSON.parse(rawText));
+    } catch (err) {
+      // 1.5.0 修复：JSON 解析失败 → 先把损坏原件原样复制备份（保留原始字节供人工恢复），
+      // 再回落默认配置；否则下次 save（原子写 tmp+rename）会覆盖损坏文件，账号凭据全丢。
+      this._backupCorruptConfig(err);
+      return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    }
+  }
+
+  /** 本地时间戳 YYYYMMDD-HHMMSS（损坏备份文件名时间锚） */
+  _corruptTs() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+
+  /** B2 修复：config 损坏（解析失败/读取异常）时把损坏原件原样复制备份到
+   *  <config-path>.corrupt-<YYYYMMDD-HHMMSS>，返回是否已备份；备份失败仅警告不阻断。
+   *  损坏备份保留原始字节（含凭据明文，本地最小权限保存，不回传），供人工恢复。 */
+  _backupCorruptConfig(err) {
+    const reason = (err && err.message) || String(err);
+    try {
+      if (!fs.existsSync(this._path)) return false;
+      const dst = `${this._path}.corrupt-${this._corruptTs()}`;
+      fs.copyFileSync(this._path, dst);
+      console.log(`checkin config 损坏（${reason}），原始文件已原样备份至 ${dst}，本次以默认配置启动（账号需人工恢复）`);
+      return true;
+    } catch (e) {
+      console.warn(`checkin config 损坏（${reason}），且损坏备份失败：${(e && e.message) || e}（本次以默认配置启动）`);
+      return false;
     }
   }
 
@@ -299,8 +333,16 @@ class Store {
   save() {
     fs.mkdirSync(this._dataDir, { recursive: true });
     const tmp = this._path + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(this._cfg, null, 2));
-    fs.renameSync(tmp, this._path);
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(this._cfg, null, 2));
+      fs.renameSync(tmp, this._path);
+    } catch (err) {
+      // 1.5.0 修复：保存失败保留 tmp 文件（不清理，供人工排查/恢复）并提示路径；
+      // 原子写失败未触碰原文件（存在仍为旧版有效配置）。继续向外抛，维持既有调用方语义
+      // （runOnce/runAccount 已捕获记日志；saveConfig 由 Server 层包成 fail 返回前端）。
+      console.error(`checkin config 保存失败：${(err && err.message) || err}。临时文件保留于 ${tmp}，本次未覆盖原文件`);
+      throw err;
+    }
   }
 
   getConfig() {

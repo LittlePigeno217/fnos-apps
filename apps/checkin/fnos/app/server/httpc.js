@@ -176,6 +176,13 @@ class Session {
       const fail = (err) => {
         if (settled) return;
         settled = true;
+        // 1.4.10 修复：失败路径兜底销毁已建立的隧道 socket。此前 HTTPS 代理下
+        // 转发响应流中途 error（res.on('error')）时 TLSSocket/隧道不销毁 → fd 泄漏
+        // （错误频繁时递增）。destroy() 对已销毁 socket 幂等，无副作用；同时覆盖
+        // doRequest 同步抛出、请求 timeout/destroy 等所有经 fail 收敛的路径。
+        if (activeSocket && !activeSocket.destroyed) {
+          try { activeSocket.destroy(); } catch { /* ignore */ }
+        }
         reject(err);
       };
       let activeSocket = null; // 代理隧道的 TLS socket，响应结束后主动关闭，避免隧道泄漏
