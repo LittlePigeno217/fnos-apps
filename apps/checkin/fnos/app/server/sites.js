@@ -5,9 +5,32 @@
  * 统一返回/抛出：成功 {site, site_name, status, message, reward, total, account, time}
  * 失败抛 Error（原因供通知/历史展示）。
  */
+const crypto = require("crypto");
 const { Session, parseJson, cleanText, extractFormhash } = require("./httpc");
 
 /* ── 通用识别 ─────────────────────────────────────────────── */
+
+/** TOTP（RFC 6238，对齐 all-api-hub：SHA1 / 6 位 / 30 秒 / Base32 密钥）——NewAPI 2FA 登录 */
+function genTOTP(secret) {
+  const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const clean = String(secret || "").toUpperCase().replace(/[\s\-]/g, "").replace(/=+$/g, "");
+  let bits = "";
+  for (const ch of clean) {
+    const v = B32.indexOf(ch);
+    if (v < 0) continue;
+    bits += v.toString(2).padStart(5, "0");
+  }
+  const key = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let i = 0; i < key.length; i++) key[i] = parseInt(bits.slice(i * 8, i * 8 + 8), 2);
+  const msg = Buffer.alloc(8);
+  let c = Math.floor(Date.now() / 1000 / 30);
+  for (let i = 7; i >= 0; i--) { msg[i] = c & 0xff; c = Math.floor(c / 256); }
+  const h = crypto.createHmac("sha1", key).update(msg).digest();
+  const o = h[h.length - 1] & 0xf;
+  const code = ((h[o] & 0x7f) * 0x1000000 + (h[o + 1] & 0xff) * 0x10000 + (h[o + 2] & 0xff) * 0x100 + (h[o + 3] & 0xff)) % 1000000;
+  return String(code).padStart(6, "0");
+}
+
 function isAlreadyCheckedIn(message) {
   const text = String(message || "").trim().toLowerCase();
   return (
@@ -745,6 +768,7 @@ const ANYROUTER = {
     ] },
     { key: "email", label: "账号 / 邮箱", type: "text", ph: "邮箱密码登录（推荐）" },
     { key: "password", label: "密码", type: "password", ph: "可选：与账号配合登录（留空不改）" },
+    { key: "totp", label: "TOTP 密钥", type: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
     { key: "cookies", label: "Cookies", type: "password", ph: "浏览器会话 Cookies（WAF 站点需完整复制）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（可选）" },
   ],
@@ -831,7 +855,7 @@ const ANYROUTER = {
 /* ── NewAPI 通用（NewAPI / OneAPI / Sub2API）────────────────── */
 const NEWAPI = {
   key: "newapi",
-  name: "NewAPI 通用",
+  name: "通用 NewAPI",
   short: "NP",
   mode: "Cookie / 账号 / OAuth",
   // GitHub / LinuxDO OAuth（NewAPI 统一 OAuth）优先；账号密码直登 + 登录后自动产出会话；WAF 站点回落手动 Cookie
@@ -841,6 +865,7 @@ const NEWAPI = {
     { key: "base_url", label: "平台地址", type: "text", ph: "https://your-new-api.com（自建 NewAPI 填内网地址）" },
     { key: "username", label: "账号", type: "text", ph: "账号密码方式（二选一，无 WAF 平台可用）" },
     { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
+    { key: "totp", label: "TOTP 密钥", type: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
     { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（二选一，WAF 站点用这个）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
     { key: "access_token", label: "Sub2API Token", type: "password", ph: "Sub2API 平台填 access_token（如填则走 /api/v1/redeem/checkin）" },
@@ -973,11 +998,25 @@ const NEWAPI = {
     if (!base) throw new Error("请先配置平台地址（base_url）");
     if (cfg.username && cfg.password) {
       const s = new Session();
-      const r = await s.postJson(base + this.loginPath, { username: cfg.username, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
+      let r = await s.postJson(base + this.loginPath, { username: cfg.username, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
       if (isWafChallenge(r.text)) {
         throw new Error(`平台有 WAF 人机验证，账号密码方式被拦截：请在浏览器访问 ${base} 后改用「Cookie + api_user」方式配置`);
       }
-      const j = parseJson(r.text);
+      let j = parseJson(r.text);
+      // 2FA（对齐 all-api-hub/NewAPI）：响应标记 require_2fa / need_2fa → 用 TOTP 自动提交验证码
+      const d2 = (j && typeof j === "object" && j.data && typeof j.data === "object") ? j.data : {};
+      const need2fa = !!(j && (j.require_2fa === true || j.need_2fa === true || d2.require_2fa === true || d2.need_2fa === true));
+      if (need2fa) {
+        const totp = String(cfg.totp || "").trim();
+        if (!totp) throw new Error("平台需要两步验证（2FA）：请在账号配置「TOTP 密钥」填写验证器密钥");
+        const code = genTOTP(totp);
+        const flowToken = d2.flow_token || d2.state || "";
+        // 统一流程（新版 NewAPI）：/api/user/login/verify {code, method:"2fa", flow_token}；经典：/api/user/login/2fa {code}
+        const ep = flowToken ? "/api/user/login/verify" : "/api/user/login/2fa";
+        const body = flowToken ? { code, method: "2fa", flow_token: flowToken } : { code };
+        r = await s.postJson(base + ep, body, { timeout: 15000, useProxy: cfg.use_proxy });
+        j = parseJson(r.text);
+      }
       if (!j || !j.success || !(j.data || {}).access_token) {
         // B16a：账密被拒标记（ANYROUTER 委托路径据此回退 Cookie 签到；newapi 站点感知不到该标志，行为不变）
         const err = new Error((j && (j.message || j.msg)) || `登录失败（HTTP ${r.status}）`);
