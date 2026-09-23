@@ -190,7 +190,7 @@ class Server {
           try {
             if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
             const r = await adapter.runCheckin(acc);
-            await this._snapshotBalance(adapter, acc); // 签到成功后刷新余额快照（失败不致命）
+            await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
             history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" });
             this._log(`签到 ${adapter.name} → ${r.status}`);
@@ -251,7 +251,7 @@ class Server {
       try {
         if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
         const r = await adapter.runCheckin(acc);
-        await this._snapshotBalance(adapter, acc); // 签到成功后刷新余额快照（失败不致命）
+        await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
         result = { site_key: site, account_id: acc.id, account: accLabel, ...r };
         history = { time: r.time, site, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" };
         this._log(`单账号签到 ${adapter.name} → ${r.status}`);
@@ -304,9 +304,14 @@ class Server {
   /**
    * 账号级余额快照：仅对声明了 queryBalance 的 adapter（workbuddy 积分 / anyrouter quota）生效。
    * 写入 acc.balance（原始数值）、acc.balance_delta（与上次快照差；无上次 → null）、acc.balance_ts。
-   * 任何异常都吞掉——余额取不到绝不影响签到/测试结果。凭据/token 绝不返回，仅存数值。
+   * opts.from === "checkin"（签到成功路径）且 workbuddy 时累计当日新增积分 daily_gain：
+   *   先比对 daily_gain_date 与今天（本地日期，防 0 点滚动）——不同 → 归零重计；
+   *   签到前后余额差值 gain = max(0, after_balance - before_balance) 累加（余额回落不冲减）。
+   * 非签到快照（test_login / 扫码建号等）不累计；非 workbuddy 站点不受影响。
+   * 与 balance/delta 一同落盘（已有 _store.save）。任何异常都吞掉——余额取不到绝不影响签到/测试结果。
+   * 凭据/token 绝不返回，仅存数值。
    */
-  async _snapshotBalance(adapter, acc) {
+  async _snapshotBalance(adapter, acc, opts) {
     if (!adapter || typeof adapter.queryBalance !== "function") return;
     const label = adapter.balanceLabel || "余额";
     try {
@@ -321,6 +326,18 @@ class Server {
       acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
       acc.balance = next;
       acc.balance_ts = Date.now();
+      // 当日累计新增积分：仅 workbuddy 签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
+      if (opts && opts.from === "checkin" && adapter.key === "workbuddy") {
+        const today = localDateStr();
+        if (acc.daily_gain_date !== today) {
+          acc.daily_gain = 0;
+          acc.daily_gain_date = today;
+        }
+        if (prev != null) {
+          const gain = Math.max(0, next - prev); // 签到前后余额差值（无上次基线 / 余额回落 → 不累计）
+          if (gain > 0) acc.daily_gain = Number(((Number(acc.daily_gain) || 0) + gain).toFixed(6));
+        }
+      }
       this._restoreInjectedProxy(); // 注入字段不落盘：余额快照 save 前同样先还原
       this._store.save();
       console.log(`${adapter.key} ${label}快照成功：${label}=${next}`);
@@ -428,6 +445,10 @@ class Server {
           const supportsBalance = typeof adapter.queryBalance === "function";
           const rawBal = (a.balance == null) ? null : Number(a.balance);
           const rawDelta = (a.balance_delta == null) ? null : Number(a.balance_delta);
+          // 当日累计新增积分（daily_gain，0 点滚动）：daily_gain_date 非今天视为 0——
+          // 昨日累计不跨天展示（今日未发生签到 → null 日期 → 0）。仅 workbuddy 签到路径写入，数值非敏感。
+          const rawDailyGain = Number.isFinite(Number(a.daily_gain)) ? Math.max(0, Number(a.daily_gain)) : 0;
+          const dailyGain = (a.daily_gain_date === localDateStr()) ? rawDailyGain : 0;
           const fmt = (v) => (typeof adapter.fmtBalance === "function" ? adapter.fmtBalance(v) : String(v));
           // 编辑页字段回显：非敏感文本字段回显明文，type=password 字段回显脱敏串。
           //   服务端计算 mask，绝不回吐明文；空值字段两个对象都不含该 key（前端留空显 placeholder）。
@@ -459,6 +480,10 @@ class Server {
             balance_display: (supportsBalance && rawBal != null) ? fmt(rawBal) : "",
             balance_delta_display: (supportsBalance && rawDelta != null && rawDelta !== 0)
               ? ((rawDelta > 0 ? "+" : "") + fmt(rawDelta)) : "",
+            // 当日累计新增积分：数值为今日生效值（日期非今天 → 0）+ workbuddy 展示串（+N；0/非 workbuddy → 空）
+            daily_gain: dailyGain,
+            daily_gain_date: a.daily_gain_date || null,
+            daily_gain_display: (supportsBalance && key === "workbuddy" && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
           };
         }),
       };
@@ -906,6 +931,14 @@ function parseReward(reward) {
   if (!m) return 0;
   const n = parseFloat(m[0]);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** 本地日期 YYYY-MM-DD（服务端本地时区；daily_gain 0 点滚动以此判定） */
+function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /** 判断 history 时间字符串（'2026/9/20 23:40:15'）是否为今天 */

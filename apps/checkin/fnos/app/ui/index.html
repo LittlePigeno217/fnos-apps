@@ -407,7 +407,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.7</span>
+      <span class="ver" id="appVersion">v1.4.8</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -863,10 +863,10 @@ function renderAcctCard(key, a, cap) {
     if (key === "workbuddy") {
       const coin = '<span class="hero-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/></svg></span>';
       if (d.balance_display) {
+        // 增长徽标 = 当日累计新增积分（daily_gain，0 点自动归零）：>0 → +N 绿徽标；=0（今日无新增）→ 不显示
         let delta = "";
-        if (d.balance_delta_display) {
-          const up = Number(d.balance_delta) > 0;
-          delta = '<span class="hero-delta ' + (up ? "up" : "down") + '">' + esc(d.balance_delta_display) + "</span>";
+        if (d.daily_gain_display) {
+          delta = '<span class="hero-delta up">' + esc(d.daily_gain_display) + "</span>";
         }
         balLine = '<div class="acct-hero">' + coin +
           '<span class="hero-main"><span class="hero-lb">' + bl + '</span><span class="hero-num">' + esc(d.balance_display) + "</span></span>" +

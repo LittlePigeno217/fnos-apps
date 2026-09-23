@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.4.7",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.4.8",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -117,6 +117,10 @@ class Store {
         balance: (a.balance === null || a.balance === undefined || a.balance === "") ? null : Number(a.balance),
         balance_delta: (a.balance_delta === null || a.balance_delta === undefined || a.balance_delta === "") ? null : Number(a.balance_delta),
         balance_ts: Number(a.balance_ts) || 0,
+        // daily_gain：当日累计新增积分（当天 0 点起签到奖励累计，≥0；0 点自动归零重计）。
+        // daily_gain_date：累计所在本地日期（YYYY-MM-DD）。旧文件无此字段 → 0 / null。
+        daily_gain: Number.isFinite(Number(a.daily_gain)) ? Math.max(0, Number(a.daily_gain)) : 0,
+        daily_gain_date: (typeof a.daily_gain_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.daily_gain_date)) ? a.daily_gain_date : null,
       };
       // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）
       for (const f of accountFieldKeys(slug)) {
@@ -320,6 +324,15 @@ class Store {
                 ? (prev.balance_delta === null || prev.balance_delta === undefined ? null : Number(prev.balance_delta))
                 : Number(a.balance_delta);
               merged.balance_ts = Number(a.balance_ts) || Number(prev.balance_ts) || 0;
+              // daily_gain 非 UI 表单字段（只由签到快照写入）：patch 未带则保留现值（0 点重置由快照逻辑负责）
+              merged.daily_gain = Number.isFinite(Number(a.daily_gain))
+                ? Math.max(0, Number(a.daily_gain))
+                : Number.isFinite(Number(prev.daily_gain))
+                  ? Math.max(0, Number(prev.daily_gain))
+                  : 0;
+              merged.daily_gain_date = (a.daily_gain_date === undefined || a.daily_gain_date === null || a.daily_gain_date === "")
+                ? (prev.daily_gain_date == null ? null : prev.daily_gain_date)
+                : String(a.daily_gain_date);
               for (const f of accountFieldKeys(k)) {
                 const rawV = a[f];
                 const prevV = prev[f] || "";
