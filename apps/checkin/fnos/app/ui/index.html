@@ -404,7 +404,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.6.7</span>
+      <span class="ver" id="appVersion">v1.6.8</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -888,8 +888,8 @@ function renderAcctCard(key, a, cap) {
   // F7-1：登录徽标接入交互登录弹窗——未配置/凭据已配置点击 → siteLogin(key, accountId)；
   // 已登录点击仅提示（无操作，避免误开登录流覆盖会话）；站点无交互登录能力不渲染徽标。
   let loginBadge = "";
-  // 1.6.7：NewAPI 不保持登录态（每次签到现场认证）→ 不显示登录状态徽标（无「已登录/凭据已配置/未配置」）
-  if (key !== "newapi" && (cap || hasSession)) {
+  // 1.6.8：NewAPI 系（通用/其他）不保持登录态（每次签到现场认证）→ 不显示登录状态徽标（无「已登录/凭据已配置/未配置」）
+  if (!["newapi", "anyrouter"].includes(key) && (cap || hasSession)) {
     const badgeOn = ' onclick="badgeLoginAction(\'' + key + "','" + esc(a.id || "") + '\',' + (hasSession ? "true" : "false") + ')" style="cursor:pointer"';
     if (hasSession) {
       loginBadge = '<span class="login-badge on"' + badgeOn + '><span class="dot"></span>已登录</span>';
@@ -921,9 +921,12 @@ function renderAcctCard(key, a, cap) {
       }
     } else if (d.balance_display) {
       let delta = "";
-      if (d.balance_delta_display) {
-        const up = Number(d.balance_delta) > 0;
-        delta = '<span class="bd ' + (up ? "up" : "down") + '">' + esc(d.balance_delta_display) + "</span>";
+      // 1.6.8：NewAPI 系显示「当天签到累计余额增加」（daily_gain，0 点重置）；今日无累计回退本次增量
+      const dg = d.daily_gain_display || "";
+      const dd = d.balance_delta_display || "";
+      if (dg || dd) {
+        const up = !!dg || Number(d.balance_delta) > 0;
+        delta = '<span class="bd ' + (up ? "up" : "down") + '" title="' + (dg ? "当天签到累计增加" : "本次签到增量") + '">' + esc(dg || dd) + "</span>";
       }
       balLine = '<div class="acct-bal"><span class="bl">' + bl + '</span><span class="bv">' + esc(d.balance_display) + "</span>" + delta + "</div>";
     } else {

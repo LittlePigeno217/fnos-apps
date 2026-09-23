@@ -424,8 +424,8 @@ class Server {
       acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
       acc.balance = next;
       acc.balance_ts = Date.now();
-      // 当日累计新增积分：仅 workbuddy 签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
-      if (opts && opts.from === "checkin" && adapter.key === "workbuddy") {
+      // 当日累计新增余额：workbuddy（积分）与 NewAPI 系（newapi/anyrouter 余额）签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
+      if (opts && opts.from === "checkin" && ["workbuddy", "newapi", "anyrouter"].includes(adapter.key)) {
         const today = localDateStr();
         if (acc.daily_gain_date !== today) {
           acc.daily_gain = 0;
@@ -700,10 +700,10 @@ class Server {
             balance_display: (supportsBalance && rawBal != null) ? fmt(rawBal) : "",
             balance_delta_display: (supportsBalance && rawDelta != null && rawDelta !== 0)
               ? ((rawDelta > 0 ? "+" : "") + fmt(rawDelta)) : "",
-            // 当日累计新增积分：数值为今日生效值（日期非今天 → 0）+ workbuddy 展示串（+N；0/非 workbuddy → 空）
+            // 当日累计新增余额：数值为今日生效值（日期非今天 → 0）+ workbuddy/NewAPI 系展示串（+N；0 → 空）
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
-            daily_gain_display: (supportsBalance && key === "workbuddy" && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+            daily_gain_display: (supportsBalance && ["workbuddy", "newapi", "anyrouter"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
           };
         }),
       };
