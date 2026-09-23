@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const { Store } = require("./store");
-const { Server } = require("./server");
+const { Server, ADAPTERS } = require("./server");
 const notify = require("./notify");
 const { checkHotfix, applyHotfix } = require("./hotfix");
 const { ROUTES } = require("./router");
@@ -23,8 +23,9 @@ const api = new Server(store, notify, (msg) => {
 /* ── 调度：每日定时首跑 + 30 分钟漏签补跑 ─────────────────────── */
 let lastSignDate = "";      // 今日已全部签到成功的日期（达到后当日不再触发任何路径）
 let fullRunDate = "";       // 今日已执行过「定时首跑」全量的日期（当日只一次全量）
-let catchupCount = 0;       // 当天补签次数（上限 5）
-let catchupDate = "";
+let catchupCount = 0;       // 当天补签轮次数（上限 5）
+let catchupDate = "";       // 补签计数所属本地日期（0 点跨天归零）
+let schedRunning = false;   // 调度器本轮执行中（跨 30s tick 防重叠；与 api._running 互补）
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -41,6 +42,31 @@ function hhmmNow() {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 实际本地触发时刻（日志内容标注本地；行首 UTC 前缀保留便于机器解析） */
+function localNow() {
+  return `${todayStr()} ${hhmmNow()}`;
+}
+
+/** 调度状态落盘：fullRunDate/catchupCount → config 内部字段（saveConfig 白名单外、前端不可见）。
+ *  失败账号集 sched_today_fail 由 Server.runOnce/runAccount 经 store.recordCheckinResults 维护。 */
+function persistSched() {
+  const cfg = store.getConfig();
+  cfg.sched_last_full = fullRunDate;
+  cfg.sched_catchup_count = catchupCount;
+  try { store.save(); } catch (e) { api._log(`调度状态落盘失败：${e.message}`); }
+}
+
+/** 启动恢复调度状态：热更/重启后不重复全量、不重置补签上限 */
+function restoreSched() {
+  const cfg = store.getConfig();
+  fullRunDate = (typeof cfg.sched_last_full === "string") ? cfg.sched_last_full : "";
+  catchupCount = Number(cfg.sched_catchup_count) || 0;
+  // 补签计数的日期锚点：补签只发生在当日全量之后，故 sched_last_full 即计数所属日期；
+  // 跨天后 resetDailyIfNeeded 据此归零（sched_last_full 无值 → 视作今日，计数 0 无需重置）。
+  catchupDate = fullRunDate || todayStr();
+  api._log(`调度状态已恢复：全量日期=${fullRunDate || "无"} 补签轮次=${catchupCount}（跨天自动归零）`);
+}
+
 function resetDailyIfNeeded() {
   const t = todayStr();
   if (catchupDate !== t) {
@@ -55,55 +81,95 @@ function allSitesDoneToday(status) {
   return entries.length > 0 && entries.every(([, st]) => st.today_ok);
 }
 
-/** 启用且已配置、但今日尚未成功的站点（定时首跑与漏签补跑的目标集） */
+/** 启用且已配置、但今日尚未成功的站点（定时首跑的目标集；补签改走账号级失败集） */
 function todoSiteKeys(status) {
   return Object.entries((status && status.sites) || {})
     .filter(([, st]) => st.enabled && st.configured && !st.today_ok)
     .map(([k]) => k);
 }
 
+/** 今日失败账号集（跨天自动视为空）→ 补签目标；剔除已失效账号（站点停用/账号停用/未配置），
+ *  未配置账号无法签到成功，不再占用补签名额（配置后由下次全量/手动签到自然回归）。 */
+function failAccounts() {
+  const cfg = store.getConfig();
+  const set = store.schedFailAccounts();
+  const targets = [];
+  for (const key of Object.keys(set)) {
+    if (!set[key]) continue;
+    const slash = key.lastIndexOf("/");
+    if (slash <= 0 || slash === key.length - 1) continue;
+    const site = key.slice(0, slash);
+    const accountId = key.slice(slash + 1);
+    const siteCfg = cfg.sites[site];
+    if (!siteCfg || !siteCfg.enabled) continue;
+    const acc = (Array.isArray(siteCfg.accounts) ? siteCfg.accounts : []).find((a) => String(a.id) === String(accountId));
+    if (!acc || acc.enabled === false) continue;
+    const adapter = ADAPTERS[site];
+    if (!adapter || !adapter.isConfigured(acc)) continue;
+    targets.push({ site, account_id: accountId });
+  }
+  return targets;
+}
+
 /**
  * 两个独立触发（由 tickEveryMinute 在 cron 时刻已过后调用，cron 之前绝不触发任何签到）：
  *  1) 定时首跑：今日尚未全量、且今日有未完成站点 → 全量一次（当日只一次，fullRunDate 兜底）。
- *  2) 漏签补跑：仍有失败/未签站点、未达每日 5 次上限 → 仅补跑失败/未签站点
- *     （不重跑已成功站点，避免站点负载与重复「已签到」历史）。
+ *  2) 漏签补跑：仅逐个重跑「今日失败账号」（sched_today_fail 账号级定位），未达每日 5 次上限
+ *     → 不重跑已成功账号，避免重复「已签到」history；站点级 today_ok 判定保留（失败账号存在
+ *     → 该站点仍算失败，UI 状态与全量触发不受影响）。
  */
 async function runScheduled() {
-  const cfg = store.getConfig();
-  if (!cfg.enabled) return;
-  resetDailyIfNeeded();
-  const t = todayStr();
-  // 今日已全部签到成功：任何路径都不再触发
-  if (lastSignDate === t) return;
-  // 重启后同理：cron 时刻之前不触发
-  if (hhmmNow() < (cfg.cron || "08:10")) return;
+  if (schedRunning) return; // 上一轮调度仍在执行（跨 30s tick / 长耗时）→ 跳过，防重叠
+  schedRunning = true;
+  try {
+    const cfg = store.getConfig();
+    if (!cfg.enabled) return;
+    resetDailyIfNeeded();
+    const t = todayStr();
+    // 今日已全部签到成功：任何路径都不再触发
+    if (lastSignDate === t) return;
+    // 重启后同理：cron 时刻之前不触发
+    if (hhmmNow() < (cfg.cron || "08:10")) return;
 
-  const status = api.status().data || {};
-  const allDone = allSitesDoneToday(status);
-  const todoKeys = todoSiteKeys(status);
+    const status = api.status().data || {};
+    const allDone = allSitesDoneToday(status);
+    const todoKeys = todoSiteKeys(status);
 
-  // 定时首跑：到达/越过 cron 时刻、今日未全成、当日尚未全量 → 全量一次
-  if (!allDone && fullRunDate !== t && todoKeys.length) {
-    fullRunDate = t;
-    api._log(`每日签到时刻 ${cfg.cron} 已到，执行全量签到`);
-    const r = await api.runOnce();
-    const data = r.data || {};
-    if (r.success && data.success_count > 0 && data.results.every((x) => x.status !== "执行失败")) {
-      lastSignDate = t;
+    // 定时首跑：到达/越过 cron 时刻、今日未全成、当日尚未全量 → 全量一次（当日只一次）
+    if (!allDone && fullRunDate !== t && todoKeys.length) {
+      if (api._running) return; // 手动签到/其他执行进行中：本轮轮空，不占用今日全量标记
+      fullRunDate = t;
+      persistSched();
+      api._log(`每日签到时刻 ${cfg.cron} 已到，执行全量签到（本地 ${localNow()}）`);
+      const r = await api.runOnce();
+      const data = r.data || {};
+      if (r.success && data.success_count > 0 && Array.isArray(data.results) && data.results.every((x) => x.status !== "执行失败")) {
+        lastSignDate = t;
+      }
+      return; // 全量已触发，本次 tick 不再叠加补跑
     }
-    return; // 全量已触发，本次 tick 不再叠加补跑
-  }
 
-  // 漏签补跑：仅补跑失败/未签站点，维持每 30 分钟节奏与每日 5 次上限
-  if (todoKeys.length && catchupCount < 5) {
-    catchupCount += 1;
-    api._log(`补签第 ${catchupCount} 次（当天上限 5）：${todoKeys.join("、")}`);
-    const r = await api.runOnce(todoKeys);
-    const data = r.data || {};
-    if (r.success && data.success_count > 0 && data.results.every((x) => x.status !== "执行失败")) {
-      if (allSitesDoneToday(api.status().data || {})) lastSignDate = t;
+    // 漏签补跑：仅逐个重跑今日失败账号，维持每日 5 次上限
+    const targets = failAccounts();
+    if (targets.length && catchupCount < 5) {
+      if (api._running) return; // 并发保护：跳过且不占用补签名额
+      api._log(`补签第 ${catchupCount + 1} 次（本地 ${localNow()}，当天上限 5）：${targets.map((x) => `${x.site}/${x.account_id}`).join("、")}`);
+      let executed = false;
+      for (const trg of targets) {
+        const r = await api.runAccount(trg.site, trg.account_id); // 单账号重签：结果同步进失败集（成功/已签到即清除）
+        // 仅「正在执行中」的并发 bail 视为未实际执行；正常执行（含结果失败）一并通过
+        if (!(r && r.success === false && /执行中/.test(r.message || ""))) executed = true;
+      }
+      if (executed) {
+        catchupCount += 1; // runAccount 实际执行后递增（并发/重叠 tick 跳过不计名额）
+        persistSched();
+        if (catchupCount >= 5) api._log(`补签次数已达当日上限（5 次），今日不再补签`);
+      }
     }
-    if (catchupCount >= 5) api._log("补签次数已达当日上限（5 次），今日不再补签");
+  } catch (err) {
+    api._log(`定时签到异常：${err.message}`);
+  } finally {
+    schedRunning = false;
   }
 }
 
@@ -318,6 +384,8 @@ server.listen(SOCKET_PATH, () => {
   console.log(`${new Date().toISOString()} 启动 checkin 后端，socket=${SOCKET_PATH}，data=${DATA_DIR}`);
   console.log(`${new Date().toISOString()} 后端已就绪（功能版本 ${store.getConfig().version}）`);
 });
+
+restoreSched(); // 启动即恢复调度状态（重启不重复全量、不重置补签上限）；在首个 tick 前执行
 
 server.on("error", (err) => {
   console.error(`${new Date().toISOString()} 服务错误：${err.message}`);

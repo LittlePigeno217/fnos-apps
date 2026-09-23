@@ -207,6 +207,7 @@ class Server {
       // 若不在此持久化，热更/重启后 session 回退磁盘旧值 → 保活断链需重新扫码。放循环外一次足够。
       // save 失败不应使签到结果报错（history 已落盘、结果已生成）——仅记日志。
       this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
+      this._store.recordCheckinResults(results); // 今日失败账号集（补签账号级定位；跨天自动重置）
       try { this._store.save(); } catch (e) { console.error(`签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       const allOk = results.length > 0 && results.every((r) => r.status !== "执行失败");
       if (this._notifier && cfg.notify_enabled) {
@@ -264,6 +265,7 @@ class Server {
       this._store.appendHistory(history);
       // 同 runOnce：单账号签到亦落盘账号对象（持久化 _billingDo 续期后的 session），save 失败不阻断结果。
       this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
+      this._store.recordCheckinResults([result]); // 单账号结果同步进今日失败集（补签据此只重跑失败账号）
       try { this._store.save(); } catch (e) { console.error(`单账号签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       if (this._notifier && cfg.notify_enabled) {
         const text = this._notifier.buildNotifyText("签到工具", [result]);

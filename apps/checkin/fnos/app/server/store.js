@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.4.8",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.4.9",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -35,6 +35,11 @@ const DEFAULT_CONFIG = {
   proxy_enabled: false,    // 全局代理开关（勾选「走代理」的站点统一走 proxy_url）
   proxy_url: "",           // 全局代理地址（http(s):// 或 socks5://）
   sites: DEFAULT_SITES,
+  // ── 调度内部状态（不暴露前端字段；saveConfig 白名单外；供调度器持久化）──
+  sched_last_full: "",     // 上次「定时首跑」全量签到的本地日期（YYYY-MM-DD）
+  sched_catchup_count: 0,  // 当日补签轮次数（每日 5 次上限；0 点跨天归零）
+  sched_today_fail: {},    // 今日失败账号集：{ "site/account_id": true }（补签账号级定位）
+  sched_fail_date: "",     // sched_today_fail 所属本地日期（0 点滚动据此重置）
 };
 
 class Store {
@@ -69,6 +74,13 @@ class Store {
     // 全局代理配置类型收敛（防止手改 config 写入异常类型）；非法 URL 视为空（不启用）
     cfg.proxy_enabled = !!raw.proxy_enabled;
     cfg.proxy_url = (typeof raw.proxy_url === "string" && PROXY_URL_RE.test(raw.proxy_url.trim())) ? raw.proxy_url.trim() : "";
+    // 调度内部状态类型收敛（内部字段，前端不可写；防手改 config 写入异常类型导致调度异常）
+    cfg.sched_last_full = (typeof raw.sched_last_full === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.sched_last_full)) ? raw.sched_last_full : "";
+    cfg.sched_catchup_count = Number.isFinite(Number(raw.sched_catchup_count))
+      ? Math.max(0, Math.min(99, Math.floor(Number(raw.sched_catchup_count))))
+      : 0;
+    cfg.sched_today_fail = (raw.sched_today_fail && typeof raw.sched_today_fail === "object" && !Array.isArray(raw.sched_today_fail)) ? raw.sched_today_fail : {};
+    cfg.sched_fail_date = (typeof raw.sched_fail_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.sched_fail_date)) ? raw.sched_fail_date : "";
     // 面板鉴权已移除：存量 config 中的 auth_enabled/auth_token 不再读取（物理值可残留，运行时忽略）
     delete cfg.auth_enabled;
     delete cfg.auth_token;
@@ -242,6 +254,46 @@ class Store {
       used.add(id);
       return id;
     };
+  }
+
+  /** 本地日期 YYYY-MM-DD（调度内部状态跨天重置判定；0 点滚动） */
+  _schedLocalDate() {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${m}-${day}`;
+  }
+
+  /* ── 调度内部状态：今日账号成功/失败集（补签账号级定位）────────────
+   * sched_today_fail 记录今日签到「执行失败」的账号（键 site/account_id），供调度器
+   * 补签时逐个重跑；站点级 today_ok/today_failed 仍由 history 派生（本集合不重复计算）。
+   * 跨天（sched_fail_date ≠ 今日）自动视为空，首次记录时整体重置。 */
+
+  /** 今日失败账号集 { "site/account_id": true }；跨天自动视为空（0 点滚动，不信任过期数据） */
+  schedFailAccounts() {
+    const cfg = this._cfg;
+    return (cfg.sched_fail_date === this._schedLocalDate() && cfg.sched_today_fail && typeof cfg.sched_today_fail === "object")
+      ? cfg.sched_today_fail
+      : {};
+  }
+
+  /** 记录一次/一批账号签到结果：执行失败 → 入今日失败集；成功/已签到 → 清除。
+   *  仅变更内存（落盘由调用方 runOnce/runAccount 的已有 store.save() 统一完成）；
+   *  结果跨天首次记录时先把昨日集合整体重置。 */
+  recordCheckinResults(results) {
+    if (!Array.isArray(results) || !results.length) return;
+    const cfg = this._cfg;
+    const today = this._schedLocalDate();
+    if (cfg.sched_fail_date !== today) {
+      cfg.sched_today_fail = {};
+      cfg.sched_fail_date = today;
+    }
+    for (const r of results) {
+      if (!r || r.site_key == null || r.account_id == null) continue;
+      const k = `${r.site_key}/${r.account_id}`;
+      if (r.status === "执行失败") cfg.sched_today_fail[k] = true;
+      else if (cfg.sched_today_fail[k]) delete cfg.sched_today_fail[k];
+    }
   }
 
   save() {
