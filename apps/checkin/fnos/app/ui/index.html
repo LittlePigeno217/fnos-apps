@@ -404,7 +404,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.6.9</span>
+      <span class="ver" id="appVersion">v1.7.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1606,13 +1606,20 @@ async function saveAccountEditor() {
   const st = SITE_DATA[key] || {};
   const stBox = $("modalStatus");
   stBox.textContent = "保存中…";
+  // 合并保存（1.7.0 修复）：编辑页仅渲染当前账号，若直接提交单账号会覆盖全站 accounts（其他账号丢失/卡片消失）
+  const edited = collectModalAccounts()[0] || {};
+  const accsAll = Array.isArray(st.accounts) ? st.accounts : [];
+  const exists = accsAll.some((a) => String(a.id) === String(MODAL_AID));
+  const accounts = exists
+    ? accsAll.map((a) => (String(a.id) === String(MODAL_AID) ? Object.assign({}, a, edited) : a))
+    : accsAll.concat([edited]);
   // 账号配置页仅保存该账号配置；站点级 enabled/use_proxy 沿用当前值，不在账号页改动。
   const body = {
     sites: {
       [key]: {
         enabled: st.enabled === true,
         use_proxy: st.use_proxy === true,
-        accounts: collectModalAccounts(),
+        accounts,
       },
     },
   };
