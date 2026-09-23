@@ -404,7 +404,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.6.4</span>
+      <span class="ver" id="appVersion">v1.6.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1123,9 +1123,10 @@ function renderAddTabs(key) {
   if (caps.includes("cookie")) tabs.push({ id: "cookie", label: "手动 Cookie" });
   if (!tabs.length) tabs.push({ id: "cookie", label: "手动配置" }); // 兜底
   const first = ADD_CTX.tab && tabs.some((t) => t.id === ADD_CTX.tab) ? ADD_CTX.tab : tabs[0].id;
-  $("addTabs").innerHTML = tabs.map((t) =>
+  // 1.6.5：仅一种登录方式时不渲染 tab 标签栏（如通用 NewAPI 只剩「手动 Cookie」→ 标签直接隐藏，内容直显）
+  $("addTabs").innerHTML = tabs.length > 1 ? tabs.map((t) =>
     '<button type="button" class="add-tab' + (t.id === first ? " active" : "") +
-    '" onclick="switchAddTab(\'' + t.id + '\')">' + esc(t.label) + "</button>").join("");
+    '" onclick="switchAddTab(\'' + t.id + '\')">' + esc(t.label) + "</button>").join("") : "";
   switchAddTab(first);
 }
 

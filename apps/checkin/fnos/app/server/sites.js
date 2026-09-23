@@ -859,8 +859,8 @@ const NEWAPI = {
   short: "NP",
   mode: "Cookie / 账号 / OAuth",
   // GitHub / LinuxDO OAuth（NewAPI 统一 OAuth）优先；账号密码直登 + 登录后自动产出会话；WAF 站点回落手动 Cookie
-  login_caps: NEWAPI_LOGIN_CAPS, // 与 anyrouter 共用（单一事实源）
-  desc: "NewAPI / OneAPI / Sub2API 通用 · 访问令牌（Bearer）认证优先，账号密码 / Cookie 兼容，Sub2API 自动适配",
+  login_caps: ["cookie"], // 1.6.5：按用户要求仅保留「手动 Cookie」登录方式（删除第三方登录/账号密码登录 tab）
+  desc: "NewAPI / OneAPI / Sub2API 通用 · 手动 Cookie 配置（访问令牌/账密/OAuth 登录已按需移除）",
   fields: [
     { key: "base_url", label: "平台地址", type: "text", ph: "https://your-new-api.com（自建 NewAPI 填内网地址）" },
     { key: "username", label: "账号", type: "text", ph: "账号密码方式（二选一，无 WAF 平台可用）" },
