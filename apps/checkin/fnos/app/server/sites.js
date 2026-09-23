@@ -129,11 +129,11 @@ function isWafChallenge(text) {
   return NEWAPI_WAF_MARKERS.some((m) => t.includes(m.toLowerCase()));
 }
 
-/** 登录态失效判定：HTTP 401 或 body 含会话/token 过期文案 */
+/** 登录态失效判定：HTTP 401 或 body 含会话/token 过期文案（含中文变体） */
 function isLoginExpired(status, text) {
   if (Number(status) === 401) return true;
   const t = String(text || "").toLowerCase();
-  return /session.*(invalid|expired)|token.*(invalid|expired)|未登录|登录已过期|invalid session/i.test(t);
+  return /session.*(invalid|expired)|token.*(invalid|expired)|未登录|登录已过期|invalid session|会话已过期|登录态失效|登录状态已失效|登录会话已过期|身份已过期/i.test(t);
 }
 
 /** base_url 归一：去尾斜杠；缺省回落 fallback（anyrouter 用自有默认，newapi 不回落） */
@@ -1035,6 +1035,16 @@ const NEWAPI = {
     if (cfg.cookie && String(cfg.cookie).trim()) {
       return cookieAuth(cfg, base);
     }
+    // P1-1 修复：OAuth 建号仅持 session（登录产物 token/cookie）——有效期内作为认证兜底（过期需重新授权，非持久保持登录态）
+    if (sessionValid(cfg) && cfg.session && typeof cfg.session === "object") {
+      const sess = cfg.session;
+      if (sess.type === "token" && sess.token) {
+        return { type: "token", token: sess.token, base: sess.base || base };
+      }
+      if (sess.type === "cookie" && sess.headers) {
+        return { type: "cookie", headers: sess.headers, base: sess.base || base };
+      }
+    }
     throw new Error("请配置账号密码，或 Cookie + api_user");
   },
 
@@ -1162,6 +1172,10 @@ const NEWAPI = {
       r = await doSign(auth.base + this.fallbackSignInPath);
       // 通用 NewAPI 端点均不存在 → Sub2API（/api/v1/redeem/checkin）自动回退适配（访问令牌通用认证）
       if (r.status === 404 || /not found|接口不存在|invalid action/i.test(String(r.text || ""))) {
+        // P3-1：仅访问令牌账号可回退 Sub2（账密/Cookie 账号回退会发空 Bearer 误导用户）
+        if (!cfg.access_token || !String(cfg.access_token).trim()) {
+          throw new Error("该平台无通用 NewAPI 签到接口（HTTP 404）：如为 Sub2API 平台请在账号配置填写「访问令牌」");
+        }
         return this._runSub2Checkin(cfg);
       }
     }

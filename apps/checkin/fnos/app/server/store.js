@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.7.0",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.7.1",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -416,7 +416,10 @@ class Store {
               // 敏感值留空 = 保留原值（password/cookie 等由 adapter 字段驱动；规则统一）
               const merged = {
                 id,
-                enabled: a.enabled !== false,
+                // P1-2：{id}-only 条目（添加/删除账号路径）未带 enabled → 保留原值，避免停用账号被静默重新启用
+                enabled: (a.enabled === undefined || a.enabled === null)
+                  ? (prev.enabled !== false)
+                  : a.enabled !== false,
                 remark: String(a.remark !== undefined ? a.remark : (prev.remark || "")).trim(),
               };
               // session（登录产物）语义区别于明文字段：

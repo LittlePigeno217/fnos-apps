@@ -82,20 +82,13 @@ async function httpsGetRetry(url, tries) {
   throw last;
 }
 
-/** 双源拉取：raw 与 GitHub 代理镜像并行发起，最快成功者胜。
- * 串行（raw 失败才走镜像）在 raw 慢时会把总耗时拖到网关超时；并行通常 <5s 返回。 */
+/** 串行拉取（P3-5）：主源（raw.githubusercontent.com）成功即返回；失败才依次尝试镜像——镜像被攻陷也无法先于主源注入恶意内容 */
 const GH_PROXIES = ["https://ghproxy.net/", "https://ghproxy.com/"];
 async function fetchWithMirror(primaryUrl) {
-  const candidates = [primaryUrl, ...GH_PROXIES.map((p) => p + primaryUrl)];
-  let remaining = candidates.map((u) => httpsGet(u));
   let lastErr = null;
-  while (remaining.length) {
-    const result = await Promise.race(
-      remaining.map((p, i) => p.then((b) => ({ ok: true, b, i }), (e) => ({ ok: false, e, i })))
-    );
-    if (result.ok) return result.b;
-    lastErr = result.e;
-    remaining = remaining.filter((_, i) => i !== result.i);
+  try { return await httpsGet(primaryUrl); } catch (e) { lastErr = e; }
+  for (const p of GH_PROXIES) {
+    try { return await httpsGet(p + primaryUrl); } catch (e) { lastErr = e; }
   }
   throw lastErr;
 }

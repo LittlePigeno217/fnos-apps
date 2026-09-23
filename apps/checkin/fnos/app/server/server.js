@@ -946,8 +946,10 @@ class Server {
           : null);
         if (sess) { acc.session = sess; acc.session_ts = Date.now(); this._store.save(); }
         this._loginSessions.delete(token);
-        // 扫码建号即拉一次积分/余额快照（不必等签到；失败不致命，仅记日志）
+        // 扫码建号即拉一次积分/余额快照（不必等签到；失败不致命，仅记日志）。P3-2：与 runOnce 一致先注入站点 use_proxy
+        this._applySiteProxy(adapter, acc);
         await this._snapshotBalance(adapter, acc);
+        this._restoreInjectedProxy();
         this._log(`扫码登录成功：${adapter.name}（${adapter.getAccountLabel(acc)}）`);
         return ok({ state: "ready", login_mode: "qr", account: { id: acc.id, label: adapter.getAccountLabel(acc), has_session: !!sess } });
       }
@@ -1059,7 +1061,10 @@ class Server {
       if (r.account && r.account.oauth_login) acc.oauth_login = String(r.account.oauth_login);
       this._store.save();
       this._loginSessions.delete(token);
+      // P3-2：OAuth 建号快照与 runOnce 一致先注入站点 use_proxy
+      this._applySiteProxy(adapter, acc);
       await this._snapshotBalance(adapter, acc);
+      this._restoreInjectedProxy();
       this._log(`OAuth 登录成功：${adapter.name}（${adapter.getAccountLabel(acc)}）`);
       return ok({
         status: "ready", login_mode: "oauth",
