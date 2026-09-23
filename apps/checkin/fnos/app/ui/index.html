@@ -404,7 +404,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.6.5</span>
+      <span class="ver" id="appVersion">v1.6.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -852,7 +852,8 @@ function renderAcctCard(key, a, cap) {
     subLabel = (acctLabel && acctLabel !== a.remark) ? acctLabel : "";
   } else if (key === "newapi" || key === "anyrouter") {
     const host = hostOf(baseUrl);
-    const st = (window.SITE_TITLES || {})[baseUrl] || "";
+    // 1.6.6：站点标题匹配做尾斜杠归一（后端存储去斜杠；账号 base_url 可能带 /）
+    const st = (window.SITE_TITLES || {})[String(baseUrl || "").replace(/\/+$/, "")] || "";
     title = st || (host ? ("NewAPI · " + host) : "NewAPI");
     subLabel = (acctLabel && acctLabel !== title) ? acctLabel : "";
   } else {
