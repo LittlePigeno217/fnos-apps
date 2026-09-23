@@ -125,6 +125,7 @@
   .muted { color: var(--muted); font-size: 12.5px; }
   .ok { color: var(--ok); }
   .err { color: var(--err); font-size: 12.5px; margin: 10px 0 0; }
+  .warn { color: var(--warn); font-size: 12.5px; margin: 10px 0 0; }
 
   /* ---------- 骨架（对齐 115网盘助手） ---------- */
   .app { display: grid; grid-template-columns: 208px 1fr; min-height: 100vh; }
@@ -403,7 +404,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.6.3</span>
+      <span class="ver" id="appVersion">v1.6.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1067,7 +1068,7 @@ async function loginPoll(token) {
  *   - 账号密码（password/password_cookie）：填账号密码 → 「登录并自动获取 Cookie」→ 后端登录+自动落库
  *   - Cookie：手动粘贴 Cookie / token（恩山、WorkBuddy 高级 fallback）
  * 保留现有站点编辑弹窗（remark/启用/删除/排序/导入导出）不变。 */
-let ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false };
+let ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false, oauthWin: null };
 
 /** F7-8 敏感字段 DOM 清理：清空容器内全部密码输入框（登录失败/弹窗关闭时避免明文滞留 DOM） */
 function clearPwdFields(rootId) {
@@ -1079,14 +1080,15 @@ function clearPwdFields(rootId) {
 
 function closeAddModal() {
   if (ADD_CTX.qrTimer) { clearTimeout(ADD_CTX.qrTimer); ADD_CTX.qrTimer = null; }
-  ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false };
+  if (oauthWatchTimer) { clearInterval(oauthWatchTimer); oauthWatchTimer = null; }
+  ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false, oauthWin: null };
   clearPwdFields("addModal"); // F7-8：关闭时清空密码输入
   $("addModal").style.display = "none";
 }
 
 /** 打开添加账号窗口。key 为空 → 站点选择（pickKeys 限定候选）；否则直接进入该站点的登录方式 tab。 */
 function openAddAccount(key, pickKeys) {
-  ADD_CTX = { key: key || "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false };
+  ADD_CTX = { key: key || "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false, oauthWin: null };
   $("addModal").style.display = "flex";
   if (!key) {
     $("addTag").style.display = "none"; // 未选定站点：隐藏徽标（避免与工具条「＋ 添加账号」重复双 +）
@@ -1148,7 +1150,7 @@ function renderAddOAuthPanel(key) {
   const baseField = siteFields(key).find((f) => f.key === "base_url");
   ADD_CTX.oauthToken = ""; ADD_CTX.oauthProvider = "";
   $("addPanel").innerHTML =
-    '<div class="add-panel-tip">用 GitHub / LinuxDO 账号授权登录：点击按钮在新窗口完成授权，再把浏览器地址栏的回调链接（含 code）粘贴回来。</div>' +
+    '<div class="add-panel-tip">用 GitHub / LinuxDO 账号授权登录：点击按钮在新窗口完成授权。<b>授权完成后浏览器会自动跳转到站点——回调链接（含 code）在地址栏停留极短随即跳走</b>。若已跳走：<b>在新窗口按一次 ← 后退</b>，地址栏会回到含 code 的回调链接，复制即可。</div>' +
     (baseField
       ? '<div class="cred-row"><div class="cred-label">平台地址</div><input class="input mono" id="addoauth_base" value="" placeholder="' + esc(baseField.ph || "") + '"></div>'
       : "") +
@@ -1157,7 +1159,7 @@ function renderAddOAuthPanel(key) {
       '" onclick="startOAuth(\'' + esc(p.id) + '\')">' + esc(p.label) + "</button>").join("") +
     '<div id="oauthPaste" style="display:none;margin-top:10px">' +
       '<div class="cred-row"><div class="cred-label">回调链接</div>' +
-        '<input class="input mono" id="addoauth_cb" placeholder="授权完成后粘贴浏览器地址栏链接"></div>' +
+        '<input class="input mono" id="addoauth_cb" placeholder="授权完成后粘贴浏览器地址栏链接（可先按 ← 找回）"></div>' +
       '<button type="button" class="btn primary" style="width:100%;margin-top:6px" id="oauthDoneBtn" onclick="submitOAuth()">完成登录</button>' +
     "</div>" +
     '<div id="addoauthState" class="muted" style="font-size:12.5px;min-height:18px;margin-top:8px"></div>';
@@ -1177,11 +1179,47 @@ async function startOAuth(provider) {
   }
   const d = r.data || {};
   ADD_CTX.oauthToken = d.token || ""; ADD_CTX.oauthProvider = provider;
-  if (d.auth_url) window.open(d.auth_url, "_blank", "noopener");
+  if (d.auth_url) {
+    ADD_CTX.oauthWin = window.open(d.auth_url, "_blank"); // 不带 noopener：需要窗口引用做跳离/关闭检测（授权 URL 来自 oauthInit 白名单，风险可控）
+    startOAuthWatch(provider); // 1.6.4：自动检测授权窗口跳离/关闭 → 精准提示复制（跨源读不到 URL，用 closed/跳离信号）
+  }
   $("oauthPaste").style.display = "block";
   st.className = "muted";
   st.innerHTML = esc(d.message || "请在新窗口完成授权") +
     (d.auth_url ? ' · <a href="' + esc(d.auth_url) + '" target="_blank" rel="noopener" style="color:var(--accent,#4c8bf5)">未弹出？点此打开</a>' : "");
+}
+
+/** 1.6.4：OAuth 授权窗口监听——检测「跳离 GitHub/LinuxDO 授权页」或「窗口关闭」→ 精准提示立即复制回调链接。
+ * 跨源无法读授权窗口 URL（SecurityError），但「读失败/closed=true」即「已离开授权域/流程结束」信号。 */
+let oauthWatchTimer = null;
+function startOAuthWatch(provider) {
+  if (oauthWatchTimer) { clearInterval(oauthWatchTimer); oauthWatchTimer = null; }
+  const authHost = provider === "github" ? "github.com" : "linux.do";
+  let signaled = false;
+  oauthWatchTimer = setInterval(() => {
+    const w = ADD_CTX.oauthWin;
+    if (!w) { if (oauthWatchTimer) { clearInterval(oauthWatchTimer); oauthWatchTimer = null; } return; }
+    let leftAuth = false;
+    if (w.closed) {
+      if (oauthWatchTimer) { clearInterval(oauthWatchTimer); oauthWatchTimer = null; }
+      if (!signaled) { signaled = true; oauthPrompt("授权窗口已关闭——请粘贴回调链接（若已跳走，可按一次 ← 后退找回含 code 的链接）"); }
+      return;
+    }
+    try {
+      const loc = String(w.location.href || "");
+      if (loc && !loc.includes(authHost)) leftAuth = true;
+    } catch (e) { leftAuth = true; } // 跨源读失败 = 已跳离授权域（进入站点回调/页面）
+    if (leftAuth) {
+      if (oauthWatchTimer) { clearInterval(oauthWatchTimer); oauthWatchTimer = null; }
+      if (!signaled) { signaled = true; oauthPrompt("已跳转到站点——现在复制地址栏回调链接（含 code）粘贴回来；已跳走可按 ← 后退找回"); }
+    }
+  }, 1500);
+}
+function oauthPrompt(msg) {
+  const st = $("addoauthState");
+  if (st) { st.className = "warn"; st.innerHTML = esc(msg); }
+  const cb = $("addoauth_cb");
+  if (cb) cb.focus();
 }
 
 /** 完成 OAuth：POST {site}_login/oauth {token,callback_url} → 换 token 建号 */

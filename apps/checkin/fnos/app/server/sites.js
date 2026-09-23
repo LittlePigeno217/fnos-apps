@@ -860,7 +860,7 @@ const NEWAPI = {
   mode: "Cookie / 账号 / OAuth",
   // GitHub / LinuxDO OAuth（NewAPI 统一 OAuth）优先；账号密码直登 + 登录后自动产出会话；WAF 站点回落手动 Cookie
   login_caps: NEWAPI_LOGIN_CAPS, // 与 anyrouter 共用（单一事实源）
-  desc: "NewAPI / OneAPI / Sub2API 通用 · Cookie 或账号密码签到，Sub2API 用 access_token",
+  desc: "NewAPI / OneAPI / Sub2API 通用 · 访问令牌（Bearer）认证优先，账号密码 / Cookie 兼容，Sub2API 自动适配",
   fields: [
     { key: "base_url", label: "平台地址", type: "text", ph: "https://your-new-api.com（自建 NewAPI 填内网地址）" },
     { key: "username", label: "账号", type: "text", ph: "账号密码方式（二选一，无 WAF 平台可用）" },
@@ -868,7 +868,7 @@ const NEWAPI = {
     { key: "totp", label: "TOTP 密钥", type: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
     { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（二选一，WAF 站点用这个）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
-    { key: "access_token", label: "Sub2API Token", type: "password", ph: "Sub2API 平台填 access_token（如填则走 /api/v1/redeem/checkin）" },
+    { key: "access_token", label: "访问令牌", type: "password", ph: "站点访问令牌/Token（Bearer 认证，NewAPI/Sub2API 通用，优先）" },
   ],
   base: "", // NewAPI 无默认地址（base_url 必填，缺失时明确报错，避免请求假占位域名）
   loginPath: "/api/user/login",
@@ -915,7 +915,7 @@ const NEWAPI = {
     if (!cfg) return false;
     if (cfg.username && cfg.password) return true;         // 账号密码方式
     if (cfg.cookie && String(cfg.cookie).trim()) return true; // Cookie 方式
-    if (cfg.access_token && String(cfg.access_token).trim()) return true; // Sub2API 方式
+    if (cfg.access_token && String(cfg.access_token).trim()) return true; // 访问令牌方式（通用 Bearer）
     // OAuth 登录：无明文凭据，凭 session（NewAPI 会话 token）鉴权
     if (cfg.session && cfg.session.type === "token" && cfg.session.token) return true;
     return false;
@@ -923,7 +923,7 @@ const NEWAPI = {
   getAccountLabel(cfg) {
     if (cfg && cfg.username) return maskEmail(cfg.username);
     if (cfg && cfg.api_user) return "User " + cfg.api_user;
-    if (cfg && cfg.access_token && String(cfg.access_token).trim()) return "Sub2API Token";
+    if (cfg && cfg.access_token && String(cfg.access_token).trim()) return "访问令牌";
     if (cfg && cfg.oauth_login) return String(cfg.oauth_login); // OAuth 账号标签（如「GitHub @user」）
     if (cfg && cfg.session && cfg.session.type === "token" && cfg.session.token) return "OAuth 登录";
     return "Cookie";
@@ -996,6 +996,10 @@ const NEWAPI = {
   async _authHeaders(cfg) {
     const base = this._base(cfg);
     if (!base) throw new Error("请先配置平台地址（base_url）");
+    // 1.6.4：访问令牌优先（通用 Bearer 认证——NewAPI/OneAPI/Sub2API 统一；不再仅限 Sub2API 协议）
+    if (cfg.access_token && String(cfg.access_token).trim()) {
+      return { type: "token", token: String(cfg.access_token).trim(), base };
+    }
     if (cfg.username && cfg.password) {
       const s = new Session();
       let r = await s.postJson(base + this.loginPath, { username: cfg.username, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
@@ -1146,7 +1150,7 @@ const NEWAPI = {
   },
 
   async runCheckin(cfg) {
-    if (this._isSub2Api(cfg)) return this._runSub2Checkin(cfg);
+    // 1.6.4：统一走通用 NewAPI 流程（访问令牌 Bearer / 账密 / Cookie）；通用端点 404/不存在时自动回退 Sub2API（/api/v1）协议
     const auth = await this._resolveAuth(cfg);
     let before = null;
     try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
@@ -1162,6 +1166,10 @@ const NEWAPI = {
     // OneAPI 平台没有 /api/user/sign_in → fallback /api/user/checkin
     if (r.status === 404 || /not found|接口不存在|invalid action/i.test(String(r.text || ""))) {
       r = await doSign(auth.base + this.fallbackSignInPath);
+      // 通用 NewAPI 端点均不存在 → Sub2API（/api/v1/redeem/checkin）自动回退适配（访问令牌通用认证）
+      if (r.status === 404 || /not found|接口不存在|invalid action/i.test(String(r.text || ""))) {
+        return this._runSub2Checkin(cfg);
+      }
     }
 
     if (isWafChallenge(r.text)) {
@@ -1211,30 +1219,39 @@ const NEWAPI = {
   },
 
   async testConnection(cfg) {
-    if (this._isSub2Api(cfg)) {
-      const auth = this._sub2Auth(cfg);
-      const s = new Session();
-      const r = await s.get(auth.base + this.sub2MePath, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
-      if (isLoginExpired(r.status, r.text)) throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
-      const j = parseJson(r.text);
-      if (!j || Number(j.code) !== 0) throw new Error((j && (j.message || j.msg)) || "Sub2API Token 校验失败（auth/me）");
-      return { site: this.key, site_name: this.name, message: "连接成功，Sub2API Token 有效" };
-    }
     const auth = await this._resolveAuth(cfg);
-    const info = await this._getUserInfo(auth, cfg.use_proxy);
-    if (!info) throw new Error("登录态有效，但用户信息接口未返回 quota");
-    return { site: this.key, site_name: this.name, message: `连接成功，${cfg.username ? maskEmail(cfg.username) : "Cookie"} 有效，余额 ${this._fmtUsd(info.quota)}` };
+    try {
+      const info = await this._getUserInfo(auth, cfg.use_proxy);
+      if (!info) throw new Error("登录态有效，但用户信息接口未返回 quota");
+      const who = cfg.username ? maskEmail(cfg.username) : (auth.type === "token" ? "访问令牌" : "Cookie");
+      return { site: this.key, site_name: this.name, message: `连接成功，${who} 有效，余额 ${this._fmtUsd(info.quota)}` };
+    } catch (e) {
+      // 1.6.4：通用用户信息端点失败（Sub2API 无 /api/user/self）→ 自动回退 Sub2API /api/v1/user/self 校验
+      if (auth.type === "token" && cfg.access_token) {
+        try {
+          const s2 = new Session();
+          const sa = this._sub2Auth(cfg);
+          const r2 = await s2.get(sa.base + this.sub2MePath, { headers: this._headers(sa), timeout: 15000, useProxy: cfg.use_proxy });
+          const j2 = parseJson(r2.text);
+          if (!isLoginExpired(r2.status, r2.text) && j2 && Number(j2.code) === 0) {
+            return { site: this.key, site_name: this.name, message: "连接成功，访问令牌有效（Sub2API）" };
+          }
+        } catch { /* Sub2 校验失败 → 抛原错误 */ }
+      }
+      throw e;
+    }
   },
 
   /* 账号级余额快照（server 在签到/测试成功后调用）：返回原始数值 quota（点数）。
-   * Sub2API 无独立用户信息端点 → 返回 null（该模式余额随签到响应，不单独快照）。 */
+   * Sub2API 无独立用户信息端点 → 通用 self 失败返回 null（该模式余额随签到响应，不单独快照）。 */
   balanceLabel: "余额",
   async queryBalance(cfg) {
-    if (this._isSub2Api(cfg)) return null; // Sub2API 无 self 端点：跳过快照
-    const auth = await this._resolveAuth(cfg);
-    const info = await this._getUserInfo(auth, cfg.use_proxy);
-    if (!info) return null;
-    return Number(info.quota) || 0; // 原始点数（500000 点 = $1）
+    try {
+      const auth = await this._resolveAuth(cfg);
+      const info = await this._getUserInfo(auth, cfg.use_proxy);
+      if (!info) return null;
+      return Number(info.quota) || 0; // 原始点数（500000 点 = $1）
+    } catch { return null; } // Sub2API 无 self 端点等 → 跳过快照
   },
   /** 余额数值 → 展示串（USD）；delta 同单位 */
   fmtBalance(v) {
