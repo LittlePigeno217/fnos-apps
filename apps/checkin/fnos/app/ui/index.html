@@ -400,7 +400,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.5.6</span>
+      <span class="ver" id="appVersion">v1.5.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -785,7 +785,7 @@ function acctGroupCards(keys) {
 }
 
 /* 分组账号标签页：三个 tab（NewApi / WorkBuddy / 其他站点）+ 内容区仅渲染激活组的 3 列卡片网格。
- * 卡片内容与站点总览解耦：标题备注优先、workbuddy/anyrouter 显示积分/余额、其余站点无余额行，
+ * 卡片内容与站点总览解耦：标题备注优先、workbuddy 显示积分、newapi/anyrouter 显示余额、其余站点无余额行，
  * 会话/最后签到状态与登录/启停/测试/删除操作保留。切换 tab 仅切换渲染（accounts 数据已全量）。 */
 function renderAccountList() {
   const tabsEl = $("acctTabs");
@@ -824,10 +824,8 @@ function switchAcctTab(i) {
 function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
-  // 卡片标题（备注优先）：
-  //   · anyrouter/agentrouter：无备注 → 「站点名 · 账号标识」（AnyRouter/AgentRouter 由 base_url host 区分）
-  //   · newapi：无备注 → 「NewAPI」（有 base_url 时附 host），账号标识落副标题
-  //   · 其余站点：无备注 → 账号标识(label 脱敏) → 「账号 N」（站点名仅由来源标签 siteTag 承载）
+  // 卡片标题（备注优先）：anyrouter 已并入 newapi 语义 → 同一标题分支（NewAPI / NewAPI · base_url host），
+  // 账号标识落副标题；其余站点：无备注 → 账号标识(label 脱敏) → 「账号 N」（站点名仅由来源标签 siteTag 承载）
   const acctLabel = a.label || (d && d.label) || "";
   const baseUrl = (d && d.field_values && d.field_values.base_url) || "";
   const hostOf = (u) => {
@@ -838,11 +836,7 @@ function renderAcctCard(key, a, cap) {
   if (a.remark) {
     title = a.remark;
     subLabel = (acctLabel && acctLabel !== a.remark) ? acctLabel : "";
-  } else if (key === "anyrouter") {
-    const sn = hostOf(baseUrl).toLowerCase().includes("agentrouter") ? "AgentRouter" : "AnyRouter";
-    title = acctLabel ? (sn + " · " + acctLabel) : sn;
-    subLabel = "";
-  } else if (key === "newapi") {
+  } else if (key === "newapi" || key === "anyrouter") {
     const host = hostOf(baseUrl);
     title = host ? ("NewAPI · " + host) : "NewAPI";
     subLabel = (acctLabel && acctLabel !== title) ? acctLabel : "";
