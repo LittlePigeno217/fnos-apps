@@ -226,6 +226,33 @@ function readBody(req, res) {
   });
 }
 
+/* ── app.log copytruncate 轮转（B14）──────────────────────────
+ * app.log 由 fnOS 进程 stdout 重定向持续写入（进程持有 fd，永不关闭），无大小上限会无限增长。
+ * 采用 logrotate 惯用 copytruncate：超过 2MB → 复制为 app.log.1（覆盖旧 .1，保留 1 份）+
+ * truncate 原文件（不 rename——进程 fd 保持有效，写入自动回到文件头，依赖 stdout 重定向的
+ * O_APPEND 语义；比 rename+重建更稳，进程无需感知轮转）。
+ * 触发点：getLogs 被轮询调用前检查大小（>2MB 触发一次）；1 分钟节流避免每次读都 stat 的额外 IO。 */
+const LOG_ROTATE_BYTES = 2 * 1024 * 1024;    // 2MB
+const LOG_ROTATE_INTERVAL_MS = 60 * 1000;    // 1 分钟节流
+let logRotateLastCheck = 0;                  // 上次检查时间戳（ms）；首次调用立即触发
+
+function maybeRotateAppLog(logPath) {
+  const now = Date.now();
+  if (now - logRotateLastCheck < LOG_ROTATE_INTERVAL_MS) return; // 节流：1 分钟内不再检查
+  logRotateLastCheck = now;
+  try {
+    const st = fs.statSync(logPath);
+    if (st.size > LOG_ROTATE_BYTES) {
+      fs.copyFileSync(logPath, `${logPath}.1`); // 覆盖旧的 .1（保留 1 份，不再轮转）
+      fs.truncateSync(logPath, 0);              // 截断原文件（不 rename，进程 fd 保持有效）
+      console.log(`${new Date().toISOString()} app.log 超过 2MB，已轮转（copytruncate 保留 1 份）`);
+    }
+  } catch (e) {
+    // 轮转失败不阻断 getLogs（文件可能正被写/权限瞬态），下次轮询再试
+    console.error(`${new Date().toISOString()} app.log 轮转失败：${(e && e.message) || e}`);
+  }
+}
+
 /* ── HTTP 路由：/action/<name>（对齐 115网盘助手主应用做法）──────
  * fnOS 网关对微应用以 /app/checkin/action/* 转发动态 API（独立于静态页面路径），
  * 前端统一请求 /app/checkin/action/<name>；同时兼容裸路径（取最后一段）。
@@ -255,6 +282,7 @@ const ACTION_HANDLERS = {
     const sp = new URL(ctx.req.url, "http://x").searchParams;
     const after = parseInt(sp.get("after") || "0", 10) || 0;
     const logPath = path.join(DATA_DIR, "app.log");
+    maybeRotateAppLog(logPath); // B14：轮询前检查大小，>2MB 触发 copytruncate 轮转（节流 1 分钟）
     try {
       if (!fs.existsSync(logPath)) return { success: true, data: { size: 0, offset: 0, lines: [] } };
       const st = fs.statSync(logPath);

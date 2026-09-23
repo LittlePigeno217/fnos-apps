@@ -660,17 +660,19 @@ const YPOJIE = {
     }
 
     const message = j.msg || j.message || "";
-    if (Number(j.status) === 200) {
-      return {
-        site: this.key, site_name: this.name, status: "签到成功",
-        message: rewardMsg || message || "签到成功", reward: "-", total: "-",
-        account: this.getAccountLabel(cfg), time: now(),
-      };
-    }
+    // B15：先判「今日已签到」再判 status 成功——部分站点「已签」仍回 HTTP 200 + 已签到文案，
+    // 若先判 200 会把「今日已签到」误标为「签到成功」（历史/通知/补签判定全部串扰）。
     if (message && isAlreadyCheckedIn(message)) {
       return {
         site: this.key, site_name: this.name, status: "今日已签到",
         message: rewardMsg || message, reward: "-", total: "-",
+        account: this.getAccountLabel(cfg), time: now(),
+      };
+    }
+    if (Number(j.status) === 200) {
+      return {
+        site: this.key, site_name: this.name, status: "签到成功",
+        message: rewardMsg || message || "签到成功", reward: "-", total: "-",
         account: this.getAccountLabel(cfg), time: now(),
       };
     }
@@ -834,16 +836,36 @@ const ANYROUTER = {
 
   /* runCheckin：AnyRouter/AgentRouter 奖励须「退出→重新登录」才发放。
    * 有账密 → 执行 logout→login 重登签到（登录成功即视为签到成功，奖励随重登发放）；
-   * 无账密 → 保留原 Cookie 流程（sign_in / AgentRouter user_info），失效时提示补账密自动重登。 */
+   * 无账密 → 保留原 Cookie 流程（sign_in / AgentRouter user_info），失效时提示补账密自动重登。
+   * B16a：账密重登被拒（登录请求失败，标记 reloginRejected）→ 回退 Cookie sign_in 流程——
+   * 账密失效/错误时若 Cookie 仍有效照常签到并注明回退来源；WAF/网络等非账密问题保持明确报错，不回退掩盖。 */
   async runCheckin(cfg) {
-    if (this._hasCreds(cfg)) return this._runReloginCheckin(cfg);
-    return this._runCookieCheckin(cfg);
+    if (!this._hasCreds(cfg)) return this._runCookieCheckin(cfg);
+    try {
+      return await this._runReloginCheckin(cfg);
+    } catch (err) {
+      if (!(err && err.reloginRejected)) throw err;
+      // B16a：账密被拒回退 Cookie 流程。_runCookieCheckin 内部 _resolveAuth → _auth 会优先
+      // 在线账密登录，刚被拒的账密会被再次尝试并再次失败、回退失效；剥离 password（保留 email
+      // 供 getAccountLabel 展示脱敏账号）后认证构造强制走 Cookie 会话（配置的 Cookie 仍有效时
+      // 照常签到；session 有效则直接复用会话）。
+      const fbCfg = { ...cfg, password: "" };
+      const fb = await this._runCookieCheckin(fbCfg);
+      fb.message = `${fb.message || ""}（账密登录失败已回退 Cookie 签到）`;
+      return fb;
+    }
   },
 
   /* 重登签到（AnyRouter/AgentRouter 奖励机制）：logout（尽力而为，失败/404 忽略）→ login（账密）
    * → 新 token 写回 cfg.session → 登录成功即签到成功 → 余额快照。 */
   async _runReloginCheckin(cfg) {
     const base = this._base(cfg);
+    // 0) B16b：重登前余额基线（当前会话/配置 Cookie，取不到不致命；用于比对奖励到账）
+    let before = null;
+    try {
+      const curAuth = this._currentAuth(cfg);
+      if (curAuth) before = await this._getUserInfo(curAuth, cfg.use_proxy);
+    } catch { /* 基线取不到不致命，后续走「无法对比」分支 */ }
     // 1) 退出当前会话：带现有 token/cookie POST /api/user/logout；不存在/失败一律忽略，继续 login
     const cur = this._currentAuth(cfg);
     if (cur) {
@@ -864,17 +886,37 @@ const ANYROUTER = {
     }
     const j = parseJson(r.text);
     if (!j || !j.success || !(j.data || {}).access_token) {
-      throw new Error((j && (j.message || j.msg)) || `重新登录失败（HTTP ${r.status}）`);
+      // B16a：登录被拒（账密错/失效）→ 标记可回退；runCheckin 据此回退 Cookie 流程
+      const err = new Error((j && (j.message || j.msg)) || `重新登录失败（HTTP ${r.status}）`);
+      err.reloginRejected = true;
+      throw err;
     }
     const auth = { type: "token", token: j.data.access_token, base };
     cfg.session = { type: "token", token: auth.token, base };
     cfg.session_ts = Date.now();
-    // 3) 登录成功即视为签到成功；余额快照（取不到不致命）
+    // 3) B16b：登录成功后余额快照对比——after > before（或发现 delta）→ 额度到账；
+    //    无变化 → 可能今日已领取；余额取不到不致命（维持「重登发放奖励」提示）。
     let info = null;
     try { info = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 余额取不到不致命 */ }
-    const balanceMsg = napiBalanceMsg(info);
-    const detail = balanceMsg ? `签到成功（重新登录发放奖励），${balanceMsg}` : "签到成功（重新登录发放奖励）";
-    return this._ok("签到成功", detail, "-", balanceMsg || "-", cfg, auth);
+    if (info) {
+      const balanceMsg = napiBalanceMsg(info);
+      if (before) {
+        const totalBefore = before.quota + (before.used_quota || 0);
+        const totalAfter = info.quota + (info.used_quota || 0);
+        const diff = Number((totalAfter - totalBefore).toFixed(6));
+        if (diff > 0) {
+          const detail = `登录成功，当日额度已到账，${balanceMsg}`;
+          return this._ok("签到成功", detail, this._fmtUsd(diff), balanceMsg || "-", cfg, auth);
+        }
+        const detail = balanceMsg ? `登录成功但未检测到余额变化（可能今日已领取），${balanceMsg}` : "登录成功但未检测到余额变化（可能今日已领取）";
+        return this._ok("签到成功", detail, "-", balanceMsg || "-", cfg, auth);
+      }
+      // 有余额但无重登前基线可对比：给余额，不断言到账（保守）
+      const detail = balanceMsg ? `签到成功（重新登录发放奖励），${balanceMsg}` : "签到成功（重新登录发放奖励）";
+      return this._ok("签到成功", detail, "-", balanceMsg || "-", cfg, auth);
+    }
+    const detail = "签到成功（重新登录发放奖励）";
+    return this._ok("签到成功", detail, "-", "-", cfg, auth);
   },
 
   /* Cookie 流程（无账密）：anyrouter.top POST sign_in → fallback checkin；AgentRouter 查 user_info 即签到。

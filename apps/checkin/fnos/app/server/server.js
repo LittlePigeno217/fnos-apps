@@ -315,13 +315,16 @@ class Server {
   async testLogin(siteKey, accountId) {
     const adapter = ADAPTERS[siteKey];
     if (!adapter) return fail(`未知站点：${siteKey}`);
-    const cfg = this._store.getConfig();
-    const site = cfg.sites[siteKey];
-    const accs = (site && Array.isArray(site.accounts) ? site.accounts : []).filter((a) => a.enabled !== false);
-    const acc = accountId ? accs.find((a) => String(a.id) === String(accountId)) : accs[0];
-    if (!acc || !adapter.isConfigured(acc)) return fail(accountId ? "该账号尚未配置凭据" : "该站点没有可用账号");
-    this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
+    // F7-2：testLogin 纳入 _running 保护——签到/测试进行中拒绝并发（服务端兜底，前端按钮已防抖）
+    if (this._running) return fail("签到/测试进行中，请稍候");
+    this._running = true;
     try {
+      const cfg = this._store.getConfig();
+      const site = cfg.sites[siteKey];
+      const accs = (site && Array.isArray(site.accounts) ? site.accounts : []).filter((a) => a.enabled !== false);
+      const acc = accountId ? accs.find((a) => String(a.id) === String(accountId)) : accs[0];
+      if (!acc || !adapter.isConfigured(acc)) return fail(accountId ? "该账号尚未配置凭据" : "该站点没有可用账号");
+      this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
       const r = await adapter.testConnection(acc);
       await this._snapshotBalance(adapter, acc); // 测试连接成功后刷新余额快照（失败不致命）
       // testConnection 内部 _billingDo 401 续期同样只回写内存 session；_snapshotBalance 仅在余额查询
@@ -330,8 +333,10 @@ class Server {
       try { this._store.save(); } catch (e) { console.error(`测试连接后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       return ok({ ...r, account_id: acc.id, account: adapter.getAccountLabel(acc) });
     } catch (err) {
-      this._restoreInjectedProxy(); // 异常路径兜底：确保注入字段不残留
       return fail(err.message || "测试失败");
+    } finally {
+      this._restoreInjectedProxy(); // 异常/正常路径统一还原注入字段
+      this._running = false;
     }
   }
 

@@ -25,6 +25,7 @@
     /* 品牌：蓝紫渐变（logo / 主按钮 / 主要强调） */
     --brand-a: #2563eb; --brand-b: #4f46e5;
     --brand-grad: linear-gradient(135deg, #2563eb, #4f46e5);
+    --hero-num-grad: var(--brand-grad); /* 大数字渐变：亮色沿用品牌渐变，暗色用更亮变体（见下） */
     --brand-soft: rgba(79,70,229,.10);
     /* 强调：行云绿（hover / 光晕 / 状态） */
     --accent: #22c55e;
@@ -55,6 +56,7 @@
       --hover: rgba(148,163,184,.08);
       --brand-a: #3b82f6; --brand-b: #6366f1;
       --brand-grad: linear-gradient(135deg, #2563eb, #4f46e5);
+      --hero-num-grad: linear-gradient(135deg, #818cf8, #6366f1); /* F7-7 暗色大数字用更亮变体，保证深底对比度 */
       --brand-soft: rgba(99,102,241,.16);
       --accent: #22c55e; --accent-strong: #4ade80;
       --accent-soft: rgba(34,197,94,.16);
@@ -233,16 +235,10 @@
   .empty::before { content: "▦"; display: block; margin-bottom: 8px; font-size: 26px;
                    color: var(--accent); opacity: .5; }
 
-  /* ---------- 引导横幅 ---------- */
-  .guide { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; margin-bottom: 14px;
-           border: 1px solid var(--warn); border-radius: 10px; background: var(--warn-bg);
-           font-size: 13px; line-height: 1.6; }
-  .guide b { color: var(--warn); }
-
-  /* ---------- 站点卡片 ---------- */
-  .site { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 12px;
-          background: var(--card); box-shadow: var(--shadow); }
-  .site-head { display: flex; align-items: center; gap: 11px; padding: 13px 15px 0; }
+  /* ---------- 账号配置页标题（creds-title，编辑/添加弹窗共用）---------- */
+  .creds-title { font-size: 12.5px; font-weight: 600; margin-top: 4px; }
+  .creds-title .hint { font-weight: 400; color: var(--muted); font-size: 11.5px; }
+  /* ---------- 站点来源标签（色块 + 站点名）---------- */
   .site-tag { width: 36px; height: 36px; flex: none; border-radius: 10px; display: grid; place-items: center;
               font-weight: 800; font-size: 13px; color: #fff; }
   .site-tag.t1 { background: var(--brand-grad); }
@@ -253,23 +249,6 @@
   .site-tag.t6 { background: linear-gradient(135deg,#00ACC1,#00695C); }
   .site-name { font-weight: 700; font-size: 14.5px; }
   .site-desc { font-size: 11.5px; color: var(--muted); }
-  .badge { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
-  .badge.ok { color: var(--ok); background: var(--ok-glow); }
-  .badge.warn { color: var(--warn); background: var(--warn-bg); }
-  .site-body { padding: 10px 15px 14px; }
-  .site-body .creds-title { font-size: 12.5px; font-weight: 600; margin-top: 4px; }
-  .site-body .creds-title .hint { font-weight: 400; color: var(--muted); font-size: 11.5px; }
-  .site-ops { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
-  .site-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
-                 padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px;
-                 background: transparent; color: var(--muted); cursor: pointer;
-                 transition: color .12s ease, border-color .12s ease; }
-  .site-toggle.ready { color: var(--ok); border-color: var(--ok-border); }
-  .site-toggle:hover { color: var(--accent-strong); border-color: var(--accent); }
-  .site-body[hidden] { display: none; }
-  .res-line { font-size: 12.5px; margin-top: 9px; }
-  .res-line.ok { color: var(--ok); }
-  .res-line.err { color: var(--err); }
 
   /* ---------- 账号为中心卡片（阶段3） ---------- */
   /* 账号卡片：每个账号一张精简卡（网格容器见 .acct-grid-global） */
@@ -326,7 +305,7 @@
   .acct-hero .hero-main { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
   .acct-hero .hero-lb { font-size: 10.5px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
   .acct-hero .hero-num { font-size: 26px; font-weight: 800; letter-spacing: -.5px;
-                         background: var(--brand-grad); -webkit-background-clip: text; background-clip: text;
+                         background: var(--hero-num-grad); -webkit-background-clip: text; background-clip: text;
                          -webkit-text-fill-color: transparent; color: var(--brand-a); }
   .acct-hero.empty .hero-num { background: none; -webkit-text-fill-color: initial; color: var(--muted-2); }
   .acct-hero .hero-delta { margin-left: auto; flex: none; align-self: flex-start; font-size: 12px; font-weight: 700;
@@ -341,30 +320,8 @@
   .login-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
   .login-badge.on { color: var(--ok); border-color: var(--ok-border); }
   .login-badge.on .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-glow); }
-  /* ---------- 历史 ---------- */
-  .hist-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0;
-               border-bottom: 1px dashed var(--border); font-size: 13px; }
-  .hist-item:last-child { border-bottom: none; }
-  .hist-st { flex: none; min-width: 74px; text-align: center; border-radius: 5px; padding: 1px 6px; font-size: 12px; }
-  .hist-st.ok { color: var(--ok); background: var(--ok-glow); }
-  .hist-st.dup { color: var(--warn); background: var(--warn-bg); }
-  .hist-st.err { color: var(--err); background: rgba(201,58,58,.1); }
-  .hist-msg { flex: 1; min-width: 0; word-break: break-all; }
-  .hist-tm { flex: none; color: var(--muted); font-size: 11px; font-family: var(--font-mono); }
-
   /* ---------- 结果摘要 ---------- */
   .summary-line { margin-top: 10px; white-space: pre-line; font-size: 13px; }
-
-  /* ---------- 行云启动器居中卡片（鉴权登录） ---------- */
-  .launcher-card { background: var(--card); border: 1px solid var(--border);
-                   border-radius: 20px; width: min(380px, 92vw); padding: 32px 28px;
-                   box-shadow: var(--shadow-card); text-align: center; backdrop-filter: blur(10px); }
-  .launcher-logo { width: 72px; height: 72px; margin: 0 auto 18px; border-radius: 18px;
-                   display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 26px;
-                   background: var(--brand-grad); box-shadow: 0 12px 30px rgba(79,70,229,.45); }
-  .launcher-title { font-size: 24px; font-weight: 700; letter-spacing: .2px; }
-  .launcher-sub { font-size: 13px; color: var(--muted); margin-top: 6px; }
-  .launcher-tip { margin-top: 18px; font-size: 12px; color: var(--muted-2); }
 
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
@@ -407,7 +364,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.5.2</span>
+      <span class="ver" id="appVersion">v1.5.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -429,7 +386,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
             ＋ 添加账号
           </button>
-          <button class="btn" onclick="runAll()">
+          <button class="btn" id="runAllBtn" onclick="runAll()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
             立即签到全部
           </button>
@@ -554,7 +511,7 @@
     <div id="modalAccounts"></div>
     <!-- 账号操作：测试 / 签到 / 删除（仅作用于当前账号） -->
     <div class="acct-actions" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
-      <button type="button" class="btn" onclick="testModalAccount(MODAL_KEY, MODAL_AID)">测试</button>
+      <button type="button" class="btn" onclick="testModalAccount(this, MODAL_KEY, MODAL_AID)">测试</button>
       <button type="button" class="btn" onclick="checkinModalAccount()">签到</button>
       <button type="button" class="btn" style="color:var(--err);border-color:var(--err)" onclick="deleteModalAccount()">删除</button>
     </div>
@@ -861,14 +818,17 @@ function renderAcctCard(key, a, cap) {
   // F3 修复：徽标三段语义——① 有 session →「已登录」；② 无 session 但凭据齐全（账密/cookie 可签到）
   // → 中性「凭据已配置」；③ 无凭据 →「未配置」。依赖 session 的站点（无交互登录能力）行为不变。
   const configured = a.configured === true;
+  // F7-1：登录徽标接入交互登录弹窗——未配置/凭据已配置点击 → siteLogin(key, accountId)；
+  // 已登录点击仅提示（无操作，避免误开登录流覆盖会话）；站点无交互登录能力不渲染徽标。
   let loginBadge = "";
   if (cap || hasSession) {
+    const badgeOn = ' onclick="badgeLoginAction(\'' + key + "','" + esc(a.id || "") + '\',' + (hasSession ? "true" : "false") + ')" style="cursor:pointer"';
     if (hasSession) {
-      loginBadge = '<span class="login-badge on"><span class="dot"></span>已登录</span>';
+      loginBadge = '<span class="login-badge on"' + badgeOn + '><span class="dot"></span>已登录</span>';
     } else if (configured) {
-      loginBadge = '<span class="login-badge"><span class="dot"></span>凭据已配置</span>';
+      loginBadge = '<span class="login-badge"' + badgeOn + '><span class="dot"></span>凭据已配置</span>';
     } else {
-      loginBadge = '<span class="login-badge"><span class="dot"></span>未配置</span>';
+      loginBadge = '<span class="login-badge"' + badgeOn + '><span class="dot"></span>未配置</span>';
     }
   }
   // 余额 / 积分行：仅 supports_balance 的账号显示。
@@ -920,7 +880,7 @@ function renderAcctCard(key, a, cap) {
     '<div class="acct-meta">' + dayBadge + "</div>" +
     '<div class="acct-actions">' +
       editBtn + checkinBtn +
-      '<button class="btn btn-mini" onclick="cardTestAccount(\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
+      '<button class="btn btn-mini" onclick="cardTestAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
       '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
     "</div>" +
   "</div>";
@@ -944,17 +904,23 @@ async function probeLoginCaps() {
  *      → 成功刷新总览（账号 has_session 变更）。
  * 当前 form 模式后端一步产出会话（init 即 ready），弹窗直接反馈「已登录」；
  * 轮询/二维码分支为 qr/url 模式预留（后端扩展时前端零改动即可点亮）。 */
-let LOGIN_CTX = { key: "", accountId: "", timer: null, tries: 0 };
+let LOGIN_CTX = { key: "", accountId: "", timer: null, tries: 0, token: "", done: false };
+
+/** F7-1：登录徽标点击——三态：未配置/凭据已配置 → 打开交互登录弹窗（siteLogin）；已登录 → 提示无操作 */
+async function badgeLoginAction(key, accountId, loggedIn) {
+  if (loggedIn) { toast("该账号已登录，可点击「测试」验证连接，或「签到」执行签到", "warn"); return; }
+  await siteLogin(key, accountId);
+}
 
 function closeLoginModal() {
   if (LOGIN_CTX.timer) { clearTimeout(LOGIN_CTX.timer); LOGIN_CTX.timer = null; }
-  LOGIN_CTX = { key: "", accountId: "", timer: null, tries: 0 };
+  LOGIN_CTX = { key: "", accountId: "", timer: null, tries: 0, token: "", done: false };
   $("loginModal").style.display = "none";
 }
 
 /** 账号行「登录」：打开交互登录弹窗（后端负责触网，前端只驱动流程） */
 async function siteLogin(key, accountId) {
-  LOGIN_CTX = { key, accountId: accountId || "", timer: null, tries: 0 };
+  LOGIN_CTX = { key, accountId: accountId || "", timer: null, tries: 0, token: "", done: false };
   $("loginTag").textContent = siteShort(key);
   $("loginTag").className = "site-tag " + siteTagClass(key);
   $("loginTitle").textContent = siteName(key) + " · 交互登录";
@@ -986,7 +952,8 @@ async function siteLogin(key, accountId) {
       : "";
     $("loginState").innerHTML = esc(d.message || "手机端 CodeBuddy 扫码即可自动添加账号") + "，请扫码后等待…" + link;
     $("loginState").className = "muted";
-    loginPoll(d.token || "");
+    LOGIN_CTX.token = d.token || ""; // F7-4：存 token 供页面恢复可见后重启轮询
+    loginPoll(LOGIN_CTX.token);
     return;
   }
   // form 模式：init 即 ready
@@ -1001,11 +968,13 @@ async function siteLogin(key, accountId) {
 async function loginPoll(token) {
   const key = LOGIN_CTX.key;
   if (!key) return;
+  if (document.hidden) return; // F7-4：页面隐藏暂停轮询（恢复可见由 visibilitychange 重启）
   LOGIN_CTX.tries += 1;
-  if (LOGIN_CTX.tries > 150) { $("loginState").textContent = "扫码会话约 5 分钟内有效，超时请重试"; $("loginState").className = "err"; return; }
+  if (LOGIN_CTX.tries > 150) { LOGIN_CTX.done = true; $("loginState").textContent = "扫码会话约 5 分钟内有效，超时请重试"; $("loginState").className = "err"; return; }
   const r = await call("checkin/" + key + "_login/status" + (token ? "?token=" + encodeURIComponent(token) : ""));
   const state = r && r.success && r.data ? r.data.state : "";
   if (state === "ready") {
+    LOGIN_CTX.done = true;
     $("loginState").textContent = "登录成功";
     $("loginState").className = "ok";
     $("loginQr").hidden = true;
@@ -1015,6 +984,7 @@ async function loginPoll(token) {
     return;
   }
   if (state === "expired" || (r && r.success === false)) {
+    LOGIN_CTX.done = true;
     $("loginState").textContent = (r && r.message) || "二维码已失效，请重试";
     $("loginState").className = "err";
     return;
@@ -1028,17 +998,26 @@ async function loginPoll(token) {
  *   - 账号密码（password/password_cookie）：填账号密码 → 「登录并自动获取 Cookie」→ 后端登录+自动落库
  *   - Cookie：手动粘贴 Cookie / token（恩山、WorkBuddy 高级 fallback）
  * 保留现有站点编辑弹窗（remark/启用/删除/排序/导入导出）不变。 */
-let ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0 };
+let ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false };
+
+/** F7-8 敏感字段 DOM 清理：清空容器内全部密码输入框（登录失败/弹窗关闭时避免明文滞留 DOM） */
+function clearPwdFields(rootId) {
+  const root = $("" + rootId);
+  if (!root) return;
+  const inputs = root.querySelectorAll('input[type="password"]');
+  inputs.forEach((inp) => { inp.value = ""; });
+}
 
 function closeAddModal() {
   if (ADD_CTX.qrTimer) { clearTimeout(ADD_CTX.qrTimer); ADD_CTX.qrTimer = null; }
-  ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0 };
+  ADD_CTX = { key: "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false };
+  clearPwdFields("addModal"); // F7-8：关闭时清空密码输入
   $("addModal").style.display = "none";
 }
 
 /** 打开添加账号窗口。key 为空 → 站点选择（pickKeys 限定候选）；否则直接进入该站点的登录方式 tab。 */
 function openAddAccount(key, pickKeys) {
-  ADD_CTX = { key: key || "", tab: "", qrTimer: null, qrTries: 0 };
+  ADD_CTX = { key: key || "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false };
   $("addModal").style.display = "flex";
   if (!key) {
     $("addTag").textContent = "＋";
@@ -1220,6 +1199,7 @@ async function submitAddPassword() {
     setTimeout(() => { if (ADD_CTX.key === key) closeAddModal(); }, 1400);
   } else {
     $("addpwState").textContent = "✗ " + ((r && r.message) || "登录失败"); $("addpwState").className = "err";
+    clearPwdFields("addModal"); // F7-8：登录失败即清空密码输入，避免明文滞留 DOM
   }
 }
 
@@ -1295,17 +1275,20 @@ async function renderAddQrPanel(key) {
     ? '<div style="margin-top:6px"><a href="' + esc(d.login_url || d.url) + '" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent-strong)">或点此在浏览器打开授权</a></div>'
     : "";
   $("addQrTip").innerHTML = esc(d.message || "手机扫码即可自动添加账号") + link;
-  addQrPoll(key, d.token || "");
+  ADD_CTX.qrToken = d.token || ""; // F7-4：存 token 供页面恢复可见后重启轮询
+  addQrPoll(key, ADD_CTX.qrToken);
 }
 
 async function addQrPoll(key, token) {
   if (ADD_CTX.key !== key || ADD_CTX.tab !== "qr") return;
+  if (document.hidden) return; // F7-4：页面隐藏暂停轮询（恢复可见由 visibilitychange 重启）
   ADD_CTX.qrTries += 1;
-  if (ADD_CTX.qrTries > 150) { $("addQrTip").textContent = "扫码会话约 5 分钟内有效，超时请重新打开"; $("addQrTip").className = "add-panel-tip err"; return; }
+  if (ADD_CTX.qrTries > 150) { ADD_CTX.qrDone = true; $("addQrTip").textContent = "扫码会话约 5 分钟内有效，超时请重新打开"; $("addQrTip").className = "add-panel-tip err"; return; }
   const r = await call("checkin/" + key + "_login/status" + (token ? "?token=" + encodeURIComponent(token) : ""));
   if (ADD_CTX.key !== key || ADD_CTX.tab !== "qr") return;
   const state = r && r.success && r.data ? r.data.state : "";
   if (state === "ready") {
+    ADD_CTX.qrDone = true;
     const acc = (r.data && r.data.account) || {};
     $("addQrBox").innerHTML = '<div class="add-preview" style="margin:0">✓ 登录成功<br>账号：' + esc(acc.label || "") + "</div>";
     $("addQrTip").textContent = "已自动添加账号"; $("addQrTip").className = "add-panel-tip";
@@ -1315,17 +1298,24 @@ async function addQrPoll(key, token) {
     return;
   }
   if (state === "expired" || (r && r.success === false)) {
+    ADD_CTX.qrDone = true;
     $("addQrTip").textContent = (r && r.message) || "二维码已失效，请重新打开"; $("addQrTip").className = "add-panel-tip err";
     return;
   }
   ADD_CTX.qrTimer = setTimeout(() => addQrPoll(key, token), 2000);
 }
 
-/** 账号行「测试」：复用 test_login（需已保存账号 id） */
-async function cardTestAccount(key, accountId) {
+/** 账号行「测试」：复用 test_login（需已保存账号 id）。F7-2：按钮 disabled + spinner 防抖，响应后恢复。 */
+async function cardTestAccount(btn, key, accountId) {
   if (!accountId) { toast("请先在编辑弹窗保存后再测试", "warn"); return; }
-  const r = await call("test_login", "POST", { site: key, account_id: accountId });
-  toast(r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败"), r.success ? "ok" : "err");
+  const orig = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>测试中'; }
+  try {
+    const r = await call("test_login", "POST", { site: key, account_id: accountId });
+    toast(r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败"), r.success ? "ok" : "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
 }
 
 /** 账号行「删除」：从当前账号集合剔除该 id 后 save_config（留空字段由后端保留原值）。返回是否删除成功。 */
@@ -1416,6 +1406,7 @@ function openAccountEditor(key, accountId) {
 }
 
 function closeSiteModal() {
+  clearPwdFields("siteModal"); // F7-8：编辑弹窗含密码敏感字段，关闭时清空明文
   $("siteModal").style.display = "none";
   MODAL_KEY = "";
   MODAL_AID = "";
@@ -1540,35 +1531,50 @@ async function deleteModalAccount() {
   const ok = await cardDeleteAccount(MODAL_KEY, MODAL_AID);
   if (ok) closeSiteModal();
 }
-async function testModalAccount(key, accountId) {
+async function testModalAccount(btn, key, accountId) {
   const st = $("modalStatus");
   if (!accountId) { st.textContent = "请先保存后再测试新账号"; return; }
-  const r = await call("test_login", "POST", { site: key, account_id: accountId });
-  st.textContent = r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败");
-  toast(st.textContent, r.success ? "ok" : "err");
+  const orig = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>测试中'; }
+  try {
+    const r = await call("test_login", "POST", { site: key, account_id: accountId });
+    st.textContent = r.success ? "✓ " + ((r.data && r.data.message) || "测试成功") : "✗ " + (r.message || "测试失败");
+    toast(st.textContent, r.success ? "ok" : "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
 }
 
 async function runAll() {
-  $("runStatus").textContent = "执行中…";
-  $("runResult").textContent = "";
-  const r = await call("run", "POST", {});
-  const data = r.data || {};
-  const lines = (data.results || []).map((x) => {
-    const who = x.account ? `（${x.account}）` : "";
-    return x.error ? "✗ " + x.site_name + who + "：" + x.error
-      : (x.status === "签到成功" ? "✓ " : "○ ") + x.site_name + who + "：" + x.message;
-  });
-  const allOk = (data.results || []).length > 0 && (data.results || []).every((x) => x.status !== "执行失败");
-  $("runResult").textContent = lines.join("\n") || (r.message || "未执行");
-  $("runResult").style.color = allOk ? "var(--ok)" : (lines.length ? "var(--err)" : "var(--muted)");
-  $("runSummary").textContent = data.summary ? `${data.summary}（${data.success_count}/${data.total}）` : "";
-  $("runStatus").textContent = "";
-  logPoll();
+  const btn = $("runAllBtn");
+  if (btn && btn.disabled) return; // F7-3 防抖：执行中禁止重复触发
+  let runAllOrig = "";
+  if (btn) { runAllOrig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span>签到执行中…'; }
+  try {
+    $("runStatus").textContent = "执行中…";
+    $("runResult").textContent = "";
+    const r = await call("run", "POST", {});
+    const data = r.data || {};
+    const lines = (data.results || []).map((x) => {
+      const who = x.account ? `（${x.account}）` : "";
+      return x.error ? "✗ " + x.site_name + who + "：" + x.error
+        : (x.status === "签到成功" ? "✓ " : "○ ") + x.site_name + who + "：" + x.message;
+    });
+    const allOk = (data.results || []).length > 0 && (data.results || []).every((x) => x.status !== "执行失败");
+    $("runResult").textContent = lines.join("\n") || (r.message || "未执行");
+    $("runResult").style.color = allOk ? "var(--ok)" : (lines.length ? "var(--err)" : "var(--muted)");
+    $("runSummary").textContent = data.summary ? `${data.summary}（${data.success_count}/${data.total}）` : "";
+    $("runStatus").textContent = "";
+    logPoll();
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = runAllOrig; }
+  }
 }
 /* ── 实时运行日志 ── */
 let logState = { offset: 0, paused: false, timer: null };
 async function logPoll() {
   if (logState.paused) return;
+  if (document.hidden) return; // F7-4：页面隐藏暂停轮询（恢复可见由 visibilitychange 立即补一次）
   const r = await call("get_logs?after=" + logState.offset, "GET", null, 10000);
   const meta = $("logMeta");
   if (!r.success) { if (meta) meta.textContent = r.message; return; }
@@ -1680,7 +1686,7 @@ document.addEventListener("change", (e) => {
   }
 });
 
-function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); } // F7-5：补单引号转义（&#39;，纵深防御）
 function updateChip(on) {
   const label = on ? "自动签到已开启" : "未启用";
   [["appChip", "appChipText"]].forEach(([cid, tid]) => {
@@ -1780,7 +1786,20 @@ async function loadAll(attempt = 1) {
 loadAll();
 // 实时日志轮询（4s；进入日志页时立即拉取）
 logState.timer = setInterval(logPoll, 4000);
-setInterval(() => { call("get_config").then((r) => { if (r.success) updateChip(!!r.data.enabled); }); refreshOverview(); }, 30000);
+setInterval(() => {
+  if (document.hidden) return; // F7-4：页面隐藏暂停总览轮询
+  call("get_config").then((r) => { if (r.success) updateChip(!!r.data.enabled); });
+  refreshOverview();
+}, 30000);
+// F7-4：页面隐藏暂停轮询（logPoll/refreshOverview/QR 均在各自入口提前返回）；
+// 恢复可见立即补一次总览与日志，并重启弹窗二维码轮询（未达终态时）。
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  refreshOverview();
+  logPoll();
+  if (LOGIN_CTX.key && LOGIN_CTX.token != null && !LOGIN_CTX.timer && !LOGIN_CTX.done) loginPoll(LOGIN_CTX.token);
+  if (ADD_CTX.key && ADD_CTX.tab === "qr" && !ADD_CTX.qrTimer && !ADD_CTX.qrDone) addQrPoll(ADD_CTX.key, ADD_CTX.qrToken);
+});
 </script>
 </body>
 </html>
