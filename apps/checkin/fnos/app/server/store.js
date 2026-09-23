@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.5.4",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.5.5",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -325,6 +325,8 @@ class Store {
     for (const r of results) {
       if (!r || r.site_key == null || r.account_id == null) continue;
       const k = `${String(r.site_key)}/${String(r.account_id)}`; // 键统一 String 归一，防数字/字符串不一致
+      // 封锁类失败（如易破解出口 IP 防爆破）：IP 级不可抗，封锁窗口（约 10 分钟）内补签必然再失败且延长封锁 → 当日不补签
+      if (r.status === "执行失败" && String(r.error || r.message || "").includes("封锁")) continue;
       if (r.status === "执行失败") cfg.sched_today_fail[k] = true;
       else if (cfg.sched_today_fail[k]) delete cfg.sched_today_fail[k];
     }

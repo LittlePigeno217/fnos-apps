@@ -525,6 +525,14 @@ const YPOJIE = {
     return { Origin: this.base, Referer: `${this.base}${this.vipPath}`, "X-Requested-With": "XMLHttpRequest" };
   },
 
+  /** 站点防爆破：该出口 IP 被暂时封锁（多次登录失败触发，约 10 分钟自解） */
+  _blockedIpMessage() {
+    return "易破解：当前出口 IP 被暂时封锁（多次登录失败触发防爆破，约 10 分钟自动解除），期间无法登录签到；可开启该站点代理更换出口，或稍后自动重试";
+  },
+  _isIpBlocked(text) {
+    return !!String(text || "").includes("因多次登录失败已被暂时封锁");
+  },
+
   /** 站内公告 /1.html：重复登录触发安全机制后，需在链接后加 ?cf=1 绕过 */
   _blockedPage(page) {
     return (
@@ -553,6 +561,9 @@ const YPOJIE = {
 
   _validateLoginPage(page) {
     if (page.includes("Hi,") || page.includes("今日签到") || page.includes("个人中心")) return;
+    if (this._isIpBlocked(page)) {
+      throw new Error(this._blockedIpMessage());
+    }
     // 易破解安全机制（站内公告 /1.html）
     if (page.includes("您不能访问此页面")) {
       throw new Error("易破解登录安全机制触发：请在浏览器访问 https://www.ypojie.com/?cf=1 后重试");
@@ -602,6 +613,10 @@ const YPOJIE = {
       });
     }
     const loginResp = await s.postForm(this.base + this.loginPath, form, { headers: this._loginHeaders(), timeout: 15000, useProxy: cfg.use_proxy });
+    // 出口 IP 防爆破封锁检测（先于验证码/凭证判定：封锁是 IP 级，重试无意义）
+    if (this._isIpBlocked(loginResp.text)) {
+      throw new Error(this._blockedIpMessage());
+    }
     // 登录提交后：精确检查验证码错误提示（页面正常含 captcha 字段不算失败）
     if (loginResp.text && loginResp.text.includes("Captcha didn't verify")) {
       throw new Error("易破解登录验证码未通过：请稍后重试，或检查网络/DNS（公告 /5657.html）");
