@@ -29,7 +29,7 @@ const RAW_MANIFEST_URL = `https://raw.githubusercontent.com/${UPDATE_REPO}/main/
 const FPK_PREFIX = "checkin_";
 
 // 当前版本：编译时由 build.sh 注入（缺省读 manifest）
-const CURRENT_VERSION = process.env.CHECKIN_VERSION || "1.5.1";
+const CURRENT_VERSION = process.env.CHECKIN_VERSION || "1.5.2";
 
 // 更新目录：应用数据目录 updates/
 function updateDir(dataDir) {

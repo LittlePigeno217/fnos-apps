@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.5.1",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.5.2",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -324,9 +324,20 @@ class Store {
     }
     for (const r of results) {
       if (!r || r.site_key == null || r.account_id == null) continue;
-      const k = `${r.site_key}/${r.account_id}`;
+      const k = `${String(r.site_key)}/${String(r.account_id)}`; // 键统一 String 归一，防数字/字符串不一致
       if (r.status === "执行失败") cfg.sched_today_fail[k] = true;
       else if (cfg.sched_today_fail[k]) delete cfg.sched_today_fail[k];
+    }
+  }
+
+  /** B18 修复：账号签到成功 → 从今日失败集移除（撤销失败标记，补签列表不再重跑）。
+   *  幂等（不在集合中则无副作用）；仅变更内存，落盘由调用方 runOnce/runAccount 的 save() 完成。
+   *  与 recordCheckinResults 的成功分支同语义，供成功路径显式调用。 */
+  schedCheckinSuccess(site, accountId) {
+    if (site == null || accountId == null) return;
+    const cfg = this._cfg;
+    if (cfg.sched_today_fail && typeof cfg.sched_today_fail === "object") {
+      delete cfg.sched_today_fail[`${String(site)}/${String(accountId)}`];
     }
   }
 
@@ -377,7 +388,9 @@ class Store {
     }
     if (patch.feishu_webhook !== undefined) {
       const v = String(patch.feishu_webhook || "").trim();
-      if (v) cfg.feishu_webhook = v; // 留空 = 不修改
+      // F6 修复：空串 / "__clear__"（前端「留空保存」显式清除）→ 清除字段；有值 → 更新
+      if (v === "" || v === "__clear__") cfg.feishu_webhook = "";
+      else cfg.feishu_webhook = v;
     }
     // 全局代理（无敏感值，允许显式清空——留空即关闭代理地址）
     if (patch.proxy_enabled !== undefined) cfg.proxy_enabled = !!patch.proxy_enabled;
@@ -465,6 +478,15 @@ class Store {
     this.save();
   }
 
+  /** 配置/history 文件绝对路径（B4 失败日志含路径，便于人工排查） */
+  get configPath() {
+    return this._path;
+  }
+
+  get historyPath() {
+    return this._historyPath;
+  }
+
   /* ── 历史记录 ─────────────────────────────── */
   getHistory(limit = 50) {
     try {
@@ -484,6 +506,24 @@ class Store {
       arr = [];
     }
     arr.unshift(record);
+    if (arr.length > 500) arr = arr.slice(0, 500);
+    fs.mkdirSync(this._dataDir, { recursive: true });
+    fs.writeFileSync(this._historyPath, JSON.stringify(arr, null, 2));
+  }
+
+  /** B4/B13：整轮一次批量追加写入（单次读 + 单次写，替代 N 账号 → N×全文件 I/O）。
+   *  语义与「按 records 顺序逐个 appendHistory」完全一致（records 末尾记录最终排在最前）；
+   *  任一条失败整体单次抛出（由调用方捕获记日志，不抹掉已算出的整轮结果）。 */
+  appendHistoryBatch(records) {
+    if (!Array.isArray(records) || !records.length) return;
+    let arr = [];
+    try {
+      arr = JSON.parse(fs.readFileSync(this._historyPath, "utf8"));
+      if (!Array.isArray(arr)) arr = [];
+    } catch {
+      arr = [];
+    }
+    for (const rec of records) arr.unshift(rec);
     if (arr.length > 500) arr = arr.slice(0, 500);
     fs.mkdirSync(this._dataDir, { recursive: true });
     fs.writeFileSync(this._historyPath, JSON.stringify(arr, null, 2));

@@ -167,39 +167,13 @@ async function applyHotfix(appDir, dataDir, creds) {
   if (!changedAll.length) {
     return { success: true, applied: [], message: "已是最新功能版本" };
   }
-  const now = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupDir = path.join(dataDir, "patches", "backup", now);
-  const applied = [];
-  for (const item of changedAll) {
-    const { rel, info } = item;
-    const p = path.join(appDir, rel);
-    // 备份旧文件（到应用数据目录，升级保留且不回写安装目录）
-    const bak = path.join(backupDir, rel);
-    fs.mkdirSync(path.dirname(bak), { recursive: true });
-    try {
-      fs.copyFileSync(p, bak);
-    } catch {
-      /* 原文件不存在则不备份 */
-    }
-    // 下载新文件（raw 直链，安装路径→仓库路径；带缓存破坏参数；raw 失败回退镜像）
-    const rawUrl = bust(`${RAW_BASE}/${rawRel(rel)}`);
-    let buf = await fetchWithMirror(rawUrl);
-    if (sha256Hex(buf) !== String(info.sha256 || "")) {
-      // CDN 传播窗口：清单与文件异步传播时可能短暂不一致 → 换源重试一次
-      buf = await fetchWithMirror(bust(`${RAW_BASE}/${rawRel(rel)}`));
-    }
-    if (sha256Hex(buf) !== String(info.sha256 || "")) {
-      try { fs.unlinkSync(bak); } catch { /* ignore */ }
-      throw new Error(`SHA-256 校验失败：${rel}（CDN 缓存未同步，请稍后重试）`);
-    }
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    const tmp = p + ".hotfix.tmp";
-    fs.writeFileSync(tmp, buf);
-    fs.chmodSync(tmp, 0o744);
-    fs.renameSync(tmp, p);
-    applied.push(rel);
-  }
-  // 记录
+  // B8：逐文件替换（先备份 → 下载 → 替换 → 记录），任一失败自动回滚已替换文件。
+  // downloader 注入下载（raw + 镜像 + 缓存破坏）；CDN 窗口不一致在 loop 内重试一次。
+  const downloader = async (rel) => fetchWithMirror(bust(`${RAW_BASE}/${rawRel(rel)}`));
+  const appliedRes = await applyFileUpdates(appDir, dataDir, changedAll, downloader);
+  if (!appliedRes.success) return appliedRes; // B8：失败信封含「已回滚 N 个文件」；不写 version、不触发重启
+  const applied = appliedRes.applied;
+  // 记录（仅全部替换成功后才写 current.json）
   fs.mkdirSync(path.join(dataDir, "patches"), { recursive: true });
   fs.writeFileSync(
     path.join(dataDir, "patches", "current.json"),
@@ -219,7 +193,75 @@ async function applyHotfix(appDir, dataDir, creds) {
   if (restart.ok) {
     return { success: true, applied, message: `功能已更新并自动重启（v${manifest.version}，${applied.length} 文件）`, restarting: true, version: manifest.version };
   }
-  return { success: true, applied, message: `功能已更新，自动重启未生效（未配置 fnOS 凭据；请在应用中心重启应用）`, need_manual_restart: true, version: manifest.version };
+  return { success: true, applied, message: `功能已更新，需手动重启后生效（自动重启不可用：${restart.err}；请在应用中心重启应用）`, need_manual_restart: true, version: manifest.version };
+}
+
+/**
+ * B8：逐文件应用热更——每文件「先备份现状 → downloader → SHA-256 校验（CDN 未同步时换源重试一次）→
+ * 原子替换 → 记录 applied」。任一文件失败：catch 内用已写备份逐文件恢复已替换文件（原文件不存在 →
+ * 删除本次替换产物），返回失败信封（含已回滚文件数），杜绝批量替换中途失败留下「混合版本代码」。
+ * 独立导出以便可注入 downloader / 令写入失败做回滚验证（mock）。
+ * @param {string} appDir  安装目录
+ * @param {string} dataDir 应用数据目录（备份落在 dataDir/patches/backup/<时间戳>/，升级保留不回写安装目录）
+ * @param {Array<{rel:string, info:Object}>} changedAll 待更新清单项
+ * @param {(rel:string)=>Promise<Buffer>} downloader 文件下载器
+ * @returns {Promise<{success:true, applied:string[], backupDir:string} | {success:false, message:string, applied:[], rolled_back:number}>}
+ */
+async function applyFileUpdates(appDir, dataDir, changedAll, downloader) {
+  const now = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupDir = path.join(dataDir, "patches", "backup", now); // 备份目录名含时间戳
+  const applied = [];
+  try {
+    for (const item of changedAll) {
+      const { rel, info } = item;
+      const p = path.join(appDir, rel);
+      // 备份旧文件（到应用数据目录，升级保留且不回写安装目录）
+      const bak = path.join(backupDir, rel);
+      fs.mkdirSync(path.dirname(bak), { recursive: true });
+      try {
+        fs.copyFileSync(p, bak);
+      } catch {
+        /* 原文件不存在则不备份 */
+      }
+      // 下载新文件（raw 直链，安装路径→仓库路径；带缓存破坏参数；raw 失败回退镜像）
+      let buf = await downloader(rel);
+      if (sha256Hex(buf) !== String(info.sha256 || "")) {
+        // CDN 传播窗口：清单与文件异步传播时可能短暂不一致 → 换源重试一次
+        buf = await downloader(rel);
+      }
+      if (sha256Hex(buf) !== String(info.sha256 || "")) {
+        try { fs.unlinkSync(bak); } catch { /* ignore */ }
+        throw new Error(`SHA-256 校验失败：${rel}（CDN 缓存未同步，请稍后重试）`);
+      }
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      const tmp = p + ".hotfix.tmp";
+      fs.writeFileSync(tmp, buf);
+      fs.chmodSync(tmp, 0o744);
+      fs.renameSync(tmp, p);
+      applied.push(rel);
+    }
+  } catch (err) {
+    // 回滚已替换文件：用写盘备份逐文件恢复（保持一致性），失败逐个记日志不中断其余回滚
+    let rolledBack = 0;
+    for (const rel of applied) {
+      const p = path.join(appDir, rel);
+      const bak = path.join(backupDir, rel);
+      try {
+        if (fs.existsSync(bak)) {
+          fs.copyFileSync(bak, p); // 备份覆盖回安装目录
+          rolledBack += 1;
+        } else if (fs.existsSync(p)) {
+          fs.unlinkSync(p); // 原文件本来不存在 → 删除本次替换产物
+          rolledBack += 1;
+        }
+      } catch (e) {
+        console.error(`热更回滚失败（${rel}）：${(e && e.message) || e}`);
+      }
+    }
+    console.error(`热更应用失败：${(err && err.message) || err}（已回滚 ${rolledBack} 个文件）`);
+    return { success: false, message: `${(err && err.message) || err}（已回滚 ${rolledBack} 个文件）`, applied: [], rolled_back: rolledBack };
+  }
+  return { success: true, applied, backupDir };
 }
 
 function sha256Hex(buf) {
@@ -288,4 +330,4 @@ function runCli(cli, args, env) {
   });
 }
 
-module.exports = { checkHotfix, applyHotfix, MANIFEST_URL, sha256File };
+module.exports = { checkHotfix, applyHotfix, applyFileUpdates, MANIFEST_URL, sha256File };

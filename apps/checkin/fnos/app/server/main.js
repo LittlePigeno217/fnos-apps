@@ -186,17 +186,43 @@ function tickEveryMinute() {
 }
 
 /* ── HTTP 路由 ─────────────────────────────────────────────── */
-function readBody(req) {
+// B10：请求体大小上限（1MB）——防 socket 直连发送超大 body 拖垮内存
+const MAX_BODY_BYTES = 1024 * 1024;
+
+/** 读取并解析 JSON body。body 超过 1MB 立即以 413 语义信封拒绝（请求体过大（上限 1MB））
+ *  并关闭连接，resolve(null) 告知调用方「响应已发、勿再写」。JSON 解析失败回落 {}（与原行为一致）。 */
+function readBody(req, res) {
   return new Promise((resolve) => {
     const chunks = [];
-    req.on("data", (c) => chunks.push(c));
+    let size = 0;
+    let over = false;
+    const rejectTooBig = () => {
+      if (over) return;
+      over = true;
+      try {
+        if (res && !res.headersSent) {
+          res.writeHead(413, { "Content-Type": "application/json; charset=utf-8", Connection: "close" });
+          res.end(JSON.stringify({ success: false, message: "请求体过大（上限 1MB）" }));
+        }
+      } catch (e) { /* 连接可能已关闭 */ }
+      // 响应写入完成后再强制关闭底层连接（终止客户端继续上传，防内存/连接占用）
+      res && res.once ? res.once("finish", () => { try { req.destroy(); } catch {} }) : req.destroy();
+      resolve(null);
+    };
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) { rejectTooBig(); return; }
+      chunks.push(c);
+    });
     req.on("end", () => {
+      if (over) return;
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
       } catch {
         resolve({});
       }
     });
+    req.on("error", () => { if (!over) resolve({}); });
   });
 }
 
@@ -264,16 +290,17 @@ const ACTION_HANDLERS = {
   checkHotfix: () => checkHotfix(APP_DIR).then((r) => ({ success: true, data: r })).catch((err) => ({ success: false, message: "检查功能更新失败: " + err.message })),
   async applyHotfix() {
     const r = await applyHotfix(APP_DIR, DATA_DIR, null);
-    if (r.success && r.version) {
+    // B9 修复：版本号仅在「重启已确认调度（r.restarting）」后写入。重启失败/需手动重启时
+    // 不写 version（保持旧版），避免 UI 显示新版而进程仍在跑旧代码；生效条件由热更消息明示。
+    if (r.restarting && r.version) {
       // 功能更新后版本号递增（单一事实源：热更清单版本写入 config，重启后仍显示新版本）
       try { store.setVersion(r.version); } catch { /* 版本写入失败不影响更新 */ }
     }
     if (r.restarting) {
       setTimeout(() => process.exit(0), 3000); // hotfix.js 内部已尝试系统重启；此兜底由 fnOS 拉起
+      return { success: true, message: r.message, data: { restarting: true, applied: r.applied, version: r.version } };
     }
-    return r.restarting
-      ? { success: true, message: r.message, data: { restarting: true, applied: r.applied, version: r.version } }
-      : { success: r.success, message: r.message, data: r };
+    return { success: r.success, message: r.message, data: r };
   },
 };
 
@@ -369,19 +396,22 @@ async function handle(req, res) {
         const phase = m[2];
         if (phase === "init") {
           if (method !== "POST") return send({ success: false, message: "405 方法不允许" });
-          const body = await readBody(req);
+          const body = await readBody(req, res);
+          if (body === null) return; // B10：413 已响应，连接已关闭
           return send(await api.loginFlowInit({ site, account_id: body.account_id, provider: body.provider, base_url: body.base_url }));
         }
         if (phase === "oauth") {
           // OAuth 回调完成：粘贴授权回调链接 → 换 token → 落账号
           if (method !== "POST") return send({ success: false, message: "405 方法不允许" });
-          const body = await readBody(req);
+          const body = await readBody(req, res);
+          if (body === null) return; // B10：413 已响应，连接已关闭
           return send(await api.loginFlowOAuthComplete({ site, token: body.token, callback_url: body.callback_url }));
         }
         if (phase === "password") {
           // 账号密码登录（form 站点通用入口）：提交凭据即时登录 → 自动获取会话 → 落账号
           if (method !== "POST") return send({ success: false, message: "405 方法不允许" });
-          const body = await readBody(req);
+          const body = await readBody(req, res);
+          if (body === null) return; // B10：413 已响应，连接已关闭
           return send(await api.loginFlowPassword({ site, fields: body.fields, remark: body.remark, account_id: body.account_id }));
         }
         if (method !== "GET") return send({ success: false, message: "405 方法不允许" });
@@ -401,7 +431,8 @@ async function handle(req, res) {
 
     let body = {};
     if (method === "POST") {
-      body = await readBody(req);
+      body = await readBody(req, res);
+      if (body === null) return; // B10：413 已响应，连接已关闭
     }
     const ctx = { req, res, send, sendFile };
     const result = await handler(body, ctx);

@@ -1,18 +1,18 @@
 {
-  "version": "1.5.1",
-  "generated_at": "2026-09-23T02:08:57Z",
+  "version": "1.5.2",
+  "generated_at": "2026-09-23T02:35:09Z",
   "files": {
     "server/hotfix.js": {
-      "sha256": "7a76e254897a5ff12ef37a94af26689737d51ebb03e0c111ced040f0a6be1d7b",
-      "size": 11828
+      "sha256": "26c2a433eff3635749c7facf20df4ab120819549a37aca748cdb764e0c1c4624",
+      "size": 14568
     },
     "server/httpc.js": {
-      "sha256": "f16d48cbb0f50a34bc67e8aafb9fb2872b628564763da0c66a1de628a3fad0f3",
-      "size": 12604
+      "sha256": "587e6584a29f51c5c5390adca822be8053f03137020ba3c0e2f76e88ee6e6b52",
+      "size": 13083
     },
     "server/main.js": {
-      "sha256": "caf249eae85f21891be5817456bc6b55d7420002e65da435bf161f64392f0c5a",
-      "size": 21278
+      "sha256": "293da81f126b7b83511a7d77f7e6e785833dd443251baeb9c6da8d55e102698c",
+      "size": 23101
     },
     "server/notify.js": {
       "sha256": "fbbf8bee81cc15627a0f677f26983887089dd6538c43303e4873cb9b3a8ac2ac",
@@ -27,24 +27,24 @@
       "size": 2581
     },
     "server/server.js": {
-      "sha256": "919ede7f6c17a014175d42f74fb1d13b5a2face7bc558f1489ca44d76bac5414",
-      "size": 48987
+      "sha256": "cea447355d334c56c6ccf75645390d846886b399c5b6879d672ab1390d66c520",
+      "size": 51051
     },
     "server/sites.js": {
-      "sha256": "6dac51e29fa87ae4e50aff9ce7d066370f9b3107be91a2008bc580efc3de8307",
-      "size": 84240
+      "sha256": "df11acd4d319cd55b197341d3c162c90429adc5d93d51dd324620c7bc4c5d036",
+      "size": 84309
     },
     "server/store.js": {
-      "sha256": "769af3bbd36af416387728e6f438981e5805409d534f44500991b29eb784df59",
-      "size": 24687
+      "sha256": "0bc84f721e616a65cdb8b23f97f3f1b3dca5db34a1bbbceee5f581e2ae1ecca7",
+      "size": 26589
     },
     "server/update.js": {
-      "sha256": "824a8a20c2cb68315ba633d027e24bae101d6128b353a1674fe665b7a35efa8f",
+      "sha256": "d2a752ab4943a71791d66ad7bdb8a9c86462c2f956d9836fc4eb2604bd136df8",
       "size": 19825
     },
     "www/index.html": {
-      "sha256": "7eabe492ae778436f68366e5c46bde69bee39472b2c120b2e382c1876d1cd77a",
-      "size": 96933
+      "sha256": "e8cfbf31874f68169bc9a808285d0302f2f1e72a38eb206d2ad7e38d0d2a7588",
+      "size": 99463
     }
   }
 }

@@ -255,8 +255,8 @@ const FLZT = {
   },
 
   async testConnection(cfg) {
-    const token = await this._resolveToken(cfg);
-    return { site: this.key, site_name: this.name, message: `登录测试成功（Token ${token.slice(0, 12)}…）` };
+    await this._resolveToken(cfg); // 仅验证凭据可换取有效 token；不再回显 token 前缀（B11）
+    return { site: this.key, site_name: this.name, message: "登录测试成功，凭据有效（token 鉴权已确认）" };
   },
 
   _ok(status, message, reward, total, cfg) {

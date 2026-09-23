@@ -407,7 +407,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.5.1</span>
+      <span class="ver" id="appVersion">v1.5.2</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -476,6 +476,7 @@
             <div class="setting-row">
               <div><div class="setting-label">Webhook 地址</div><div class="setting-desc">已配置请留空</div></div>
               <input type="password" class="input mono" id="cfgWebhook" placeholder="https://open.feishu.cn/…" style="max-width:260px">
+              <span id="cfgWebhookState" class="muted" style="font-size:12px;white-space:nowrap"></span>
             </div>
           </div>
           <div class="settings-group">
@@ -857,11 +858,18 @@ function renderAcctCard(key, a, cap) {
       dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">上次 ' + t + (lastDate ? "（" + mdDate(lastDate) + "）" : "") + "</span></span>";
     }
   }
+  // F3 修复：徽标三段语义——① 有 session →「已登录」；② 无 session 但凭据齐全（账密/cookie 可签到）
+  // → 中性「凭据已配置」；③ 无凭据 →「未配置」。依赖 session 的站点（无交互登录能力）行为不变。
+  const configured = a.configured === true;
   let loginBadge = "";
   if (cap || hasSession) {
-    loginBadge = hasSession
-      ? '<span class="login-badge on"><span class="dot"></span>已登录</span>'
-      : '<span class="login-badge"><span class="dot"></span>未登录</span>';
+    if (hasSession) {
+      loginBadge = '<span class="login-badge on"><span class="dot"></span>已登录</span>';
+    } else if (configured) {
+      loginBadge = '<span class="login-badge"><span class="dot"></span>凭据已配置</span>';
+    } else {
+      loginBadge = '<span class="login-badge"><span class="dot"></span>未配置</span>';
+    }
   }
   // 余额 / 积分行：仅 supports_balance 的账号显示。
   //   workbuddy → 积分主视觉 hero（大数字 chip + delta 徽标）；其余站点 → 精简余额行（不动）。
@@ -1658,6 +1666,19 @@ document.querySelectorAll(".nav button").forEach((b) => {
   });
 });
 let cfgDirty = false;
+// F6：webhook 框随输入置脏（仅用户改动过的值随保存提交，避免「配置过但本次只改其他设置」时误清空）
+let feishuDirty = false;
+let feishuConfigured = false;
+$("cfgWebhook").addEventListener("input", () => { $("cfgSaveBtn").textContent = "保存设置（有更改）"; cfgDirty = true; feishuDirty = true; });
+
+// F5 修复：站点代理开关是动态渲染的（renderProxySites 重建 innerHTML），用事件委托绑定 change →
+// 置脏（「有更改」提示与其余字段一致）；保存后 re-render 保留开关状态。
+document.addEventListener("change", (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains("cfg-proxy-site")) {
+    $("cfgSaveBtn").textContent = "保存设置（有更改）";
+    cfgDirty = true;
+  }
+});
 
 function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function updateChip(on) {
@@ -1696,14 +1717,29 @@ async function saveSettings() {
     proxySiteInputs.forEach((el) => { sites[el.dataset.site] = { use_proxy: el.checked === true }; });
     body.sites = sites;
   }
-  const w = $("cfgWebhook").value.trim();
-  if (w) body.feishu_webhook = w;
+  // F6：仅用户改动过 webhook 才随保存提交——有值 → 更新；留空 → 后端清除（__clear__）。
+  // 未改动（feishuDirty=false）不提交，避免保存其他设置时误清空已配置的 webhook。
+  if (feishuDirty) {
+    const w = $("cfgWebhook").value.trim();
+    body.feishu_webhook = w || "__clear__";
+  }
   const r = await call("save_config", "POST", body);
   if (r.success) {
     toast("设置已保存", "ok");
     $("cfgWebhook").value = "";
+    feishuDirty = false;
+    feishuConfigured = !!(r.data && r.data.feishu_configured);
+    const wsl = $("cfgWebhookState");
+    if (wsl) wsl.textContent = feishuConfigured ? "已配置（留空保存可清除）" : "";
     updateChip(body.enabled);
     $("cfgSaveBtn").textContent = "保存设置";
+    // F5：保存后同步内存 SITE_DATA 并重渲染站点代理开关，开关状态不回退
+    if (body.sites) {
+      for (const [site, patch] of Object.entries(body.sites)) {
+        if (SITE_DATA[site]) SITE_DATA[site].use_proxy = patch.use_proxy === true;
+      }
+      renderProxySites(SITE_DATA);
+    }
   } else {
     toast("保存失败：" + (r.message || ""), "err");
   }
@@ -1729,6 +1765,10 @@ async function loadAll(attempt = 1) {
   set("cfgNotify", (el) => { el.checked = !!d.notify_enabled; });
   set("cfgProxyEnabled", (el) => { el.checked = !!d.proxy_enabled; });
   set("cfgProxyUrl", (el) => { el.value = d.proxy_url || ""; });
+  // F6：回显 feishu_configured（不回吐 webhook 值），已配置 → 输入框旁显示「已配置（留空保存可清除）」
+  feishuConfigured = !!d.feishu_configured;
+  feishuDirty = false;
+  set("cfgWebhookState", (el) => { el.textContent = feishuConfigured ? "已配置（留空保存可清除）" : ""; });
   set("appVersion", (el) => { el.textContent = "v" + (d.version || "1.0.0"); });
   renderSiteCards(d.sites);
   renderProxySites(d.sites);  // 站点代理开关回显（依赖 SITE_DATA 已由 renderSiteCards 写入，取 meta.name）

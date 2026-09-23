@@ -56,14 +56,23 @@ function proxyFromEnv(useProxy) {
   );
 }
 
-/** 代理地址脱敏展示：仅 scheme://host:port，不含 userinfo 凭据 */
-function proxyDesc(proxyUrl) {
+/** 代理地址脱敏回显：scheme://user:***@host[:port]（保留 user，掩 password；B17 userinfo 凭据不回吐）。
+ *  非法地址回空串（不泄露原文）。save 值在 store 完整保留，仅展示层脱敏。 */
+function maskProxyUrl(proxyUrl) {
   try {
     const p = new URL(proxyUrl);
-    return `${p.protocol.replace(/:$/, "")}://${p.host}`;
+    const scheme = p.protocol.replace(/:$/, "");
+    const auth = p.username ? `${p.username}:***@` : "";
+    return `${scheme}://${auth}${p.host}`;
   } catch {
-    return "(无效代理地址)";
+    return "";
   }
+}
+
+/** 代理地址日志/异常消息脱敏展示：与 maskProxyUrl 同规则，非法地址给占位文案 */
+function proxyDesc(proxyUrl) {
+  const m = maskProxyUrl(proxyUrl);
+  return m === "" ? "(无效代理地址)" : m;
 }
 
 /** 通过 HTTP 代理建立 HTTPS CONNECT 隧道，返回已连接的 socket；任何失败一律 reject（业务错误） */
@@ -338,4 +347,4 @@ function extractFormhash(text) {
   return m ? m[1] : null;
 }
 
-module.exports = { Session, getJson, parseJson, cleanText, extractFormhash, DEFAULT_UA, proxyFromEnv, setGlobalProxy };
+module.exports = { Session, getJson, parseJson, cleanText, extractFormhash, DEFAULT_UA, proxyFromEnv, setGlobalProxy, maskProxyUrl, proxyDesc };

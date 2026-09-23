@@ -6,6 +6,7 @@
  */
 const crypto = require("crypto");
 const { ADAPTERS, maskSecret } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
+const { maskProxyUrl } = require("./httpc"); // 代理地址脱敏回显（B17：userinfo 密码回显掩码）
 const qrcode = require("./qrcode");        // 纯 JS 二维码编码（扫码登录 auth_url → 图片）
 
 /** auth_url → data:image/gif base64 二维码（离线本地生成，不外传登录票据） */
@@ -47,7 +48,7 @@ class Server {
       retry_count: cfg.retry_count,
       feishu_configured: !!(cfg.feishu_webhook),
       proxy_enabled: !!cfg.proxy_enabled,   // 全局代理开关
-      proxy_url: cfg.proxy_url || "",        // 全局代理地址（无敏感值，回吐供设置页回读）
+      proxy_url: maskProxyUrl(cfg.proxy_url), // 回显脱敏（B17：userinfo 密码掩码）；save 值完整保留于 config
       sites: {},
     };
     for (const key of Object.keys(ADAPTERS)) {
@@ -98,7 +99,7 @@ class Server {
       notify_enabled: cfg.notify_enabled,
       feishu_configured: !!cfg.feishu_webhook,
       proxy_enabled: !!cfg.proxy_enabled,
-      proxy_url: cfg.proxy_url || "",
+      proxy_url: maskProxyUrl(cfg.proxy_url), // 回显脱敏（B17）
     });
   }
 
@@ -192,6 +193,7 @@ class Server {
             const r = await adapter.runCheckin(acc);
             await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
+            this._store.schedCheckinSuccess(key, acc.id); // B18：签到成功即从今日失败集移除（补签列表翻转）
             history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" });
             this._log(`签到 ${adapter.name} → ${r.status}`);
           } catch (err) {
@@ -202,13 +204,26 @@ class Server {
           }
         }
       }
-      for (const h of history.reverse()) this._store.appendHistory(h);
+      // B4：整轮一次批量写入 history（单次读+写，替代 N 账号 → N×全文件 I/O）；失败单次捕获，
+      // 仅记日志（含路径）并继续——存储失败绝不抹掉已算出的整轮结果，返回仍 success 并带 warnings。
+      const warnings = [];
+      try {
+        this._store.appendHistoryBatch(history.reverse());
+      } catch (e) {
+        const hp = this._store.historyPath || "(history)";
+        console.error(`签到 history 批量写入失败：${(e && e.message) || e}（${hp}）`);
+        warnings.push("history 写入失败：签到记录未持久化");
+      }
       // 账号对象落盘（一次全量，9KB 级）：_billingDo 401 续期只回写内存 cfg.session/session_ts，
       // 若不在此持久化，热更/重启后 session 回退磁盘旧值 → 保活断链需重新扫码。放循环外一次足够。
-      // save 失败不应使签到结果报错（history 已落盘、结果已生成）——仅记日志。
+      // save 失败不应使签到结果报错（history 已落盘、结果已生成）——仅记日志（含路径）+ warnings。
       this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
       this._store.recordCheckinResults(results); // 今日失败账号集（补签账号级定位；跨天自动重置）
-      try { this._store.save(); } catch (e) { console.error(`签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
+      try { this._store.save(); } catch (e) {
+        const cp = this._store.configPath || "(config)";
+        console.error(`签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}（${cp}）`);
+        warnings.push("配置保存失败：会话/失败集变更未持久化");
+      }
       const allOk = results.length > 0 && results.every((r) => r.status !== "执行失败");
       if (this._notifier && cfg.notify_enabled) {
         const text = this._notifier.buildNotifyText("签到工具", results);
@@ -216,7 +231,9 @@ class Server {
         if (sent) this._log("签到通知已发送");
       }
       this._lastResults = results;
-      return ok({ results, summary: allOk ? "全部成功" : (results.length ? "部分成功" : "无启用的站点"), total: results.length, success_count: results.filter((r) => r.status !== "执行失败").length });
+      const payload = { results, summary: allOk ? "全部成功" : (results.length ? "部分成功" : "无启用的站点"), total: results.length, success_count: results.filter((r) => r.status !== "执行失败").length };
+      if (warnings.length) payload.warnings = warnings;
+      return ok(payload);
     } finally {
       this._restoreInjectedProxy(); // 异常逃逸兜底：确保注入字段不残留
       this._running = false;
@@ -262,18 +279,33 @@ class Server {
         history = { time: new Date().toLocaleString("zh-CN", { hour12: false }), site, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", reward: "", total: "", error: msg };
         this._log(`单账号签到 ${adapter.name}${who} 失败：${msg}`);
       }
-      this._store.appendHistory(history);
+      if (result.status !== "执行失败") this._store.schedCheckinSuccess(site, acc.id); // B18：补签成功翻转今日失败标记
+      // B4：history 写入失败仅记日志（含路径）并继续，返回仍 success 并带 warnings
+      const warnings = [];
+      try {
+        this._store.appendHistory(history);
+      } catch (e) {
+        const hp = this._store.historyPath || "(history)";
+        console.error(`单账号签到 history 写入失败：${(e && e.message) || e}（${hp}）`);
+        warnings.push("history 写入失败：签到记录未持久化");
+      }
       // 同 runOnce：单账号签到亦落盘账号对象（持久化 _billingDo 续期后的 session），save 失败不阻断结果。
       this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
       this._store.recordCheckinResults([result]); // 单账号结果同步进今日失败集（补签据此只重跑失败账号）
-      try { this._store.save(); } catch (e) { console.error(`单账号签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
+      try { this._store.save(); } catch (e) {
+        const cp = this._store.configPath || "(config)";
+        console.error(`单账号签到后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}（${cp}）`);
+        warnings.push("配置保存失败：会话/失败集变更未持久化");
+      }
       if (this._notifier && cfg.notify_enabled) {
         const text = this._notifier.buildNotifyText("签到工具", [result]);
         const sent = await this._notifier.sendText(cfg.feishu_webhook, text);
         if (sent) this._log("单账号签到通知已发送");
       }
       const okRun = result.status !== "执行失败";
-      return ok({ result, success_count: okRun ? 1 : 0, total: 1 }, okRun ? result.status : "执行失败");
+      const payload = { result, success_count: okRun ? 1 : 0, total: 1 };
+      if (warnings.length) payload.warnings = warnings;
+      return ok(payload, okRun ? result.status : "执行失败");
     } finally {
       this._restoreInjectedProxy(); // 异常逃逸兜底：确保注入字段不残留
       this._running = false;
@@ -837,8 +869,10 @@ class Server {
     // 解析回调链接：取 code / state（兼容整段 URL 或裸 query）
     const { code, state } = parseOAuthCallback(callback_url);
     if (!code) return fail("回调链接里没有 code 参数，请粘贴完整的授权回调地址");
-    if (entry.state && state && state !== entry.state) {
-      return fail("state 不匹配（可能粘错链接或授权会话已过期），请重新发起授权");
+    // B5 修复：entry.state 存在时强制相等——回调缺 state / 不相等均拒绝（原先缺失 state 被放行）。
+    // 仅当 entry 本身未建 state（上游未下发）才放行。
+    if (entry.state && state !== entry.state) {
+      return fail("OAuth state 校验失败，请重试");
     }
     try {
       const site_cfg = this._store.getConfig().sites[site] || {};
