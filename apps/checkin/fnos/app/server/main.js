@@ -265,6 +265,7 @@ const ACTION_HANDLERS = {
   runOnce: (body) => api.runOnce(body.sites),
   runAccount: (body) => api.runAccount(body.site, body.account_id),
   points: () => api.points(),
+  siteTitles: () => api.siteTitles(),
   // 1.5.4：签到历史可视化——统计聚合（读端点，开放）与 CSV 导出（原始 text/csv 响应）
   historyStats: () => api.historyStats(),
   historyExport: (body, ctx) => {

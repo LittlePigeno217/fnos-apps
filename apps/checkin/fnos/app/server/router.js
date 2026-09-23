@@ -24,6 +24,8 @@ const ROUTES = new Map([
   // 1.5.4：签到历史可视化——统计聚合（读端点）+ CSV 导出（text/csv 原始响应）
   ["checkin/history_stats", { GET: "historyStats" }],
   ["checkin/history_export", { GET: "historyExport" }],
+  // 1.6.2：站点标题（账号卡标题链接：base_url → <title>，读端点开放）
+  ["checkin/site_titles", { GET: "siteTitles" }],
 
   // ── 阶段2：账号运维（命名空间，无旧别名）────────────
   ["checkin/accounts", { GET: "accountsList" }],

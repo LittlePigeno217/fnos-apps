@@ -283,6 +283,9 @@
                    font-size: 9px; font-weight: 800; color: #fff; letter-spacing: .2px; }
   .acct-site .nm { font-size: 11px; color: var(--muted); font-weight: 600;
                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 1.6.2：站点标题链接（NewAPI 系账号卡标题点击跳转平台） */
+  .acct-card-title .t a.nm-link { color: var(--accent, #2563eb); text-decoration: none; }
+  .acct-card-title .t a.nm-link:hover { text-decoration: underline; }
   .acct-card-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
   .acct-card-title { min-width: 0; flex: 1; }
   .acct-card-title .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -400,7 +403,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.6.1</span>
+      <span class="ver" id="appVersion">v1.6.2</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -720,6 +723,16 @@ async function refreshOverview() {
   // 必须传 r.data.sites，否则账号卡徽标恒显「未签」。
   renderSiteCards(r.data.sites || SITE_DATA);
   probeLoginCaps();
+  refreshSiteTitles(); // 1.6.2：站点标题（账号卡标题链接）后台异步拉取，不阻塞渲染
+}
+
+/** 1.6.2：拉取账号 base_url 的站点标题（服务端内置映射/动态抓取/缓存）→ 重渲染账号卡 */
+async function refreshSiteTitles() {
+  const r = await call("checkin/site_titles");
+  if (r && r.success && r.data && r.data.titles) {
+    window.SITE_TITLES = r.data.titles;
+    renderSiteCards(SITE_DATA);
+  }
 }
 
 let SITE_DATA = {};
@@ -838,7 +851,8 @@ function renderAcctCard(key, a, cap) {
     subLabel = (acctLabel && acctLabel !== a.remark) ? acctLabel : "";
   } else if (key === "newapi" || key === "anyrouter") {
     const host = hostOf(baseUrl);
-    title = host ? ("NewAPI · " + host) : "NewAPI";
+    const st = (window.SITE_TITLES || {})[baseUrl] || "";
+    title = st || (host ? ("NewAPI · " + host) : "NewAPI");
     subLabel = (acctLabel && acctLabel !== title) ? acctLabel : "";
   } else {
     title = acctLabel || ("账号 " + (a.id || ""));
@@ -924,7 +938,11 @@ function renderAcctCard(key, a, cap) {
   return '<div class="acct-card"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
     siteTag +
     '<div class="acct-card-top"><div class="acct-card-title">' +
-      '<div class="t" title="' + esc(title) + '">' + esc(title) + "</div>" +
+      '<div class="t" title="' + esc(title) + '">' +
+        ((key === "newapi" || key === "anyrouter") && baseUrl
+          ? '<a class="nm-link" href="' + esc(baseUrl) + '" target="_blank" rel="noopener nofollow">' + esc(title) + "</a>"
+          : esc(title)) +
+      "</div>" +
       (subLabel ? '<div class="sub" title="' + esc(subLabel) + '">' + esc(subLabel) + "</div>" : "") +
     "</div>" + loginBadge + "</div>" +
     balLine +

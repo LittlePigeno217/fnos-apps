@@ -24,6 +24,43 @@ function renderQrDataUrl(text) {
 function ok(data, message = "") {
   return { success: true, message, data };
 }
+
+/* ── 站点标题抓取（1.6.2：账号卡标题链接 base_url → <title>）──────────
+ * WAF 站点（anyrouter.top 等）后端抓不到 <title>（挑战页 gzip 无标题）：
+ * 内置映射表覆盖已知平台；其余站点动态抓取 + 内存缓存（TTL 60 分钟）。 */
+const SITE_TITLE_MAP = {
+  "anyrouter.top": "Any Router",
+  "agentrouter.org": "Agent Router",
+};
+const titleCache = new Map(); // url → { title, ts }
+const TITLE_CACHE_TTL = 60 * 60 * 1000;
+async function fetchSiteTitleCached(url) {
+  const host = String(url).replace(/^https?:\/\//i, "").split("/")[0].toLowerCase();
+  if (SITE_TITLE_MAP[host]) return SITE_TITLE_MAP[host];
+  const hit = titleCache.get(url);
+  if (hit && Date.now() - hit.ts < TITLE_CACHE_TTL) return hit.title;
+  let title = null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+      },
+      signal: ctrl.signal,
+      redirect: "follow",
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const html = await res.text();
+      const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      if (m) title = m[1].replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").slice(0, 80);
+    }
+  } catch (e) { /* 抓取失败 → null，前端回落 host */ }
+  titleCache.set(url, { title, ts: Date.now() });
+  return title;
+}
 function fail(message) {
   return { success: false, message: String(message || "未知错误"), data: {} };
 }
@@ -36,6 +73,21 @@ class Server {
     this._running = false; // 防并发执行
     this._loginSessions = new Map(); // 扫码登录会话：token → { site, account_id, sess, expires_at }（进程内，重启即失效）
     this._injectedProxy = new Set(); // 站点级 use_proxy 注入的账号对象（save 前还原，不落盘）
+  }
+
+  /** 站点标题（1.6.2）：遍历全部账号 base_url → <title>（内置映射/动态抓取/缓存），供账号卡标题链接使用 */
+  async siteTitles() {
+    const cfg = this._store.getConfig();
+    const urls = new Set();
+    for (const sk of Object.keys(cfg.sites || {})) {
+      for (const a of ((cfg.sites[sk] || {}).accounts || [])) {
+        const b = a && a.base_url;
+        if (b && /^https?:\/\//i.test(b)) urls.add(String(b).replace(/\/+$/, ""));
+      }
+    }
+    const titles = {};
+    await Promise.all([...urls].map(async (u) => { titles[u] = await fetchSiteTitleCached(u); }));
+    return ok({ titles });
   }
 
   getConfig() {

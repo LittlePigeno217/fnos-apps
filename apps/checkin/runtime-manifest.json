@@ -1,6 +1,6 @@
 {
-  "version": "1.6.1",
-  "generated_at": "2026-09-23T18:17:23Z",
+  "version": "1.6.2",
+  "generated_at": "2026-09-23T18:37:58Z",
   "files": {
     "server/hotfix.js": {
       "sha256": "26c2a433eff3635749c7facf20df4ab120819549a37aca748cdb764e0c1c4624",
@@ -11,8 +11,8 @@
       "size": 13083
     },
     "server/main.js": {
-      "sha256": "0c0b52efcf7843d63cdd47af2ccfab9d54a94d2a825e6984bff0a3c60adce962",
-      "size": 26296
+      "sha256": "ae2ae9e1d99f380760b54b6fd3af39a1694299d37727f845e80be4fb06fcfbee",
+      "size": 26334
     },
     "server/notify.js": {
       "sha256": "fbbf8bee81cc15627a0f677f26983887089dd6538c43303e4873cb9b3a8ac2ac",
@@ -23,28 +23,28 @@
       "size": 56694
     },
     "server/router.js": {
-      "sha256": "82d117bd1b82b9f6364bbeb079b15842e41161990877645a3931fc921fcf2480",
-      "size": 2798
+      "sha256": "2147aecf0225c5e6c79cab5ac64cc68d255e2695f208cf69bc4ae18ecaea805a",
+      "size": 2942
     },
     "server/server.js": {
-      "sha256": "70550e934214ec76b40cffd2faeab153b9220a06d37cdc101e654aca9cb317b8",
-      "size": 57795
+      "sha256": "86ce712424c9b6d252ba3fe816d91d955d5fd47ffdf2522a7e15bf97bf010126",
+      "size": 60029
     },
     "server/sites.js": {
       "sha256": "d728b6f5c28d8943d3f47b424aa0f9df2f1805973ce66b7fe41a979e981d934c",
       "size": 75864
     },
     "server/store.js": {
-      "sha256": "9ef881bead9db52cec1cb4ccb50bcd8491013040a3fd792c88a0dfca10081e03",
+      "sha256": "f30538cdbfa7788bd310bce730e250c90ca2f00576971319c2c42f3907cca144",
       "size": 26868
     },
     "server/update.js": {
-      "sha256": "ea08164216abcec441b7603772ca87099cfcde66c3c6a5007e520769a4c24147",
+      "sha256": "9b3462b09fe6d5a2c5aaebf9ae5cf5f9389287101b224f7e9f987a9db3c0ce17",
       "size": 19825
     },
     "www/index.html": {
-      "sha256": "61ec95cf686d2387eab53116bf55ea2af5d25607540ebea59867cc3bb204df83",
-      "size": 112923
+      "sha256": "7ec814e5e2d52065d66ec80061c3878721ede20b6699471ad6f6d13e1bb98bb0",
+      "size": 113884
     }
   }
 }
