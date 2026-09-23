@@ -1,6 +1,6 @@
 {
-  "version": "1.5.3",
-  "generated_at": "2026-09-23T08:01:07Z",
+  "version": "1.5.4",
+  "generated_at": "2026-09-23T10:38:01Z",
   "files": {
     "server/hotfix.js": {
       "sha256": "26c2a433eff3635749c7facf20df4ab120819549a37aca748cdb764e0c1c4624",
@@ -11,8 +11,8 @@
       "size": 13083
     },
     "server/main.js": {
-      "sha256": "51cfd9c02fafc2416586091c4f8bd745a9f7b9238acf3f5b7e8b243beccf34be",
-      "size": 24961
+      "sha256": "0c0b52efcf7843d63cdd47af2ccfab9d54a94d2a825e6984bff0a3c60adce962",
+      "size": 26296
     },
     "server/notify.js": {
       "sha256": "fbbf8bee81cc15627a0f677f26983887089dd6538c43303e4873cb9b3a8ac2ac",
@@ -23,28 +23,28 @@
       "size": 56694
     },
     "server/router.js": {
-      "sha256": "fb214f616536d39b8262d188ad5ffc0b9a5b982274ab85a0d8832af24cf4491b",
-      "size": 2581
+      "sha256": "82d117bd1b82b9f6364bbeb079b15842e41161990877645a3931fc921fcf2480",
+      "size": 2798
     },
     "server/server.js": {
-      "sha256": "1f3b373d7ed683d5c8ad0eded81b1dd3b21716c8e7047d122c4d6920c5a4c06e",
-      "size": 51335
+      "sha256": "70550e934214ec76b40cffd2faeab153b9220a06d37cdc101e654aca9cb317b8",
+      "size": 57795
     },
     "server/sites.js": {
       "sha256": "b84e8a87f7feb3dfd91cfa4e9ddc3a8f60dcbdd1415245ec5b91a18d1d8db9e2",
       "size": 87200
     },
     "server/store.js": {
-      "sha256": "8f6e15ca6e1dee8f1046417b7b1f7ee312e6425a3047bf0c093737abfd555b80",
+      "sha256": "a1f55e80c8faf719d64186e698fa1888a42ddb0905abfcfc7c0cb65aaa083a9c",
       "size": 26589
     },
     "server/update.js": {
-      "sha256": "1a18f1eb66ed3cd85fd2e9625171a010d05a06a3ba5a8aea8e88e7a04342e435",
+      "sha256": "a3ff79196057e1c416672a284c0e09d2d93d0fd1f9d6df75aa8d12cd4b47a042",
       "size": 19825
     },
     "www/index.html": {
-      "sha256": "845474cb2d395bc45bfa5cb6c5c1043ba20f4bf9d5f242a044856d9c7ea65e50",
-      "size": 100576
+      "sha256": "7719b8c559e41cd078df4c33fe39fddb2698d4a7d9e1ce31ecb12530a78a2b0f",
+      "size": 112375
     }
   }
 }

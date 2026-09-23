@@ -417,6 +417,115 @@ class Server {
   }
 
   /**
+   * 签到历史统计（1.5.4 历史可视化服务端聚合）。
+   * 数据源：store.getHistory(2000)（最多取最近 2000 条；store 持久化上限 500，实际为全量）。
+   * 日期键：解析 rec.time（toLocaleString zh-CN 格式）→ 服务器本地日期 YYYY-MM-DD（Asia/Shanghai）。
+   * 状态划分：含「失败」→ failed；含「成功」/「已签到」→ success；其余 → neutral。
+   * 输出 data：
+   *   - totals：{ records, success, failed, neutral, success_rate(成功率=成功/(成功+失败)，保留1位小数%),
+   *               first_time(最早记录原始 time 串), last_time(最近一条) }
+   *   - trend：近 30 天逐日 [{date, success, failed, neutral}]（0 记录日补齐为 0）
+   *   - calendar：最近 3 个自然月逐日（含空日，供前端日历热力图取当月）
+   *   - sites：分站点 [{site, site_name, success, failed, neutral}]
+   *   - rewardByDay：近 14 天 success 记录 reward 首个数字按日累计 [{date, amount}]（解析不出记 0）
+   * 安全：history 本身无 cookie/token 字段（仅 status/message/奖励文本），本端点不输出任何凭据。
+   */
+  historyStats() {
+    const hist = this._store.getHistory(2000) || [];
+    const today = new Date();
+    const day = new Map();      // date -> { success, failed, neutral }
+    const site = new Map();     // site 键 -> { site_name, success, failed, neutral }
+    const reward = new Map();   // date -> number（reward 首数字按日累计）
+    const totals = { success: 0, failed: 0, neutral: 0 };
+    for (const h of hist) {
+      if (!h || typeof h !== "object") continue;
+      const date = historyDateKey(h.time);
+      const cls = classifyStatus(h.status);
+      totals[cls] += 1;
+      if (date) {
+        const g = day.get(date) || { success: 0, failed: 0, neutral: 0 };
+        g[cls] += 1;
+        day.set(date, g);
+        // 积分曲线：仅 success 记录解析 reward 首个数字按日累计（如 "余额 $16.5" → 16.5；解析不出记 0）
+        if (cls === "success") reward.set(date, (reward.get(date) || 0) + parseReward(h.reward));
+      }
+      const key = h.site;
+      if (key) {
+        const sg = site.get(key) || { site_name: h.site_name || key, success: 0, failed: 0, neutral: 0 };
+        sg[cls] += 1;
+        site.set(key, sg);
+      }
+    }
+    // 近 30 天逐日（含 0 记录日）
+    const trend = [];
+    for (let i = 29; i >= 0; i--) {
+      const date = localDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i));
+      const g = day.get(date) || { success: 0, failed: 0, neutral: 0 };
+      trend.push({ date, success: g.success, failed: g.failed, neutral: g.neutral });
+    }
+    // 最近 3 个自然月逐日（含空日；前端只渲染当月，3 个月数据备用）
+    const calendar = [];
+    for (let off = 2; off >= 0; off--) {
+      const y = today.getFullYear() + Math.floor((today.getMonth() - off) / 12);
+      const m = (((today.getMonth() - off) % 12) + 12) % 12;
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      for (let dd = 1; dd <= daysInMonth; dd++) {
+        const date = `${y}-${String(m + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+        const g = day.get(date) || { success: 0, failed: 0, neutral: 0 };
+        calendar.push({ date, success: g.success, failed: g.failed, neutral: g.neutral });
+      }
+    }
+    // 近 14 天积分曲线（rewardByDay：success 记录 reward 首数字按日累计）
+    const rewardByDay = [];
+    for (let i = 13; i >= 0; i--) {
+      const date = localDateStr(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i));
+      rewardByDay.push({ date, amount: Number((reward.get(date) || 0).toFixed(4)) });
+    }
+    // 首/最近：history 数组最新在前 → 末位为最早记录
+    const first_time = hist.length ? hist[hist.length - 1].time : "";
+    const last_time = hist.length ? hist[0].time : "";
+    const attempts = totals.success + totals.failed;
+    const totalsOut = {
+      records: hist.length,
+      success: totals.success,
+      failed: totals.failed,
+      neutral: totals.neutral,
+      success_rate: attempts ? Number(((totals.success / attempts) * 100).toFixed(1)) : 0, // 无尝试 → 0
+      first_time,
+      last_time,
+    };
+    return ok({
+      totals: totalsOut,
+      trend,
+      calendar,
+      sites: Array.from(site.entries()).map(([k, g]) => ({
+        site: k, site_name: g.site_name,
+        success: g.success, failed: g.failed, neutral: g.neutral,
+      })),
+      rewardByDay,
+    });
+  }
+
+  /**
+   * 全部签到历史 → UTF-8 BOM 开头 CSV 字符串（Excel 兼容）。
+   * 列：time,site,site_name,account,status,message,reward,total,error；行序 = history 顺序（新→旧）。
+   * 字段转义 CSV 引号/逗号（含内嵌引号翻倍与换行归一）；history 不含 token/cookie，可安全导出。
+   */
+  historyExportCsv() {
+    const hist = this._store.getHistory(100000) || []; // 全量（store 持久化上限 500，实际全量）
+    const escCsv = (v) => {
+      const s = (v == null ? "" : String(v)).replace(/\r\n|\r|\n/g, " "); // 换行→空格，避免破行
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const head = ["time", "site", "site_name", "account", "status", "message", "reward", "total", "error"];
+    const lines = [head.join(",")];
+    for (const h of hist) {
+      lines.push(head.map((k) => escCsv(h ? h[k] : "")).join(","));
+    }
+    return "\uFEFF" + lines.join("\r\n");
+  }
+
+  /**
    * 积分聚合：按 site 分组统计最近 window 条 history 中的 reward。
    * history 最新在前（Store.appendHistory 头插），每组取第一条（最新）的 site_name 与 last_time。
    * reward 单位因站而异（MB / 积分 / USD…），故 total_points 仅做粗略展示，
@@ -1007,6 +1116,28 @@ function dateStrFromTime(t) {
   const m = String(t || "").match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
   if (!m) return "";
   return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+}
+
+/**
+ * history 时间串（'2026/9/23 01:00:33'，toLocaleString zh-CN 本地格式）→ 服务器本地日期键 YYYY-MM-DD。
+ * 容错：解析失败 → ""（该记录不参与按日聚合，仍计入 totals/sites 全量统计）。
+ */
+function historyDateKey(t) {
+  if (!t) return "";
+  const d = new Date(t); // 非 ISO 字符串按服务器本地时区解析（Asia/Shanghai）
+  if (Number.isNaN(d.getTime())) return "";
+  return localDateStr(d);
+}
+
+/**
+ * 状态三分类（签到历史可视化）：「失败」类文案统一含「失败」二字 → failed；
+ * 含「成功」/「已签到」→ success；其余（登录事件等）→ neutral。
+ */
+function classifyStatus(status) {
+  const s = String(status || "");
+  if (s.includes("失败")) return "failed";
+  if (s.includes("成功") || s.includes("已签到")) return "success";
+  return "neutral";
 }
 
 module.exports = { Server, ADAPTERS };

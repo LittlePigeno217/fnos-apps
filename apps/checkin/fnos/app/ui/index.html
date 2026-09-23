@@ -323,6 +323,42 @@
   /* ---------- 结果摘要 ---------- */
   .summary-line { margin-top: 10px; white-space: pre-line; font-size: 13px; }
 
+  /* ---------- 签到历史面板（1.5.4） ---------- */
+  .history-panel { background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+                   width: min(720px, 94vw); max-height: 88vh; overflow: auto; padding: 20px 22px;
+                   box-shadow: var(--shadow-card); backdrop-filter: blur(10px); }
+  .history-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .history-title { font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+  .history-head .grow { flex: 1; min-width: 0; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+  @media (max-width: 560px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stat-card { border: 1px solid var(--border); border-radius: var(--jc-radius); padding: 10px 12px;
+               background: var(--bg); min-width: 0; }
+  .stat-card .stat-k { font-size: 11px; color: var(--muted); }
+  .stat-card .stat-v { font-size: 15px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums;
+                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-block { border: 1px solid var(--border); border-radius: var(--jc-radius); padding: 14px 16px;
+                margin-bottom: 12px; background: var(--bg); }
+  .hist-block-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .hist-axis { font-size: 10px; fill: var(--muted); font-family: var(--font-mono); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .cal-wd { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
+  .cal-cell { position: relative; aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--border);
+              display: flex; flex-direction: column; align-items: center; justify-content: center;
+              font-size: 12px; font-family: var(--font-mono); }
+  .cal-none { background: rgba(127,127,127,.06); color: var(--muted-2); }
+  .cal-ok { background: var(--accent-soft); color: var(--accent-strong); font-weight: 700; }
+  .cal-fail { background: rgba(239,68,68,.12); color: var(--err); font-weight: 700; }
+  .cal-both { background: rgba(245,158,11,.16); color: #d97706; font-weight: 700; }
+  .cal-empty { border: none; background: transparent; }
+  .cal-dot { position: absolute; top: 1px; right: 2px; min-width: 13px; height: 13px; padding: 0 3px;
+             border-radius: 999px; background: var(--err); color: #fff; font-size: 9px; line-height: 13px;
+             text-align: center; font-family: var(--font-mono); }
+  .cal-legend { display: flex; gap: 12px; align-items: center; margin-top: 10px; font-size: 11px;
+                color: var(--muted); flex-wrap: wrap; }
+  .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px;
+                  vertical-align: -1px; }
+
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
     .sidebar { position: fixed; z-index: 50; width: 62px; padding: 14px 8px 12px; }
@@ -364,7 +400,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.5.3</span>
+      <span class="ver" id="appVersion">v1.5.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -389,6 +425,10 @@
           <button class="btn" id="runAllBtn" onclick="runAll()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
             立即签到全部
+          </button>
+          <button class="btn" onclick="openHistoryPanel()" title="签到历史统计 / 日历热力图 / 导出 CSV">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-9M12 20V4M18 20v-6"/><path d="M3 20h18"/></svg>
+            签到历史
           </button>
           <span class="muted" id="runSummary"></span>
           <span style="flex:1"></span>
@@ -541,6 +581,23 @@
       <div id="addTabs" class="add-tabs" style="display:flex;gap:6px;margin:10px 0 4px;flex-wrap:wrap"></div>
       <div id="addPanel" style="margin-top:8px"></div>
     </div>
+  </div>
+</div>
+
+<!-- 签到历史面板（1.5.4）：概览 + 近30天成功折线 + 当月日历热力图 + 导出 CSV -->
+<div id="historyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
+  <div class="history-panel">
+    <div class="history-head">
+      <div class="history-title">签到历史</div>
+      <span class="grow"></span>
+      <button type="button" class="btn btn-mini" onclick="refreshHistoryPanel()">刷新</button>
+      <button type="button" class="btn btn-mini" onclick="exportHistoryCsv()" title="下载全部签到记录为 CSV（Excel 可直接打开）">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        导出 CSV
+      </button>
+      <button type="button" class="btn btn-mini" onclick="closeHistoryPanel()">✕</button>
+    </div>
+    <div id="histBody" class="empty">正在加载签到历史…</div>
   </div>
 </div>
 
@@ -1608,6 +1665,148 @@ async function logClear() {
     $("logMeta").textContent = "已清空";
     setTimeout(logPoll, 300);
   } else alert("清空失败：" + (r.message || ""));
+}
+
+/* ── 签到历史可视化（1.5.4）─────────────────────────────────
+ * 面板：概览 stat 卡 + 近30天成功数 SVG 折线 + 当月日历热力图 + 导出 CSV。
+ * 数据：打开时 GET checkin/history_stats 一次；「刷新」重新拉取。
+ * 纯 CSS/SVG 实现，不引入图表库（fnOS 单文件前端重量受限）。 */
+
+async function openHistoryPanel() {
+  $("historyModal").style.display = "flex";
+  $("histBody").innerHTML = '<div class="empty">正在加载签到历史…</div>';
+  await refreshHistoryPanel();
+}
+
+function closeHistoryPanel() {
+  $("historyModal").style.display = "none";
+}
+
+/** 重新拉取 history_stats 并渲染面板（加载/失败态明确提示） */
+async function refreshHistoryPanel() {
+  const box = $("histBody");
+  box.innerHTML = '<div class="empty">正在加载签到历史…</div>';
+  const r = await call("checkin/history_stats");
+  if (!(r && r.success && r.data)) {
+    box.innerHTML = '<div class="empty">⚠ 加载失败：' + esc((r && r.message) || "未知错误") + "</div>";
+    return;
+  }
+  renderHistoryStats(r.data);
+  renderHistoryLine(r.data);
+  renderHistoryCalendar(r.data);
+}
+
+/** 概览块：总记录 / 成功率 / 首签时间 / 最近签到 四卡 */
+function renderHistoryStats(d) {
+  const t = d.totals || {};
+  const cards = [
+    { k: "总记录", v: String(t.records || 0) },
+    { k: "成功率", v: (t.success_rate != null ? String(t.success_rate) : "0") + "%" },
+    { k: "首签时间", v: t.first_time || "—" },
+    { k: "最近签到", v: t.last_time || "—" },
+  ];
+  $("histBody").innerHTML =
+    '<div class="stat-grid">' +
+    cards.map((c) => '<div class="stat-card"><div class="stat-k">' + esc(c.k) + '</div><div class="stat-v" title="' + esc(c.v) + '">' + esc(c.v) + "</div></div>").join("") +
+    "</div>";
+}
+
+/** 折线块：近 30 天签到成功数（纯 SVG：基线 + polyline + 端点圆点；y 整数自动刻度；x 周标签 5 刻度） */
+function renderHistoryLine(d) {
+  const trend = Array.isArray(d.trend) ? d.trend : [];
+  const sec = document.createElement("div");
+  sec.className = "hist-block";
+  sec.innerHTML = '<div class="hist-block-title">近 30 天签到成功数</div><div id="histLine"></div>';
+  $("histBody").appendChild(sec);
+  const line = $("histLine");
+  if (!trend.length || (d.totals && d.totals.records === 0)) {
+    line.innerHTML = '<div class="empty" style="padding:18px 0">暂无签到记录</div>';
+    return;
+  }
+  const W = 720, H = 150, PL = 40, PR = 14, PT = 10, PB = 24;
+  const n = trend.length;
+  const vals = trend.map((x) => Number((x && x.success) || 0));
+  const maxV = Math.max.apply(null, vals);
+  const step = niceTick(maxV);
+  const yMax = step ? Math.ceil(maxV / step) * step : 1;
+  const xR = W - PL - PR, yR = H - PT - PB;
+  const px = (i) => PL + (n > 1 ? (xR * i) / (n - 1) : xR);
+  const py = (v) => PT + yR * (1 - (yMax ? v / yMax : 0));
+  // y 网格线 + 整数刻度标签
+  let grid = "";
+  for (let v = 0; v <= yMax; v += step) {
+    const yv = py(v);
+    grid += '<line x1="' + PL + '" y1="' + yv.toFixed(1) + '" x2="' + (W - PR) + '" y2="' + yv.toFixed(1) + '" stroke="var(--border)" stroke-width="1"/>' +
+            '<text x="' + (PL - 6) + '" y="' + (yv + 3).toFixed(1) + '" text-anchor="end" class="hist-axis">' + v + "</text>";
+  }
+  // x 轴周标签（5 个刻度，M/D 格式）
+  let labels = "";
+  for (let i = 0; i < 5; i++) {
+    const idx = Math.round(((n - 1) * i) / 4);
+    const m = String(trend[idx] && trend[idx].date || "").match(/(\d{4})-(\d{2})-(\d{2})/);
+    const lb = m ? Number(m[2]) + "/" + Number(m[3]) : "";
+    labels += '<text x="' + px(idx).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" class="hist-axis">' + lb + "</text>";
+  }
+  let path = "";
+  for (let i = 0; i < n; i++) path += (i ? " L" : "M") + px(i).toFixed(1) + " " + py(vals[i]).toFixed(1);
+  const dots = vals.map((v, i) => '<circle cx="' + px(i).toFixed(1) + '" cy="' + py(v).toFixed(1) + '" r="2.2" fill="var(--accent)"/>').join("");
+  line.innerHTML =
+    '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block">' +
+    '<line x1="' + PL + '" y1="' + py(0).toFixed(1) + '" x2="' + (W - PR) + '" y2="' + py(0).toFixed(1) + '" stroke="var(--border)" stroke-width="1.5"/>' +
+    grid + labels +
+    '<polyline points="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    dots + "</svg>";
+}
+
+/** y 轴整数刻度步长：取 1/2/5×10^k（顶端 ≥ 数据峰值，刻度均为整数） */
+function niceTick(v) {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const q = v / pow;
+  const s = q <= 1 ? 1 : (q <= 2 ? 2 : (q <= 5 ? 5 : 10));
+  return s * pow;
+}
+
+/** 日历热力图块：当月 7 列（一~日）网格；格色按当日成功/失败比例；右上角红点=失败次数 */
+function renderHistoryCalendar(d) {
+  const now = new Date();
+  const ym = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+  const map = {};
+  (Array.isArray(d.calendar) ? d.calendar : []).forEach((r) => { if (r && r.date) map[r.date] = r; });
+  const firstDow = new Date(now.getFullYear(), now.getMonth(), 1).getDay(); // 0=周日
+  const colOf = (dow) => (dow === 0 ? 6 : dow - 1); // 列序：一(0)…日(6)
+  const leads = colOf(firstDow);
+  const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  let cells = "";
+  for (const c of "一二三四五六日") cells += '<span class="cal-wd">' + c + "</span>";
+  for (let i = 0; i < leads; i++) cells += '<span class="cal-cell cal-empty"></span>';
+  for (let dd = 1; dd <= totalDays; dd++) {
+    const date = ym + "-" + String(dd).padStart(2, "0");
+    const g = map[date] || null;
+    const s = g ? g.success : 0, f = g ? g.failed : 0;
+    let cls = "cal-cell ";
+    cls += (s > 0 && f === 0) ? "cal-ok" : (f > 0 && s === 0) ? "cal-fail" : (s > 0 && f > 0) ? "cal-both" : "cal-none";
+    const dot = f > 0 ? '<span class="cal-dot">' + f + "</span>" : "";
+    const title = date + " · 成功 " + s + " / 失败 " + f;
+    cells += '<span class="' + cls + '" title="' + title + '">' + dot + "<span>" + dd + "</span></span>";
+  }
+  const sec = document.createElement("div");
+  sec.className = "hist-block";
+  sec.innerHTML =
+    '<div class="hist-block-title">签到日历 · ' + now.getFullYear() + "年" + (now.getMonth() + 1) + "月</div>" +
+    '<div class="cal-grid">' + cells + "</div>" +
+    '<div class="cal-legend">' +
+      '<span><i style="background:var(--accent-soft);border:1px solid var(--accent)"></i>仅成功</span>' +
+      '<span><i style="background:rgba(239,68,68,.14);border:1px solid var(--err)"></i>仅失败</span>' +
+      '<span><i style="background:rgba(245,158,11,.18);border:1px solid #f59e0b"></i>成功+失败</span>' +
+      '<span><i style="background:rgba(127,127,127,.08)"></i>无记录</span>' +
+    "</div>";
+  $("histBody").appendChild(sec);
+}
+
+/** 导出 CSV：GET checkin/history_export（text/csv + Content-Disposition → 浏览器直接下载，不跳转页面） */
+function exportHistoryCsv() {
+  window.location.href = API_BASE + "checkin/history_export";
 }
 
 /* ── 热更新 ── */

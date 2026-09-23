@@ -21,6 +21,9 @@ const ROUTES = new Map([
   ["checkin/run", { POST: "runOnce" }],
   ["checkin/run_account", { POST: "runAccount" }],   // 单账号签到（body: {site, account_id}）
   ["checkin/points", { GET: "points" }],   // 阶段1：积分聚合，无旧别名
+  // 1.5.4：签到历史可视化——统计聚合（读端点）+ CSV 导出（text/csv 原始响应）
+  ["checkin/history_stats", { GET: "historyStats" }],
+  ["checkin/history_export", { GET: "historyExport" }],
 
   // ── 阶段2：账号运维（命名空间，无旧别名）────────────
   ["checkin/accounts", { GET: "accountsList" }],

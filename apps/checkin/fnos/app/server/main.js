@@ -265,6 +265,29 @@ const ACTION_HANDLERS = {
   runOnce: (body) => api.runOnce(body.sites),
   runAccount: (body) => api.runAccount(body.site, body.account_id),
   points: () => api.points(),
+  // 1.5.4：签到历史可视化——统计聚合（读端点，开放）与 CSV 导出（原始 text/csv 响应）
+  historyStats: () => api.historyStats(),
+  historyExport: (body, ctx) => {
+    // 原始 text/csv 响应：UTF-8 BOM（Excel 兼容）+ Content-Disposition 附件下载（URL 触发浏览器下载）。
+    // history 不含 token/cookie，可安全导出；行序 = history 顺序（新→旧）。
+    const csv = api.historyExportCsv();
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    const filename = `checkin_history_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}.csv`;
+    try {
+      ctx.res.writeHead(200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        Pragma: "no-cache",
+      });
+      ctx.res.end(csv);
+    } catch (e) {
+      // 写出失败（连接已关闭等）不影响后续请求；记日志便于排查
+      console.error(`history_export 写出失败：${(e && e.message) || e}`);
+    }
+    return { __raw: true }; // 标记：响应已由 handler 直接写出，handle() 不再 send
+  },
   testLogin: (body) => api.testLogin(body.site, body.account_id),
   getHistory: (body, ctx) => api.getHistory(new URL(ctx.req.url, "http://x").searchParams.get("limit")),
   clearHistory: () => api.clearHistory(),
@@ -464,6 +487,7 @@ async function handle(req, res) {
     }
     const ctx = { req, res, send, sendFile };
     const result = await handler(body, ctx);
+    if (result && result.__raw) return; // 原始响应（如 history_export 的 CSV）已由 handler 直接写出
     return send(result);
   } catch (err) {
     return send({ success: false, message: err.message || String(err) });
