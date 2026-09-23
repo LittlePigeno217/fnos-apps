@@ -435,7 +435,19 @@ const RIGHT_FORUM = {
   },
 
   async runCheckin(cfg) {
-    const cookie = (cfg.cookie || "").trim();
+    let cookie = (cfg.cookie || "").trim();
+    if (!cookie && (cfg.username || "").trim() && (cfg.password || "").trim()) {
+      // 无 Cookie 但账密齐全 → 自动走 Discuz 登录流获取 Cookie，本次签到直接用并回写账号
+      // cookie 字段（调用方 runOnce/runAccount 的统一 save 落盘持久化，后续可直接使用）。
+      // 登录失败抛明确文案：验证码/密码错/WAF 已由 _passwordLogin 区分（复用 1.2.9 文案）。
+      try {
+        const login = await this._passwordLogin(cfg);
+        cookie = (login && login.cookie) || "";
+        if (cookie) cfg.cookie = cookie;
+      } catch (err) {
+        throw new Error("恩山账号密码自动登录失败：" + ((err && err.message) || err));
+      }
+    }
     if (!cookie) throw new Error("请先配置恩山无线论坛 Cookie");
 
     const { formhash, text: pageText, path } = await this._fetchSignPage(cookie, cfg.use_proxy);

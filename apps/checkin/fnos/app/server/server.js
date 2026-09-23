@@ -441,6 +441,17 @@ class Server {
         accounts: accs.map((a) => {
           const accHist = hist.filter((h) => h && h.site === key && String(h.account_id) === String(a.id));
           const last = accHist[0] || null;
+          // 账号级今日判定（与站点级 today_ok 同一语义）：任一今日「执行失败」→ false；
+          // 否则今日有成功/已签到 → true。字段加在 accounts 层，不与 status 的 sites.today_ok 冲突。
+          let today_ok = false;
+          let today_failed = false;
+          for (const h of accHist) {
+            if (!sameDayStr(h.time)) continue;
+            if (h.status === "执行失败") { today_failed = true; break; }
+            today_ok = true;
+          }
+          if (today_failed) today_ok = false;
+          const last_date = last ? dateStrFromTime(last.time) : "";
           const points = Number(accHist.reduce((s, h) => s + parseReward(h.reward), 0).toFixed(4));
           // 余额快照（脱敏——纯数值/展示串，绝不含 token/cookie）：
           // supports_balance = adapter 是否声明 queryBalance（前端据此决定是否显示余额行）
@@ -473,6 +484,8 @@ class Server {
             configured: adapter.isConfigured(a),
             has_session: !!a.session,
             last: last ? { time: last.time, status: last.status } : null,
+            today_ok,
+            last_date,
             points,
             supports_balance: supportsBalance,
             balance_label: supportsBalance ? (adapter.balanceLabel || "余额") : "",
@@ -948,6 +961,13 @@ function sameDayStr(t) {
   if (!t) return false;
   const todayPrefix = new Date().toLocaleDateString("zh-CN", { hour12: false });
   return String(t).startsWith(todayPrefix);
+}
+
+/** 从 history 时间字符串（'2026/9/20 23:40:15'）提取本地日期 YYYY-MM-DD（F2 账号卡「上次」日期展示） */
+function dateStrFromTime(t) {
+  const m = String(t || "").match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (!m) return "";
+  return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
 }
 
 module.exports = { Server, ADAPTERS };

@@ -407,7 +407,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.5.0</span>
+      <span class="ver" id="appVersion">v1.5.1</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -841,13 +841,21 @@ function renderAcctCard(key, a, cap) {
   const siteTag = '<div class="acct-site">' +
     '<span class="site-tag ' + siteTagClass(key) + '" style="width:18px;height:18px;border-radius:6px;font-size:9px">' + esc(siteShort(key)) + "</span>" +
     '<span class="nm" title="' + esc(siteName(key)) + '">' + esc(siteName(key)) + "</span></div>";
-  let dayBadge;
-  if (last && last.status === "执行失败") {
-    dayBadge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + esc(shortTime(last.time)) + "</span></span>";
-  } else if (last) {
-    dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + esc(shortTime(last.time)) + "</span></span>";
-  } else {
-    dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">未签</span></span>';
+  // 今日判定徽标（F2）：有今日签到成功 → 「已签 HH:MM」；仅上次记录 → 「上次 HH:MM（M-D）」；无记录 → 空。
+  // 失败保留红色展示（今日失败无日期；历史失败附 M-D，避免旧失败误导为今日）。
+  const todayOk = !!(d && d.today_ok);
+  const lastDate = (d && d.last_date) || "";
+  let dayBadge = "";
+  if (last) {
+    const t = esc(shortTime(last.time));
+    if (last.status === "执行失败") {
+      const sameDay = lastDate && lastDate === todayDate();
+      dayBadge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + t + (sameDay ? "" : (lastDate ? "（" + mdDate(lastDate) + "）" : "")) + "</span></span>";
+    } else if (todayOk) {
+      dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + t + "</span></span>";
+    } else {
+      dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">上次 ' + t + (lastDate ? "（" + mdDate(lastDate) + "）" : "") + "</span></span>";
+    }
   }
   let loginBadge = "";
   if (cap || hasSession) {
@@ -981,12 +989,12 @@ async function siteLogin(key, accountId) {
   setTimeout(() => { if (LOGIN_CTX.key === key) closeLoginModal(); }, 1200);
 }
 
-/** 轮询交互登录状态（qr/url 模式）：ready → 成功；最多 ~60 次（约 2 分钟） */
+/** 轮询交互登录状态（qr/url 模式）：ready → 成功；最多 ~150 次（约 5 分钟，对齐后端扫码会话 TTL） */
 async function loginPoll(token) {
   const key = LOGIN_CTX.key;
   if (!key) return;
   LOGIN_CTX.tries += 1;
-  if (LOGIN_CTX.tries > 60) { $("loginState").textContent = "登录超时，请重试"; $("loginState").className = "err"; return; }
+  if (LOGIN_CTX.tries > 150) { $("loginState").textContent = "扫码会话约 5 分钟内有效，超时请重试"; $("loginState").className = "err"; return; }
   const r = await call("checkin/" + key + "_login/status" + (token ? "?token=" + encodeURIComponent(token) : ""));
   const state = r && r.success && r.data ? r.data.state : "";
   if (state === "ready") {
@@ -1285,7 +1293,7 @@ async function renderAddQrPanel(key) {
 async function addQrPoll(key, token) {
   if (ADD_CTX.key !== key || ADD_CTX.tab !== "qr") return;
   ADD_CTX.qrTries += 1;
-  if (ADD_CTX.qrTries > 60) { $("addQrTip").textContent = "登录超时，请重新打开"; $("addQrTip").className = "add-panel-tip err"; return; }
+  if (ADD_CTX.qrTries > 150) { $("addQrTip").textContent = "扫码会话约 5 分钟内有效，超时请重新打开"; $("addQrTip").className = "add-panel-tip err"; return; }
   const r = await call("checkin/" + key + "_login/status" + (token ? "?token=" + encodeURIComponent(token) : ""));
   if (ADD_CTX.key !== key || ADD_CTX.tab !== "qr") return;
   const state = r && r.success && r.data ? r.data.state : "";
@@ -1352,6 +1360,19 @@ function shortTime(t) {
   if (!t) return "";
   const m = String(t).match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
   return m ? m[1] + ":" + m[2] : t;
+}
+
+/** 本地日期 YYYY-MM-DD（F2 徽标「上次」日期对比用） */
+function todayDate() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+/** YYYY-MM-DD → M-D（去前导零；F2 徽标「上次」日期可视长度） */
+function mdDate(dateStr) {
+  const m = String(dateStr || "").match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return "";
+  return Number(m[2]) + "-" + Number(m[3]);
 }
 
 /* ── 账号配置页（单账号编辑；账号卡「编辑」入口；无站点级功能）── */
@@ -1650,9 +1671,11 @@ function updateChip(on) {
 }
 async function saveSettings() {
   const cron = $("cfgCron").value.trim();
-  if (!/^\d{2}:\d{2}$/.test(cron)) { toast("每日时刻格式应为 HH:MM", "err"); return; }
-  const retry = parseInt($("cfgRetry").value.trim(), 10);
-  if (!Number.isFinite(retry) || retry < 1 || retry > 10) { toast("失败重试应为 1-10 的数字", "err"); return; }
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(cron)) { toast("每日时刻格式应为 HH:MM（00:00-23:59）", "err"); return; }
+  const retryRaw = $("cfgRetry").value.trim();
+  if (!/^\d+$/.test(retryRaw)) { toast("失败重试应为 1-99 的数字", "err"); return; }
+  const retry = parseInt(retryRaw, 10);
+  if (retry < 1 || retry > 99) { toast("失败重试应为 1-99 的数字", "err"); return; }
   const body = {
     enabled: $("cfgEnabled").checked === true,
     cron: cron,

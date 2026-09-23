@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.5.0",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.5.1",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -360,11 +360,20 @@ class Store {
       }
     }
     if (patch.enabled !== undefined) cfg.enabled = !!patch.enabled;
-    if (patch.cron !== undefined) cfg.cron = String(patch.cron || "08:10");
+    if (patch.cron !== undefined) {
+      const v = String(patch.cron || "").trim();
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
+        throw new Error("每日签到时刻格式应为 HH:MM（00:00-23:59）");
+      }
+      cfg.cron = v;
+    }
     if (patch.notify_enabled !== undefined) cfg.notify_enabled = !!patch.notify_enabled;
     if (patch.retry_count !== undefined) {
-      const n = parseInt(patch.retry_count, 10);
-      cfg.retry_count = Number.isFinite(n) ? Math.max(1, Math.min(10, n)) : cfg.retry_count;
+      const raw = String(patch.retry_count).trim();
+      if (!/^\d+$/.test(raw)) throw new Error("失败重试次数应为 1-99 的数字");
+      const n = parseInt(raw, 10);
+      if (n < 1 || n > 99) throw new Error("失败重试次数应在 1-99 之间");
+      cfg.retry_count = n;
     }
     if (patch.feishu_webhook !== undefined) {
       const v = String(patch.feishu_webhook || "").trim();
