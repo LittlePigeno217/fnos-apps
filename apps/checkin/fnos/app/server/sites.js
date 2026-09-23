@@ -158,11 +158,14 @@ function napiUsd(quota) {
   return "$" + (Number(quota || 0) / 500000).toFixed(2);
 }
 
-/** GET {base}/api/user/self → {quota, used_quota}；401 抛明确失效文案（供上层定位凭据问题），其余解析失败 → null */
+/** GET {base}/api/user/self → {quota, used_quota}；401 抛明确失效文案；WAF 拦截抛人机验证指引；其余解析失败 → null */
 async function fetchUserInfo(base, auth, useProxy) {
   const s = new Session();
   const r = await s.get(base + "/api/user/self", { headers: newApiHeaders(auth), timeout: 15000, useProxy });
   if (r.status === 401) throw new Error("登录态失效（HTTP 401）：Cookie 过期或 Token 无效，请重新获取（session 约 1 个月有效）");
+  if (isWafChallenge(r.text)) {
+    throw new Error(`平台 WAF 人机验证拦截了用户信息接口：Cookie 缺少 acw_sc__v2 等验证标识，请在浏览器访问 ${base} 通过验证后复制完整 Cookie`);
+  }
   const j = parseJson(r.text);
   if (!j || !j.success || !(j.data || {}).quota) return null;
   return { quota: Number(j.data.quota) || 0, used_quota: Number(j.data.used_quota) || 0 };
