@@ -737,21 +737,23 @@ const ANYROUTER = {
   mode: "Cookie / 账号 / OAuth",
   // 登录方式与 NEWAPI 通用一致（OAuth 在 WAF 下可能失败属运行时问题，选项保留）
   login_caps: NEWAPI_LOGIN_CAPS,
-  desc: "anyrouter.top / AgentRouter · NewAPI 通用语义：Cookie + api_user 或账号密码签到，WAF 站点用 Cookie",
+  desc: "anyrouter.top / AgentRouter · 配置对齐 anyrouter-check-in 仓库原生项：provider / email+password / cookies / api_user",
   fields: [
-    { key: "base_url", label: "平台地址", type: "text", ph: "https://anyrouter.top（AgentRouter 填 https://agentrouter.org）" },
-    { key: "email", label: "账号 / 邮箱", type: "text", ph: "可选：账号密码方式（NewAPI 通用）" },
+    { key: "provider", label: "提供商", type: "select", options: [
+      { value: "anyrouter", label: "AnyRouter（anyrouter.top）" },
+      { value: "agentrouter", label: "AgentRouter（agentrouter.org）" },
+    ] },
+    { key: "email", label: "账号 / 邮箱", type: "text", ph: "邮箱密码登录（推荐）" },
     { key: "password", label: "密码", type: "password", ph: "可选：与账号配合登录（留空不改）" },
-    { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（WAF 站点需完整复制）" },
-    { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
+    { key: "cookies", label: "Cookies", type: "password", ph: "浏览器会话 Cookies（WAF 站点需完整复制）" },
+    { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（可选）" },
   ],
   base: "https://anyrouter.top",
 
   defaultConfig() {
     return {
       enabled: false, use_proxy: false,
-      base_url: "https://anyrouter.top",
-      cookie: "", api_user: "", email: "", password: "",
+      provider: "anyrouter", cookies: "", api_user: "", email: "", password: "",
     };
   },
   isConfigured(cfg) {
@@ -761,11 +763,19 @@ const ANYROUTER = {
     return NEWAPI.getAccountLabel(this._toNewApiCfg(cfg));
   },
 
-  /** 键归一（anyrouter 表单 → NEWAPI 语义）：email 补位 username；base_url 缺省回落 anyrouter.top */
+  /** 键归一（原生 anyrouter-check-in 配置 → NEWAPI 语义）：
+   * provider 决定平台地址（anyrouter.top / agentrouter.org）；cookies/cookie 兼容；
+   * 旧账号 base_url 自动推导 provider；email 补位 username */
   _toNewApiCfg(cfg) {
     const n = { ...cfg };
     if (!n.username && n.email) n.username = n.email;
-    if (!n.base_url && this.base) n.base_url = this.base;
+    let provider = n.provider || "anyrouter";
+    if (!n.provider && n.base_url) {
+      if (String(n.base_url).toLowerCase().includes("agentrouter")) provider = "agentrouter";
+    }
+    n.base_url = n.base_url || (provider === "agentrouter" ? "https://agentrouter.org" : this.base);
+    n.cookie = (n.cookies != null ? n.cookies : n.cookie) || "";
+    delete n.cookies;
     return n;
   },
 
@@ -775,8 +785,9 @@ const ANYROUTER = {
       const r = await NEWAPI.runCheckin(ncfg);
       return { ...r, site: this.key, site_name: this.name };
     } catch (err) {
-      // B16a：账密被拒（NEWAPI 登录失败标记 loginRejected）且配置了 Cookie → 回退 Cookie 签到
-      if (err && err.loginRejected && cfg.cookie && String(cfg.cookie).trim()) {
+      // B16a：账密被拒（NEWAPI 登录失败标记 loginRejected）且配置了 Cookies → 回退 Cookie 签到
+      const ck = String(cfg.cookies != null ? cfg.cookies : cfg.cookie || "").trim();
+      if (err && err.loginRejected && ck) {
         const fbCfg = this._toNewApiCfg({ ...cfg, password: "" });
         const fb = await NEWAPI.runCheckin(fbCfg);
         fb.message = `${fb.message || ""}（账密登录失败已回退 Cookie 签到）`;
