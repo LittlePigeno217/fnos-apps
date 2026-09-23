@@ -400,7 +400,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.5.9</span>
+      <span class="ver" id="appVersion">v1.6.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -420,7 +420,7 @@
         <div class="toolbar">
           <button class="btn primary" onclick="openAddAccount('')" title="选择已有站点添加账号">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            ＋ 添加账号
+            添加账号
           </button>
           <button class="btn" id="runAllBtn" onclick="runAll()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
@@ -810,7 +810,7 @@ function renderAccountList() {
   const cards = acctGroupCards(groupKeys[ACCT_TAB]);
   list.innerHTML = cards.length
     ? '<div class="acct-grid-global">' + cards.join("") + "</div>"
-    : '<div class="acct-group-empty">该分组暂无账号，点击上方「＋ 添加账号」添加</div>';
+    : '<div class="acct-group-empty">该分组暂无账号，点击上方「添加账号」添加</div>';
   if (cnt) cnt.textContent = total ? "共 " + total + " 个账号" : "";
 }
 
