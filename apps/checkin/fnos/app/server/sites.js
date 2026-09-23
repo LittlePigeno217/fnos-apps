@@ -1035,17 +1035,8 @@ const NEWAPI = {
     throw new Error("请配置账号密码，或 Cookie + api_user");
   },
 
-  /** 会话优先构造认证：有效 session（token/cookie）直接用；否则走 _authHeaders 登录 */
+  /** 会话构造认证（1.6.7）：NewAPI 不保持登录态——每次签到从配置凭据现场认证，不读取/复用已存 session */
   async _resolveAuth(cfg) {
-    if (sessionValid(cfg) && cfg.session && typeof cfg.session === "object") {
-      const sess = cfg.session;
-      if (sess.type === "token" && sess.token) {
-        return { type: "token", token: sess.token, base: sess.base || this._base(cfg) };
-      }
-      if (sess.type === "cookie" && sess.headers) {
-        return { type: "cookie", headers: sess.headers, base: sess.base || this._base(cfg) };
-      }
-    }
     return this._authHeaders(cfg);
   },
 

@@ -54,8 +54,15 @@ async function fetchSiteTitleCached(url) {
     clearTimeout(timer);
     if (res.ok) {
       const html = await res.text();
+      // 1) <title> 优先
       const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
       if (m) title = m[1].replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").slice(0, 80);
+      // 2) 品牌 span 兜底（NewAPI 前台 logo 文本，如 <span class="max-w-[12rem] truncate">JustDoWork</span>）
+      if (!title) {
+        const b = html.match(/<span[^>]*class="[^"]*max-w-\[12rem\]\s+truncate[^"]*"[^>]*>([^<]{1,40})<\/span>/i)
+               || html.match(/<span[^>]*class="[^"]*truncate[^"]*"[^>]*>([^<]{2,40})<\/span>/i);
+        if (b) title = b[1].replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "").slice(0, 80);
+      }
     }
   } catch (e) { /* 抓取失败 → null，前端回落 host */ }
   titleCache.set(url, { title, ts: Date.now() });

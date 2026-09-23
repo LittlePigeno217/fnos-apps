@@ -404,7 +404,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.6.6</span>
+      <span class="ver" id="appVersion">v1.6.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -888,7 +888,8 @@ function renderAcctCard(key, a, cap) {
   // F7-1：登录徽标接入交互登录弹窗——未配置/凭据已配置点击 → siteLogin(key, accountId)；
   // 已登录点击仅提示（无操作，避免误开登录流覆盖会话）；站点无交互登录能力不渲染徽标。
   let loginBadge = "";
-  if (cap || hasSession) {
+  // 1.6.7：NewAPI 不保持登录态（每次签到现场认证）→ 不显示登录状态徽标（无「已登录/凭据已配置/未配置」）
+  if (key !== "newapi" && (cap || hasSession)) {
     const badgeOn = ' onclick="badgeLoginAction(\'' + key + "','" + esc(a.id || "") + '\',' + (hasSession ? "true" : "false") + ')" style="cursor:pointer"';
     if (hasSession) {
       loginBadge = '<span class="login-badge on"' + badgeOn + '><span class="dot"></span>已登录</span>';
