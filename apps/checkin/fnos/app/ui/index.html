@@ -400,7 +400,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.5.7</span>
+      <span class="ver" id="appVersion">v1.5.8</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1071,8 +1071,7 @@ function openAddAccount(key, pickKeys) {
   ADD_CTX = { key: key || "", tab: "", qrTimer: null, qrTries: 0, qrToken: "", qrDone: false };
   $("addModal").style.display = "flex";
   if (!key) {
-    $("addTag").textContent = "＋";
-    $("addTag").className = "site-tag";
+    $("addTag").style.display = "none"; // 未选定站点：隐藏徽标（避免与工具条「＋ 添加账号」重复双 +）
     $("addTitle").textContent = "添加账号";
     $("addSub").textContent = "选择站点，然后按支持的方式登录";
     $("addBody").hidden = true;
@@ -1086,6 +1085,7 @@ function openAddAccount(key, pickKeys) {
   }
   $("addSitePick").hidden = true;
   $("addBody").hidden = false;
+  $("addTag").style.display = ""; // 选定站点后恢复徽标（站点短名）
   $("addTag").textContent = siteShort(key);
   $("addTag").className = "site-tag " + siteTagClass(key);
   $("addTitle").textContent = siteName(key) + " · 添加账号";
