@@ -645,15 +645,34 @@ const YPOJIE = {
     },
   },
 
-  /** 会话优先取登录态 Session：有效 session（type=cookie）→ 用 Cookie 构造并校验；否则登录 */
+  /** 会话优先取登录态 Session：有效 session（type=cookie）→ 用 Cookie 构造并校验；失效/被拒 → 回退账密全新登录一次。
+   * 登录/验证后统一回写会话（成功后后续签到复用 Cookie，避免每次签到全量登录触发站点防爆破）。 */
   async _resolveSession(cfg) {
-    if (sessionValid(cfg) && cfg.session.type === "cookie" && cfg.session.cookie) {
-      const s = sessionFromCookie(cfg.session.cookie);
-      const vip = await this._getVip(s, cfg);
-      this._validateLoginPage(vip.text); // 会话失效则抛错（提示重新登录）
-      return { s, beforePage: vip.text };
+    let s = null;
+    let beforePage = "";
+    if (sessionValid(cfg) && cfg.session && cfg.session.type === "cookie" && cfg.session.cookie) {
+      s = sessionFromCookie(cfg.session.cookie);
+      try {
+        const vip = await this._getVip(s, cfg);
+        this._validateLoginPage(vip.text); // 会话失效则抛错 → 走下方全新登录
+        beforePage = vip.text;
+      } catch (e) {
+        delete cfg.session;
+        delete cfg.session_ts;
+        s = null; // 旧会话失效（WP 轮换/IP 封锁后 cookie 作废）
+      }
     }
-    return this._login(cfg);
+    if (!s) {
+      const r = await this._login(cfg); // 登录失败带真实原因（封锁/凭证）向上抛出
+      s = r.s;
+      beforePage = r.beforePage;
+      // 回写会话：登录成功即持久（runOnce 尾部 save 落盘）
+      cfg.session = { type: "cookie", cookie: s.cookieHeader() };
+      cfg.session_ts = Date.now();
+    } else {
+      cfg.session_ts = Date.now(); // 旧会话有效 → 刷新有效期
+    }
+    return { s, beforePage };
   },
 
   async runCheckin(cfg) {
