@@ -257,6 +257,7 @@ class Server {
             if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
             const r = await adapter.runCheckin(acc);
             await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
+            this._accumDailyReward(adapter, acc, r); // 非 NewAPI 系（flzt/right_forum/ypojie）当天签到奖励累计（0 点重置）
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
             this._store.schedCheckinSuccess(key, acc.id); // B18：签到成功即从今日失败集移除（补签列表翻转）
             history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" });
@@ -335,6 +336,7 @@ class Server {
         if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
         const r = await adapter.runCheckin(acc);
         await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
+        this._accumDailyReward(adapter, acc, r); // 非 NewAPI 系当天签到奖励累计（0 点重置）
         result = { site_key: site, account_id: acc.id, account: accLabel, ...r };
         history = { time: r.time, site, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" };
         this._log(`单账号签到 ${adapter.name} → ${r.status}`);
@@ -451,9 +453,34 @@ class Server {
     }
   }
 
+  /**
+   * 非 NewAPI 系（flzt/right_forum/ypojie）当天签到奖励累计：仿 daily_gain 的撞日归零机制。
+   * 仅在本次为「签到成功」（首次成功）时累计——「今日已签到」重试不重复计（避免调度重试串账）。
+   * 累计源：adapter runCheckin 返回的 reward_value（数值）+ reward_unit（单位，如 flzt=MB）；
+   *   无法解析（reward_value 非正数）→ 跳过。workbuddy/NewAPI 系走 daily_gain（余额），此处不涉及。
+   * 写入账号级 daily_reward（数值）+ daily_reward_unit（单位）+ daily_reward_date（撞日判定）；
+   * 与后续 save() 一同落盘（调用方在 snapshotBalance 后、save 前调用）。异常吞掉，绝不影响签到结果。
+   */
+  _accumDailyReward(adapter, acc, r) {
+    try {
+      if (!adapter || !acc || !r) return;
+      if (!["flzt", "right_forum", "ypojie"].includes(adapter.key)) return;
+      if (r.status !== "签到成功") return; // 仅首次成功累计；已签到重试跳过
+      const val = Number(r.reward_value);
+      if (!Number.isFinite(val) || val <= 0) return; // 无结构化奖励 → 不累计
+      const unit = r.reward_unit ? String(r.reward_unit) : "";
+      const today = localDateStr();
+      if (acc.daily_reward_date !== today) { // 撞日归零（0 点滚动，防跨天串账）
+        acc.daily_reward = 0;
+        acc.daily_reward_date = today;
+      }
+      if (unit) acc.daily_reward_unit = unit;
+      acc.daily_reward = Number(((Number(acc.daily_reward) || 0) + val).toFixed(6));
+    } catch { /* 当天奖励累计失败绝不影响签到/测试结果 */ }
+  }
+
   /* ── 站点级 use_proxy 注入（内存合并，不落盘）────────────────────
    * adapter 请求统一读 cfg.use_proxy（cfg 即账号对象）决定走代理；账号对象本身无
-   * use_proxy 字段 → undefined → 直连（真机根因：站点已勾选「走代理」但账号请求全直连
    * → anyrouter EPROTO）。调用 adapter 前以站点开关兜底注入：
    *   - 账号无显式 use_proxy（字段不存在）→ 注入站点值（内存合并，不覆盖显式值）
    *   - 账号已有显式 use_proxy → 不动（未来支持账号级覆盖）
@@ -673,6 +700,11 @@ class Server {
           // 昨日累计不跨天展示（今日未发生签到 → null 日期 → 0）。仅 workbuddy 签到路径写入，数值非敏感。
           const rawDailyGain = Number.isFinite(Number(a.daily_gain)) ? Math.max(0, Number(a.daily_gain)) : 0;
           const dailyGain = (a.daily_gain_date === localDateStr()) ? rawDailyGain : 0;
+          // 当日签到奖励累计（daily_reward，0 点滚动）：flzt/right_forum/ypojie 专用，非余额系。
+          // daily_reward_date 非今天视为 0（昨日累计不跨天展示）。数值 + 单位（daily_reward_unit）非敏感。
+          const rawDailyReward = Number.isFinite(Number(a.daily_reward)) ? Math.max(0, Number(a.daily_reward)) : 0;
+          const dailyReward = (a.daily_reward_date === localDateStr()) ? rawDailyReward : 0;
+          const dailyRewardUnit = a.daily_reward_unit || "";
           const fmt = (v) => (typeof adapter.fmtBalance === "function" ? adapter.fmtBalance(v) : String(v));
           // 编辑页字段回显：非敏感文本字段回显明文，type=password 字段回显脱敏串。
           //   服务端计算 mask，绝不回吐明文；空值字段两个对象都不含该 key（前端留空显 placeholder）。
@@ -713,6 +745,10 @@ class Server {
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
             daily_gain_display: (supportsBalance && ["workbuddy", "newapi", "anyrouter"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+            // 当天签到奖励累计展示（flzt/right_forum/ypojie）：+X 单位（如 "+50 MB"）；今日无 / 目标外站点 → 空
+            daily_reward: dailyReward,
+            daily_reward_unit: dailyRewardUnit,
+            daily_reward_display: (["flzt", "right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
           };
         }),
       };
@@ -1175,6 +1211,17 @@ function localDateStr(d = new Date()) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** 当天奖励展示：数值去尾零 + 单位；MB 单位 ≥1024 换算 GB（如 50→"50 MB"、2048→"2 GB"）。 */
+function fmtDailyReward(v, unit) {
+  const n = Number(v) || 0;
+  const trim = (x) => String(Number(Number(x).toFixed(2)));
+  if (unit === "MB") {
+    if (n >= 1024) return trim(n / 1024) + " GB";
+    return trim(n) + " MB";
+  }
+  return trim(n) + (unit ? " " + unit : "");
 }
 
 /** 判断 history 时间字符串（'2026/9/20 23:40:15'）是否为今天 */

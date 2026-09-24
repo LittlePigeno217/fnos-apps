@@ -272,13 +272,15 @@ const FLZT = {
     const message = j.message || "";
     const data = j.data || {};
     const reward = String(data.reward_mb || data.reward || "0");
+    // 当天奖励累计源（server 侧按 status==="签到成功" 累计）：本次签到获得的流量，单位 MB
+    const rewardVal = Number(data.reward_mb || data.reward || 0);
     const total = fmtTraffic(data.total_checkin_traffic);
 
     if (j.status === "success") {
-      return this._ok("签到成功", message || "签到成功", reward, total, cfg);
+      return this._ok("签到成功", message || "签到成功", reward, total, cfg, rewardVal, "MB");
     }
     if (isAlreadyCheckedIn(message)) {
-      return this._ok("今日已签到", message, reward, total, cfg);
+      return this._ok("今日已签到", message, reward, total, cfg, rewardVal, "MB");
     }
     throw new Error(message || "签到失败");
   },
@@ -288,8 +290,9 @@ const FLZT = {
     return { site: this.key, site_name: this.name, message: "登录测试成功，凭据有效（token 鉴权已确认）" };
   },
 
-  _ok(status, message, reward, total, cfg) {
-    return { site: this.key, site_name: this.name, status, message, reward, total, account: this.getAccountLabel(cfg), time: now() };
+  // reward_value/reward_unit：结构化当天奖励（数值+单位），server 侧当天累计用；不影响 history/points（仍读 reward 字符串）
+  _ok(status, message, reward, total, cfg, rewardVal, rewardUnit) {
+    return { site: this.key, site_name: this.name, status, message, reward, total, account: this.getAccountLabel(cfg), time: now(), reward_value: Number(rewardVal) || 0, reward_unit: rewardUnit || "" };
   },
 };
 
@@ -511,9 +514,12 @@ const RIGHT_FORUM = {
     }
     const finalMsg = parts.length ? parts.join("；") : pageStats || message || statusText;
 
+    // 当天奖励累计源：今日积分 credit（仅签到成功时 >0；已签为 0）。单位「积分」。history reward 仍保留 "-"（不改 points 聚合）
+    const creditVal = Number(payload.credit || 0);
     return {
       site: this.key, site_name: this.name, status: statusText, message: finalMsg,
       reward: "-", total: "-", account: "Cookie", time: now(),
+      reward_value: Number.isFinite(creditVal) ? Math.max(0, creditVal) : 0, reward_unit: "积分",
     };
   },
 
@@ -715,11 +721,12 @@ const YPOJIE = {
     } catch { /* 余额差取不到不致命 */ }
 
     let rewardMsg = "";
+    let rewardVal = 0; // 当天奖励累计源：本次签到积分增量（余额差；取不到 → 0 不累计）
     const beforeBal = this._extractBalance(beforePage);
     const afterBal = this._extractBalance(afterPage);
     if (beforeBal != null && afterBal != null && afterBal >= beforeBal) {
       const diff = afterBal - beforeBal;
-      if (diff > 0) rewardMsg = `本次签到增加：${diff.toFixed(2)}积分`;
+      if (diff > 0) { rewardMsg = `本次签到增加：${diff.toFixed(2)}积分`; rewardVal = diff; }
     }
 
     const message = j.msg || j.message || "";
@@ -730,6 +737,7 @@ const YPOJIE = {
         site: this.key, site_name: this.name, status: "今日已签到",
         message: rewardMsg || message, reward: "-", total: "-",
         account: this.getAccountLabel(cfg), time: now(),
+        reward_value: rewardVal, reward_unit: "积分",
       };
     }
     if (Number(j.status) === 200) {
@@ -737,6 +745,7 @@ const YPOJIE = {
         site: this.key, site_name: this.name, status: "签到成功",
         message: rewardMsg || message || "签到成功", reward: "-", total: "-",
         account: this.getAccountLabel(cfg), time: now(),
+        reward_value: rewardVal, reward_unit: "积分",
       };
     }
     throw new Error(message || `易破解签到失败（status=${j.status}）`);

@@ -409,7 +409,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.7.6</span>
+      <span class="ver" id="appVersion">v1.7.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -903,7 +903,9 @@ function renderAcctCard(key, a, cap) {
       const sameDay = lastDate && lastDate === todayDate();
       dayBadge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + t + (sameDay ? "" : (lastDate ? "（" + mdDate(lastDate) + "）" : "")) + "</span></span>";
     } else if (todayOk) {
-      dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + t + "</span></span>";
+      // 已签文案带当天签到奖励（flzt/right_forum/ypojie）：daily_reward_display 非空 → 追加「· 当天 +X 单位」
+      const rw = (d && d.daily_reward_display) ? (' · 当天 ' + esc(d.daily_reward_display)) : "";
+      dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + t + rw + "</span></span>";
     } else {
       dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">上次 ' + t + (lastDate ? "（" + mdDate(lastDate) + "）" : "") + "</span></span>";
     }
