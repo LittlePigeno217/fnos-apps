@@ -213,6 +213,10 @@ const FLZT = {
   base: "https://flzt.club",
   loginPath: "/api/v1/passport/auth/login",
   checkinPath: "/api/v1/user/checkIn",
+  // 英雄大数字（当前持有量）：FLZT 无独立余额接口，沿用签到响应里的 total_checkin_traffic
+  // （语义为「累计签到流量」，非实时可用流量）。fmtTraffic 与既有 total 展示口径一致。
+  holdLabel: "当前流量",
+  fmtHold(v) { return fmtTraffic(v); },
 
   defaultConfig() {
     return { enabled: false, use_proxy: false, email: "", password: "" };
@@ -275,12 +279,14 @@ const FLZT = {
     // 当天奖励累计源（server 侧按 status==="签到成功" 累计）：本次签到获得的流量，单位 MB
     const rewardVal = Number(data.reward_mb || data.reward || 0);
     const total = fmtTraffic(data.total_checkin_traffic);
+    // 当前持有量（hero 大数字源）：累计签到流量原始值（bytes；取不到 → null，前端显示「—」）
+    const holdVal = Number.isFinite(Number(data.total_checkin_traffic)) ? Number(data.total_checkin_traffic) : null;
 
     if (j.status === "success") {
-      return this._ok("签到成功", message || "签到成功", reward, total, cfg, rewardVal, "MB");
+      return this._ok("签到成功", message || "签到成功", reward, total, cfg, rewardVal, "MB", holdVal);
     }
     if (isAlreadyCheckedIn(message)) {
-      return this._ok("今日已签到", message, reward, total, cfg, rewardVal, "MB");
+      return this._ok("今日已签到", message, reward, total, cfg, rewardVal, "MB", holdVal);
     }
     throw new Error(message || "签到失败");
   },
@@ -291,8 +297,9 @@ const FLZT = {
   },
 
   // reward_value/reward_unit：结构化当天奖励（数值+单位），server 侧当天累计用；不影响 history/points（仍读 reward 字符串）
-  _ok(status, message, reward, total, cfg, rewardVal, rewardUnit) {
-    return { site: this.key, site_name: this.name, status, message, reward, total, account: this.getAccountLabel(cfg), time: now(), reward_value: Number(rewardVal) || 0, reward_unit: rewardUnit || "" };
+  // hold_value：当前持有量原始值（total_checkin_traffic），server 侧快照进 acc.hold 供 hero 大数字展示
+  _ok(status, message, reward, total, cfg, rewardVal, rewardUnit, holdVal) {
+    return { site: this.key, site_name: this.name, status, message, reward, total, account: this.getAccountLabel(cfg), time: now(), reward_value: Number(rewardVal) || 0, reward_unit: rewardUnit || "", hold_value: (holdVal == null ? null : Number(holdVal)) };
   },
 };
 
@@ -320,6 +327,9 @@ const RIGHT_FORUM = {
   CHALLENGE_MARKERS: ["_waf_is_mobile", "CF_APP_WAF", '"sceneId"', 'id="renderData"'],
   // 真实验证码/安全验证标记（questionid 安全提问下拉框为 Discuz 常规字段，不计入）
   CAPTCHA_MARKERS: ["seccodeverify", "misc.php?mod=seccode", "请输入验证码", "需要验证码", "验证码不正确"],
+  // 英雄大数字标签：恩山签到响应只有「今日积分」credit（当天收益，非持有量），
+  // 站点未暴露稳定的「当前总积分」字段 → 不产出 hold_value，hero 大数字显示「—」（详见任务书调研）。
+  holdLabel: "积分",
 
   defaultConfig() {
     return { enabled: false, use_proxy: false, username: "", password: "", cookie: "" };
@@ -545,6 +555,10 @@ const YPOJIE = {
   vipPath: "/vip?pd=money",
   loginPath: "/wp-login.php",
   ajaxPath: "/wp-admin/admin-ajax.php",
+  // 英雄大数字（当前持有量）：复用签到时已抓取的 vip 页余额（_extractBalance「可用余额 N 积分」），
+  // 不新增触网。取不到 → null，前端显示「—」。
+  holdLabel: "积分",
+  fmtHold(v) { return String(Number(Number(v).toFixed(2))); },
 
   defaultConfig() {
     return { enabled: false, use_proxy: false, email: "", password: "" };
@@ -730,6 +744,8 @@ const YPOJIE = {
     }
 
     const message = j.msg || j.message || "";
+    // 当前持有量（hero 大数字源）：签到后 vip 页余额（afterBal；取不到 → null → 前端「—」）
+    const holdVal = (afterBal != null && Number.isFinite(afterBal)) ? afterBal : null;
     // B15：先判「今日已签到」再判 status 成功——部分站点「已签」仍回 HTTP 200 + 已签到文案，
     // 若先判 200 会把「今日已签到」误标为「签到成功」（历史/通知/补签判定全部串扰）。
     if (message && isAlreadyCheckedIn(message)) {
@@ -737,7 +753,7 @@ const YPOJIE = {
         site: this.key, site_name: this.name, status: "今日已签到",
         message: rewardMsg || message, reward: "-", total: "-",
         account: this.getAccountLabel(cfg), time: now(),
-        reward_value: rewardVal, reward_unit: "积分",
+        reward_value: rewardVal, reward_unit: "积分", hold_value: holdVal,
       };
     }
     if (Number(j.status) === 200) {
@@ -745,7 +761,7 @@ const YPOJIE = {
         site: this.key, site_name: this.name, status: "签到成功",
         message: rewardMsg || message || "签到成功", reward: "-", total: "-",
         account: this.getAccountLabel(cfg), time: now(),
-        reward_value: rewardVal, reward_unit: "积分",
+        reward_value: rewardVal, reward_unit: "积分", hold_value: holdVal,
       };
     }
     throw new Error(message || `易破解签到失败（status=${j.status}）`);

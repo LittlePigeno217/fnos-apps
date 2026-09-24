@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.7.7",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.7.8",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -167,6 +167,14 @@ class Store {
         // daily_gain_date：累计所在本地日期（YYYY-MM-DD）。旧文件无此字段 → 0 / null。
         daily_gain: Number.isFinite(Number(a.daily_gain)) ? Math.max(0, Number(a.daily_gain)) : 0,
         daily_gain_date: (typeof a.daily_gain_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.daily_gain_date)) ? a.daily_gain_date : null,
+        // daily_reward：当日累计签到奖励（flzt/right_forum/ypojie，≥0，0 点归零）+ 单位 + 所在本地日期。
+        // 旧文件无此字段 → 0 / "" / null（1.7.7 起写入，纳入白名单避免重启/编辑后当天累计文案丢失）。
+        daily_reward: Number.isFinite(Number(a.daily_reward)) ? Math.max(0, Number(a.daily_reward)) : 0,
+        daily_reward_unit: typeof a.daily_reward_unit === "string" ? a.daily_reward_unit : "",
+        daily_reward_date: (typeof a.daily_reward_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.daily_reward_date)) ? a.daily_reward_date : null,
+        // hold：当前持有量快照（hero 大数字，非余额系 flzt 流量 / ypojie 积分）。旧文件无此字段 → null。
+        hold: (a.hold === null || a.hold === undefined || a.hold === "") ? null : Number(a.hold),
+        hold_ts: Number(a.hold_ts) || 0,
       };
       // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）
       for (const f of accountFieldKeys(slug)) {
@@ -454,6 +462,20 @@ class Store {
               merged.daily_gain_date = (a.daily_gain_date === undefined || a.daily_gain_date === null || a.daily_gain_date === "")
                 ? (prev.daily_gain_date == null ? null : prev.daily_gain_date)
                 : String(a.daily_gain_date);
+              // daily_reward / hold 均非 UI 表单字段（只由签到快照写入）：patch 未带则保留现值（0 点重置/新快照由签到逻辑负责）
+              merged.daily_reward = Number.isFinite(Number(a.daily_reward))
+                ? Math.max(0, Number(a.daily_reward))
+                : Number.isFinite(Number(prev.daily_reward)) ? Math.max(0, Number(prev.daily_reward)) : 0;
+              merged.daily_reward_unit = (typeof a.daily_reward_unit === "string" && a.daily_reward_unit !== "")
+                ? a.daily_reward_unit
+                : (typeof prev.daily_reward_unit === "string" ? prev.daily_reward_unit : "");
+              merged.daily_reward_date = (a.daily_reward_date === undefined || a.daily_reward_date === null || a.daily_reward_date === "")
+                ? (prev.daily_reward_date == null ? null : prev.daily_reward_date)
+                : String(a.daily_reward_date);
+              merged.hold = (a.hold === null || a.hold === undefined || a.hold === "")
+                ? (prev.hold === null || prev.hold === undefined ? null : Number(prev.hold))
+                : Number(a.hold);
+              merged.hold_ts = Number(a.hold_ts) || Number(prev.hold_ts) || 0;
               for (const f of accountFieldKeys(k)) {
                 const rawV = a[f];
                 const prevV = prev[f] || "";

@@ -409,7 +409,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.7.7</span>
+      <span class="ver" id="appVersion">v1.7.8</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -851,6 +851,15 @@ function authModeTag(m) {
 }
 
 /** 单个账号卡（全局账号列表用）：站点来源标签 + 标题（备注优先）+ 余额/积分 + 状态 + 操作。 */
+// 英雄大数字图标：持有量语义为「流量」→ 数据/流量图标；其余（积分/余额/金币）→ 金币图标。
+function heroIcon(label) {
+  const traffic = /流量/.test(String(label || ""));
+  const path = traffic
+    ? '<path d="M3 12h4l3 8 4-16 3 8h4"/>' // 流量/活动折线
+    : '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/>'; // 金币
+  return '<span class="hero-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg></span>';
+}
+
 function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
@@ -927,39 +936,20 @@ function renderAcctCard(key, a, cap) {
       loginBadge = '<span class="login-badge"' + badgeOn + '><span class="dot"></span>未配置</span>';
     }
   }
-  // 余额 / 积分行：仅 supports_balance 的账号显示。
-  //   workbuddy → 积分主视觉 hero（大数字 chip + delta 徽标）；其余站点 → 精简余额行（不动）。
+  // 统一英雄大数字（所有站点）：hero-num = 当前持有量（hero_display，空 → 「—」）；
+  //   hero-delta = 当天签到收益（hero_delta_display，>0 才有值）。图标按持有量语义选（流量/积分·余额·金币）。
   let balLine = "";
-  if (d && d.supports_balance) {
-    const bl = esc(d.balance_label || "余额");
-    if (key === "workbuddy") {
-      const coin = '<span class="hero-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/></svg></span>';
-      if (d.balance_display) {
-        // 增长徽标 = 当日累计新增积分（daily_gain，0 点自动归零）：>0 → +N 绿徽标；=0（今日无新增）→ 不显示
-        let delta = "";
-        if (d.daily_gain_display) {
-          delta = '<span class="hero-delta up">' + esc(d.daily_gain_display) + "</span>";
-        }
-        balLine = '<div class="acct-hero">' + coin +
-          '<span class="hero-main"><span class="hero-lb">' + bl + '</span><span class="hero-num">' + esc(d.balance_display) + "</span></span>" +
-          delta + "</div>";
-      } else {
-        balLine = '<div class="acct-hero empty">' + coin +
-          '<span class="hero-main"><span class="hero-lb">' + bl + '</span><span class="hero-num">—</span></span></div>';
-      }
-    } else if (d.balance_display) {
-      let delta = "";
-      // 1.6.8：NewAPI 系显示「当天签到累计余额增加」（daily_gain，0 点重置）；今日无累计回退本次增量
-      const dg = d.daily_gain_display || "";
-      const dd = d.balance_delta_display || "";
-      if (dg || dd) {
-        const up = !!dg || Number(d.balance_delta) > 0;
-        delta = '<span class="bd ' + (up ? "up" : "down") + '" title="' + (dg ? "当天签到累计增加" : "本次签到增量") + '">' + esc(dg || dd) + "</span>";
-      }
-      balLine = '<div class="acct-bal"><span class="bl">' + bl + '</span><span class="bv">' + esc(d.balance_display) + "</span>" + delta + "</div>";
-    } else {
-      balLine = '<div class="acct-bal empty"><span class="bl">' + bl + '</span><span class="bv">—</span></div>';
-    }
+  if (d && d.hero_label) {
+    const bl = esc(d.hero_label);
+    const ico = heroIcon(d.hero_label);
+    const hasVal = d.hero_display != null && d.hero_display !== "";
+    const delta = d.hero_delta_display
+      ? '<span class="hero-delta up">' + esc(d.hero_delta_display) + "</span>"
+      : "";
+    balLine = '<div class="acct-hero' + (hasVal ? "" : " empty") + '">' + ico +
+      '<span class="hero-main"><span class="hero-lb">' + bl + '</span><span class="hero-num">' +
+      (hasVal ? esc(d.hero_display) : "—") + "</span></span>" +
+      delta + "</div>";
   }
   // 账号卡「编辑」入口：打开该账号的纯账号配置页（无站点级功能）；改凭据保存即覆盖登录态。
   const editBtn = '<button class="btn btn-mini" title="编辑该账号配置（凭据/备注/启用）" onclick="openAccountEditor(\'' + key + "','" + esc(a.id || "") + '\')">' +

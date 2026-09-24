@@ -258,6 +258,7 @@ class Server {
             const r = await adapter.runCheckin(acc);
             await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
             this._accumDailyReward(adapter, acc, r); // 非 NewAPI 系（flzt/right_forum/ypojie）当天签到奖励累计（0 点重置）
+            this._snapshotHold(adapter, acc, r); // 非余额系当前持有量快照（hero 大数字，复用响应字段不触网）
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
             this._store.schedCheckinSuccess(key, acc.id); // B18：签到成功即从今日失败集移除（补签列表翻转）
             history.push({ time: r.time, site: key, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" });
@@ -337,6 +338,7 @@ class Server {
         const r = await adapter.runCheckin(acc);
         await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
         this._accumDailyReward(adapter, acc, r); // 非 NewAPI 系当天签到奖励累计（0 点重置）
+        this._snapshotHold(adapter, acc, r); // 非余额系当前持有量快照（hero 大数字，复用响应字段不触网）
         result = { site_key: site, account_id: acc.id, account: accLabel, ...r };
         history = { time: r.time, site, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" };
         this._log(`单账号签到 ${adapter.name} → ${r.status}`);
@@ -477,6 +479,25 @@ class Server {
       if (unit) acc.daily_reward_unit = unit;
       acc.daily_reward = Number(((Number(acc.daily_reward) || 0) + val).toFixed(6));
     } catch { /* 当天奖励累计失败绝不影响签到/测试结果 */ }
+  }
+
+  /**
+   * 当前持有量快照（hero 大数字源）：非 queryBalance 系（flzt/ypojie 等声明 holdLabel 的 adapter）。
+   * 数据源为 runCheckin 结果里已带的 hold_value（复用签到/已签到响应已抓取字段，绝不新增触网）；
+   * 有限数值 → 写入 acc.hold + acc.hold_ts；无值（null/NaN，如恩山无稳定持有量字段）→ 不写，
+   * 前端 hero 大数字显示「—」。queryBalance 系（workbuddy/newapi/anyrouter）走 balance 快照，此处不涉及。
+   * 与后续 save() 一同落盘。异常吞掉，绝不影响签到结果。
+   */
+  _snapshotHold(adapter, acc, r) {
+    try {
+      if (!adapter || !acc || !r) return;
+      if (typeof adapter.holdLabel !== "string") return;
+      if (typeof adapter.queryBalance === "function") return; // 余额系走 _snapshotBalance
+      const v = Number(r.hold_value);
+      if (!Number.isFinite(v)) return; // 无当前持有量字段 → 保留现值，hero 显示旧值或「—」
+      acc.hold = v;
+      acc.hold_ts = Date.now();
+    } catch { /* 当前持有量快照失败绝不影响签到/测试结果 */ }
   }
 
   /* ── 站点级 use_proxy 注入（内存合并，不落盘）────────────────────
@@ -706,6 +727,11 @@ class Server {
           const dailyReward = (a.daily_reward_date === localDateStr()) ? rawDailyReward : 0;
           const dailyRewardUnit = a.daily_reward_unit || "";
           const fmt = (v) => (typeof adapter.fmtBalance === "function" ? adapter.fmtBalance(v) : String(v));
+          // 当前持有量（hero 大数字，非余额系）：acc.hold 由 _snapshotHold 写入（flzt 流量 / ypojie 积分）。
+          // 声明 holdLabel 但无 queryBalance 的 adapter 走此路；恩山无稳定持有量字段 → hold 恒 null → 「—」。
+          const hasHold = typeof adapter.holdLabel === "string" && typeof adapter.queryBalance !== "function";
+          const rawHold = (a.hold === null || a.hold === undefined || a.hold === "") ? null : Number(a.hold);
+          const fmtHold = (v) => (typeof adapter.fmtHold === "function" ? adapter.fmtHold(v) : String(v));
           // 编辑页字段回显：非敏感文本字段回显明文，type=password 字段回显脱敏串。
           //   服务端计算 mask，绝不回吐明文；空值字段两个对象都不含该 key（前端留空显 placeholder）。
           const field_masks = {};
@@ -749,6 +775,26 @@ class Server {
             daily_reward: dailyReward,
             daily_reward_unit: dailyRewardUnit,
             daily_reward_display: (["flzt", "right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
+            // 统一英雄大数字（所有站点）：hero_display=当前持有量（空 → 前端「—」）；hero_delta_display=当天签到收益（>0 才有值）。
+            //   余额系（workbuddy/newapi/anyrouter）：hero=balance + 当天 daily_gain；
+            //   持有量系（flzt/ypojie/right_forum）：hero=hold + 当天 daily_reward。
+            ...(function () {
+              if (supportsBalance) {
+                return {
+                  hero_label: adapter.balanceLabel || "余额",
+                  hero_display: (rawBal != null) ? fmt(rawBal) : "",
+                  hero_delta_display: (["workbuddy", "newapi", "anyrouter"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+                };
+              }
+              if (hasHold) {
+                return {
+                  hero_label: adapter.holdLabel,
+                  hero_display: (rawHold != null && Number.isFinite(rawHold)) ? fmtHold(rawHold) : "",
+                  hero_delta_display: (["flzt", "right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
+                };
+              }
+              return { hero_label: "", hero_display: "", hero_delta_display: "" };
+            })(),
           };
         }),
       };
