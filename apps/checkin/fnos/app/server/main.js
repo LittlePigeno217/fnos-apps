@@ -104,6 +104,8 @@ function failAccounts() {
     if (!siteCfg || !siteCfg.enabled) continue;
     const acc = (Array.isArray(siteCfg.accounts) ? siteCfg.accounts : []).find((a) => String(a.id) === String(accountId));
     if (!acc || acc.enabled === false) continue;
+    // 1.8.3：站点签到需人机验证（Turnstile）标记 → 该账号无自动签到能力，不再占用补签名额空转
+    if (acc.signin_skip) continue;
     const adapter = ADAPTERS[site];
     if (!adapter || !adapter.isConfigured(acc)) continue;
     targets.push({ site, account_id: accountId });

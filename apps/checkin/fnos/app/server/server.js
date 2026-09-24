@@ -5,7 +5,7 @@
  * 统一返回 { success, message, data }。
  */
 const crypto = require("crypto");
-const { ADAPTERS, maskSecret } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
+const { ADAPTERS, maskSecret, isTurnstileRequired } = require("./sites");   // ADAPTERS 单一事实源（本地不再维护拷贝）
 const { maskProxyUrl } = require("./httpc"); // 代理地址脱敏回显（B17：userinfo 密码回显掩码）
 const qrcode = require("./qrcode");        // 纯 JS 二维码编码（扫码登录 auth_url → 图片）
 
@@ -143,6 +143,8 @@ class Server {
           remark: a.remark || "",
           label: adapter.getAccountLabel(a),
           configured: adapter.isConfigured(a),
+          // 1.8.3：站点签到需人机验证（Turnstile）标记（"turnstile" / ""；前端可据此展示跳过徽标）
+          signin_skip: a.signin_skip || "",
         })),
       };
     }
@@ -209,6 +211,8 @@ class Server {
           remark: a.remark || "",
           label: adapter.getAccountLabel(a),
           configured: adapter.isConfigured(a),
+          // 1.8.3：站点签到需人机验证（Turnstile）标记（"turnstile" / ""；前端可据此展示跳过徽标）
+          signin_skip: a.signin_skip || "",
         })),
         last: last ? { time: last.time, status: last.status, message: last.message, account: last.account || "" } : null,
         today_ok,
@@ -243,6 +247,20 @@ class Server {
     return done;
   }
 
+  /** 1.8.3：Turnstile 类「站点签到需人机验证」识别 → 为账号写入持久标记（signin_skip="turnstile"
+   *  + skip_reason 展示文案）。仅 NEWAPI 系（newapi/anyrouter 同面板机制；FLZT/恩山等天然不涉及，
+   *  防误伤）。匹配到且未标记 → 写标记（已有同类型标记不重复写）；返回是否命中。 */
+  _maybeMarkTurnstileSkip(adapter, acc, msg) {
+    if (!adapter || !acc || !msg) return false;
+    if (adapter.key !== "newapi" && adapter.key !== "anyrouter") return false;
+    if (!isTurnstileRequired(msg)) return false;
+    if (!acc.signin_skip) {
+      acc.signin_skip = "turnstile";
+      acc.skip_reason = "跳过：站点签到需人机验证";
+    }
+    return true;
+  }
+
   /** 立即执行签到：全部启用的站点；sites 参数可选（仅执行指定站点） */
   async runOnce(sitesArg) {
     if (this._running) {
@@ -267,6 +285,13 @@ class Server {
         if (!accs.length) continue;
         for (const acc of accs) {
           const accLabel = adapter.getAccountLabel(acc);
+          // 1.8.3：站点签到需人机验证（Turnstile）标记 → 跳过（不调 runCheckin、不触网、
+          // 不落历史/失败集/今日统计），与「已跳过（今日已签）」文案区分
+          if (acc.signin_skip) {
+            results.push({ site_key: key, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "已跳过", message: acc.skip_reason || "跳过：站点签到需人机验证" });
+            this._log(`签到 ${adapter.name}${accLabel ? `（${accLabel}）` : ""} 已跳过（站点签到需人机验证，请在浏览器过验证后更新 Cookie）`);
+            continue;
+          }
           // 今日已成功签到的账号 → 跳过（不调 runCheckin、不触网），仅在批量「全部签到」路径生效
           if (this._isAccountDoneToday(key, acc.id, priorHistory)) {
             results.push({ site_key: key, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "已跳过", message: "已跳过（今日已签）" });
@@ -288,6 +313,12 @@ class Server {
             this._log(`签到 ${adapter.name} → ${r.status}`);
           } catch (err) {
             const msg = err.message || String(err);
+            // 1.8.3：识别「签到需人机验证（Turnstile）」→ 标记账号跳过，不报执行失败、不进失败集/历史
+            if (this._maybeMarkTurnstileSkip(adapter, acc, msg)) {
+              results.push({ site_key: key, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "已跳过", message: "跳过：站点签到需人机验证" });
+              this._log(`签到 ${adapter.name}${who} 识别到站点需人机验证 → 标记跳过（人工处理：浏览器过验证后更新 Cookie；测试连接成功即复位）`);
+              continue;
+            }
             results.push({ site_key: key, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "执行失败", error: msg });
             history.push({ time: new Date().toLocaleString("zh-CN", { hour12: false }), site: key, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", reward: "", total: "", error: msg });
             this._log(`签到 ${adapter.name}${who} 失败：${msg}`);
@@ -350,9 +381,18 @@ class Server {
       const acc = accs.find((a) => String(a.id) === String(accountId));
       if (!acc) return fail("未找到指定账号");
       if (acc.enabled === false) return fail("该账号已停用");
-      this._applySiteProxy(st, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
       const accLabel = adapter.getAccountLabel(acc);
       const who = accLabel ? `（${accLabel}）` : "";
+      // 1.8.3：站点签到需人机验证（Turnstile）标记 → 跳过（不调 runCheckin、不触网、不落历史/失败集）
+      if (acc.signin_skip) {
+        const skipResult = { site_key: site, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "已跳过", message: acc.skip_reason || "跳过：站点签到需人机验证" };
+        this._store.schedCheckinSuccess(site, acc.id); // 撤销今日失败集残留（幂等，后续不再补签空转）
+        this._store.recordCheckinResults([skipResult]); // 非「执行失败」→ 顺带从失败集清除
+        try { this._store.save(); } catch (e) { console.error(`单账号签到（跳过）后配置落盘失败：${(e && e.message) || e}`); }
+        this._log(`单账号签到 ${adapter.name}${who} 已跳过（站点签到需人机验证，请在浏览器过验证后更新 Cookie）`);
+        return ok({ result: skipResult, success_count: 1, total: 1 }, "已跳过");
+      }
+      this._applySiteProxy(st, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
       this._log(`单账号签到 ${adapter.name}${who}…`);
       let result;
       let history;
@@ -367,15 +407,22 @@ class Server {
         this._log(`单账号签到 ${adapter.name} → ${r.status}`);
       } catch (err) {
         const msg = err.message || String(err);
-        result = { site_key: site, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "执行失败", error: msg };
-        history = { time: new Date().toLocaleString("zh-CN", { hour12: false }), site, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", reward: "", total: "", error: msg };
-        this._log(`单账号签到 ${adapter.name}${who} 失败：${msg}`);
+        // 1.8.3：识别「签到需人机验证（Turnstile）」→ 标记账号跳过，不报执行失败、不进失败集/历史
+        if (this._maybeMarkTurnstileSkip(adapter, acc, msg)) {
+          result = { site_key: site, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "已跳过", message: "跳过：站点签到需人机验证" };
+          history = null; // skip 不落历史（不影响今日完成/失败统计）
+          this._log(`单账号签到 ${adapter.name}${who} 识别到站点需人机验证 → 标记跳过（人工处理：浏览器过验证后更新 Cookie；测试连接成功即复位）`);
+        } else {
+          result = { site_key: site, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "执行失败", error: msg };
+          history = { time: new Date().toLocaleString("zh-CN", { hour12: false }), site, site_name: adapter.name, account_id: acc.id, account: accLabel, status: "执行失败", message: "", reward: "", total: "", error: msg };
+          this._log(`单账号签到 ${adapter.name}${who} 失败：${msg}`);
+        }
       }
       if (result.status !== "执行失败") this._store.schedCheckinSuccess(site, acc.id); // B18：补签成功翻转今日失败标记
       // B4：history 写入失败仅记日志（含路径）并继续，返回仍 success 并带 warnings
       const warnings = [];
       try {
-        this._store.appendHistory(history);
+        if (history) this._store.appendHistory(history); // skip 结果不落历史（history=null）
       } catch (e) {
         const hp = this._store.historyPath || "(history)";
         console.error(`单账号签到 history 写入失败：${(e && e.message) || e}（${hp}）`);
@@ -422,6 +469,12 @@ class Server {
       this._snapshotHold(adapter, acc, r); // 非余额系（flzt/ypojie）测试连接带回 hold_value 时快照进 acc.hold（hero 大数字）；此处 acc 已按 site+account_id 定位，纯平台无账号测试不会走到这里
       // testConnection 内部 _billingDo 401 续期同样只回写内存 session；_snapshotBalance 仅在余额查询
       // 成功时 save，查询失败则续期丢失。此处补一次落盘兜底（同类缺口），save 失败不阻断测试结果。
+      // 1.8.3：测试连接成功 = 人工已在浏览器过验证并更新 Cookie → 清除「需人机验证」跳过标记（复位）
+      if (acc.signin_skip) {
+        acc.signin_skip = "";
+        acc.skip_reason = "";
+        this._log(`测试连接成功：清除 ${adapter.name}（${adapter.getAccountLabel(acc)}）的「站点签到需人机验证」跳过标记`);
+      }
       this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
       try { this._store.save(); } catch (e) { console.error(`测试连接后配置落盘失败（session 续期未持久化）：${(e && e.message) || e}`); }
       return ok({ ...r, account_id: acc.id, account: adapter.getAccountLabel(acc) });

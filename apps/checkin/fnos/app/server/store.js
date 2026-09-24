@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.8.2",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.8.3",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -175,6 +175,11 @@ class Store {
         // hold：当前持有量快照（hero 大数字，非余额系 flzt 流量 / ypojie 积分）。旧文件无此字段 → null。
         hold: (a.hold === null || a.hold === undefined || a.hold === "") ? null : Number(a.hold),
         hold_ts: Number(a.hold_ts) || 0,
+        // signin_skip：1.8.3 站点签到需人机验证（Turnstile）标记（仅 newapi/anyrouter 写入）。
+        // 人工在浏览器过验证并更新 Cookie 后由 testConnection 成功清除；skip_reason 为展示文案。
+        // 非表单字段，旧文件无此字段 → ""（未标记）。纳入归一白名单，否则重启/编辑后标记丢失。
+        signin_skip: (a.signin_skip === null || a.signin_skip === undefined) ? "" : String(a.signin_skip),
+        skip_reason: (a.skip_reason === null || a.skip_reason === undefined) ? "" : String(a.skip_reason),
       };
       // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）
       for (const f of accountFieldKeys(slug)) {
@@ -476,6 +481,14 @@ class Store {
                 ? (prev.hold === null || prev.hold === undefined ? null : Number(prev.hold))
                 : Number(a.hold);
               merged.hold_ts = Number(a.hold_ts) || Number(prev.hold_ts) || 0;
+              // signin_skip 非 UI 表单字段（只由签到识别写入 / testConnection 成功清除）：
+              // patch 未带则保留现值，否则编辑账号会静默抹掉「需人机验证」标记导致重新空转
+              merged.signin_skip = (a.signin_skip === undefined || a.signin_skip === null)
+                ? (prev.signin_skip || "")
+                : String(a.signin_skip);
+              merged.skip_reason = (a.skip_reason === undefined || a.skip_reason === null)
+                ? (prev.skip_reason || "")
+                : String(a.skip_reason);
               for (const f of accountFieldKeys(k)) {
                 const rawV = a[f];
                 const prevV = prev[f] || "";

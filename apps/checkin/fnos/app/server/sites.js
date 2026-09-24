@@ -136,6 +136,17 @@ function isLoginExpired(status, text) {
   return /session.*(invalid|expired)|token.*(invalid|expired)|未登录|登录已过期|invalid session|会话已过期|登录态失效|登录状态已失效|登录会话已过期|身份已过期/i.test(t);
 }
 
+/** 1.8.3：Turnstile 类「签到需人机验证」识别——NewAPI/OneAPI 面板签到接口开启
+ *  Turnstile 强校验时，后端无浏览器环境产不出 token（如「Turnstile token 为空」）→ 该站
+ *  无自动签到能力。小写化 contains 匹配（与 isWafChallenge 同风格），信号以 NEWAPI.runCheckin
+ *  实际会抛出的 message 为准：turnstile / cf-turnstile / 人机验证 / verification required /
+ *  verify you are human。刻意不含「已签到」类正常文案，避免误伤。 */
+const TURNSTILE_MARKERS = ["turnstile", "cf-turnstile", "人机验证", "verification required", "verify you are human", "are you human"];
+function isTurnstileRequired(message) {
+  const t = String(message || "").toLowerCase();
+  return TURNSTILE_MARKERS.some((m) => t.includes(m.toLowerCase()));
+}
+
 /** base_url 归一：去尾斜杠；缺省回落 fallback（anyrouter 用自有默认，newapi 不回落） */
 function napiBase(cfg, fallback) {
   return String((cfg && cfg.base_url) || fallback || "").trim().replace(/\/+$/, "");
@@ -1779,6 +1790,7 @@ module.exports = {
   ANYROUTER,
   WORKBUDDY,
   isAlreadyCheckedIn,
+  isTurnstileRequired,
   maskEmail,
   maskSecret,
   // ADAPTERS 单一事实源：store.js / server.js 均从这里导入，禁止各自维护拷贝
