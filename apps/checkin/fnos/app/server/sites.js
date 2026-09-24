@@ -871,9 +871,9 @@ const ANYROUTER = {
   key: "anyrouter",
   name: "其他 NewAPI",
   short: "其他",
-  mode: "Cookie / 账号 / OAuth",
-  // 登录方式与 NEWAPI 通用一致（OAuth 在 WAF 下可能失败属运行时问题，选项保留）
-  login_caps: NEWAPI_LOGIN_CAPS,
+  mode: "Cookie（手动）",
+  // 1.8.1：登录方式只保留「手动 Cookie」（删除第三方 OAuth/账密登录；单 tab 前端自动隐藏标签）
+  login_caps: ["cookie"],
   desc: "anyrouter.top / AgentRouter · 配置对齐 anyrouter-check-in 仓库原生项：provider / email+password / cookies / api_user",
   fields: [
     { key: "provider", label: "提供商", type: "select", options: [
