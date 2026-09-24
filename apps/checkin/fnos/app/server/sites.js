@@ -887,6 +887,10 @@ const ANYROUTER = {
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（可选）" },
   ],
   base: "https://anyrouter.top",
+  // 1.8.2：签到成功判定改为「余额实时增加」——签到前后各实时查一次余额，after>before 才算成功；
+  // 余额未增加（相等/减少）或余额查询失败 → 判定不成功，抛错走「执行失败」→ 复用今日失败集/调度重试。
+  // 快照（acc.balance）仅作 hero 展示，不参与判定基准。该 flag 只挂 ANYROUTER；通用 newapi 沿用响应码判定不变。
+  delta_ok: true,
 
   defaultConfig() {
     return {
@@ -919,6 +923,7 @@ const ANYROUTER = {
 
   async runCheckin(cfg) {
     const ncfg = this._toNewApiCfg(cfg);
+    ncfg._deltaOk = true; // 余额实时增量判定：签到前后各实时查一次余额，after>before 才算成功
     try {
       const r = await NEWAPI.runCheckin(ncfg);
       return { ...r, site: this.key, site_name: this.name };
@@ -927,6 +932,7 @@ const ANYROUTER = {
       const ck = String(cfg.cookies != null ? cfg.cookies : cfg.cookie || "").trim();
       if (err && err.loginRejected && ck) {
         const fbCfg = this._toNewApiCfg({ ...cfg, password: "" });
+        fbCfg._deltaOk = true;
         const fb = await NEWAPI.runCheckin(fbCfg);
         fb.message = `${fb.message || ""}（账密登录失败已回退 Cookie 签到）`;
         return { ...fb, site: this.key, site_name: this.name };
@@ -1310,7 +1316,9 @@ const NEWAPI = {
     if (data && data.enabled === false) {
       throw new Error(msg || "签到功能已被平台禁用（enabled=false）");
     }
-    if (data && data.checked_in === true) {
+    if (data && data.checked_in === true && !cfg._deltaOk) {
+      // 通用 newapi：结构化「已签到」直接返回；anyrouter（_deltaOk）不走此捷径，
+      // 一律以签到前后余额实时对比判定（未增加 → 失败重试），避免把「响应说已签但余额没动」误判为成功。
       return this._ok("今日已签到", msg || "今日已签到", "-", "-", cfg, auth);
     }
 
@@ -1324,6 +1332,24 @@ const NEWAPI = {
       rewardMsg = `本次签到 +${this._fmtUsd(Number(data.quota_awarded) || 0)}`;
     } else if (before && after && after.quota > before.quota) {
       rewardMsg = `本次签到 +${this._fmtUsd(after.quota - before.quota)}`;
+    }
+
+    // 1.8.2 其他 NewAPI（anyrouter，_deltaOk）：成功判定 = 签到后余额较签到前实时增加。
+    // before/after 均取自本流程实时 _getUserInfo（非快照）；after>before 才成功，
+    // 相等/减少/任一取不到 → 抛错（本流程内被 server 捕获为「执行失败」）→ 落今日失败集，
+    // 由现有调度/补签在下一轮重试；本次不重发签到，避免把失败当已签。
+    if (cfg._deltaOk) {
+      const beforeQ = before ? Number(before.quota) : null;
+      const afterQ = after ? Number(after.quota) : null;
+      const bad = beforeQ == null || !Number.isFinite(beforeQ) || afterQ == null || !Number.isFinite(afterQ);
+      if (bad) {
+        throw new Error("余额查询失败（签到前/后余额未取到）：本次判定不成功，将在下一轮重试");
+      }
+      if (afterQ > beforeQ) {
+        const detail = [rewardMsg, balanceMsg].filter(Boolean).join("；") || msg || "签到成功";
+        return this._ok("签到成功", detail, rewardMsg || "-", balanceMsg || "-", cfg, auth);
+      }
+      throw new Error(`签到后余额未增加（${napiUsd(beforeQ)} → ${napiUsd(afterQ)}）：本次判定不成功，将在下一轮重试`);
     }
 
     if (success) {
