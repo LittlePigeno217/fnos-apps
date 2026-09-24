@@ -88,7 +88,11 @@ class Server {
     const urls = new Set();
     for (const sk of Object.keys(cfg.sites || {})) {
       for (const a of ((cfg.sites[sk] || {}).accounts || [])) {
-        const b = a && a.base_url;
+        let b = a && a.base_url;
+        // 1.7.3：anyrouter 账号无 base_url（provider 驱动）→ 按 provider 推导，标题映射/抓取才可达
+        if (sk === "anyrouter" && !b && a) {
+          b = a.provider === "agentrouter" ? "https://agentrouter.org" : "https://anyrouter.top";
+        }
         if (b && /^https?:\/\//i.test(b)) urls.add(String(b).replace(/\/+$/, ""));
       }
     }
