@@ -396,6 +396,7 @@ class Server {
       this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
       const r = await adapter.testConnection(acc);
       await this._snapshotBalance(adapter, acc); // 测试连接成功后刷新余额快照（失败不致命）
+      this._snapshotHold(adapter, acc, r); // 非余额系（flzt/ypojie）测试连接带回 hold_value 时快照进 acc.hold（hero 大数字）；此处 acc 已按 site+account_id 定位，纯平台无账号测试不会走到这里
       // testConnection 内部 _billingDo 401 续期同样只回写内存 session；_snapshotBalance 仅在余额查询
       // 成功时 save，查询失败则续期丢失。此处补一次落盘兜底（同类缺口），save 失败不阻断测试结果。
       this._restoreInjectedProxy(); // 注入字段不落盘：先还原站点级 use_proxy 再保存
@@ -493,8 +494,9 @@ class Server {
       if (!adapter || !acc || !r) return;
       if (typeof adapter.holdLabel !== "string") return;
       if (typeof adapter.queryBalance === "function") return; // 余额系走 _snapshotBalance
+      if (r.hold_value === null || r.hold_value === undefined || r.hold_value === "") return; // 无值（如查询失败/无字段）→ 保留现值，绝不写 0（Number(null)===0 会误写，故先显式判空）
       const v = Number(r.hold_value);
-      if (!Number.isFinite(v)) return; // 无当前持有量字段 → 保留现值，hero 显示旧值或「—」
+      if (!Number.isFinite(v)) return; // 非数值（NaN）→ 保留现值，hero 显示旧值或「—」
       acc.hold = v;
       acc.hold_ts = Date.now();
     } catch { /* 当前持有量快照失败绝不影响签到/测试结果 */ }

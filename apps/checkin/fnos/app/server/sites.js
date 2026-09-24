@@ -213,8 +213,8 @@ const FLZT = {
   base: "https://flzt.club",
   loginPath: "/api/v1/passport/auth/login",
   checkinPath: "/api/v1/user/checkIn",
-  // 英雄大数字（当前持有量）：FLZT 无独立余额接口，沿用签到响应里的 total_checkin_traffic
-  // （语义为「累计签到流量」，非实时可用流量）。fmtTraffic 与既有 total 展示口径一致。
+  // 英雄大数字（当前持有量）：优先只读查询当前可用流量（transfer_enable - u - d，见 _queryHold），
+  // 语义与标签「当前流量」一致；查询不可用时回落签到响应里的 total_checkin_traffic（累计签到流量）。
   holdLabel: "当前流量",
   fmtHold(v) { return fmtTraffic(v); },
 
@@ -245,6 +245,33 @@ const FLZT = {
     }
     const { token } = await this._login(cfg);
     return token;
+  },
+
+  /**
+   * 只读查询当前可用流量（hero 大数字源，绝不触发签到/写操作）。
+   * FLZT 为 V2Board/Xboard 面板（loginPath /api/v1/passport/auth/login 为其签名），
+   * GET /api/v1/user/getSubscribe 返回 transfer_enable（套餐总量）与 u/d（已用上/下行），
+   * 当前可用流量 = transfer_enable -（u + d），单位 bytes，与 fmtTraffic/checkin total 口径一致。
+   * 任一字段缺失/非有限值 → 返回 null（hero 显示「—」）。纯 GET 只读，异常一律吞掉，
+   * 绝不影响测试连接 / 签到结果；不回显订阅 URL（getSubscribe 内含 token 的 subscribe_url 从不输出）。
+   */
+  async _queryHold(cfg, token) {
+    try {
+      const s = new Session();
+      const r = await s.get(this.base + "/api/v1/user/getSubscribe", {
+        headers: { authorization: token, Accept: "application/json, text/plain, */*" },
+        timeout: 15000, useProxy: cfg.use_proxy,
+      });
+      const j = parseJson(r.text);
+      const d = j && j.data ? j.data : null;
+      if (!d) return null;
+      const total = Number(d.transfer_enable);
+      const up = Number(d.u);
+      const down = Number(d.d);
+      if (!Number.isFinite(total) || !Number.isFinite(up) || !Number.isFinite(down)) return null;
+      const remain = total - (up + down);
+      return Number.isFinite(remain) ? Math.max(0, remain) : null;
+    } catch { return null; }
   },
 
   loginFlow: {
@@ -279,8 +306,11 @@ const FLZT = {
     // 当天奖励累计源（server 侧按 status==="签到成功" 累计）：本次签到获得的流量，单位 MB
     const rewardVal = Number(data.reward_mb || data.reward || 0);
     const total = fmtTraffic(data.total_checkin_traffic);
-    // 当前持有量（hero 大数字源）：累计签到流量原始值（bytes；取不到 → null，前端显示「—」）
-    const holdVal = Number.isFinite(Number(data.total_checkin_traffic)) ? Number(data.total_checkin_traffic) : null;
+    // 当前持有量（hero 大数字源）：优先只读查询当前可用流量（与 testConnection 同源，语义匹配「当前流量」）；
+    // 查询失败/字段缺失时回落累计签到流量 total_checkin_traffic（保证首签后 hero 始终有值，绝不回退到「—」）。
+    const liveHold = await this._queryHold(cfg, token);
+    const fallbackHold = Number.isFinite(Number(data.total_checkin_traffic)) ? Number(data.total_checkin_traffic) : null;
+    const holdVal = (liveHold != null) ? liveHold : fallbackHold;
 
     if (j.status === "success") {
       return this._ok("签到成功", message || "签到成功", reward, total, cfg, rewardVal, "MB", holdVal);
@@ -292,8 +322,9 @@ const FLZT = {
   },
 
   async testConnection(cfg) {
-    await this._resolveToken(cfg); // 仅验证凭据可换取有效 token；不再回显 token 前缀（B11）
-    return { site: this.key, site_name: this.name, message: "登录测试成功，凭据有效（token 鉴权已确认）" };
+    const token = await this._resolveToken(cfg); // 仅验证凭据可换取有效 token；不再回显 token 前缀（B11）
+    const hold = await this._queryHold(cfg, token); // 只读查询当前可用流量供 hero 快照（失败/无字段 → null → 「—」）
+    return { site: this.key, site_name: this.name, message: "登录测试成功，凭据有效（token 鉴权已确认）", hold_value: hold };
   },
 
   // reward_value/reward_unit：结构化当天奖励（数值+单位），server 侧当天累计用；不影响 history/points（仍读 reward 字符串）
@@ -768,8 +799,11 @@ const YPOJIE = {
   },
 
   async testConnection(cfg) {
-    await this._resolveSession(cfg);
-    return { site: this.key, site_name: this.name, message: "登录测试成功，可用于签到" };
+    const { beforePage } = await this._resolveSession(cfg);
+    // 复用登录/校验时已拉取的 vip 页（不新增触网、不签到）提取可用余额供 hero 快照；取不到 → null → 「—」
+    const bal = this._extractBalance(beforePage);
+    const hold = (bal != null && Number.isFinite(bal)) ? bal : null;
+    return { site: this.key, site_name: this.name, message: "登录测试成功，可用于签到", hold_value: hold };
   },
 };
 
