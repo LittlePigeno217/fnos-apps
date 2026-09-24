@@ -448,7 +448,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.1</span>
+      <span class="ver" id="appVersion">v1.2.2</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -3379,11 +3379,13 @@ async function refreshDrive(){
   const r = await call("disk_list?cid="+encodeURIComponent(cid));
   const tb = el("driveTable").querySelector("tbody");
   tb.innerHTML="";
-  if (!r.success){ el("driveEmpty").innerHTML = (r.message||"加载失败")+" · <a href=\"javascript:void(0)\" onclick=\"refreshDrive()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>"; el("driveTable").hidden=true; return; }
+  if (!r.success){ el("driveEmpty").innerHTML = esc(r.message||"加载失败")+" · <a href=\"javascript:void(0)\" onclick=\"refreshDrive()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>"; el("driveTable").hidden=true; return; }
   el("driveTable").hidden=false;
   el("driveEmpty").textContent = r.data.items && r.data.items.length ? "" : "空目录";
   el("upBtn").disabled = (stack.length===0);
   el("crumb").textContent = nameStack.length ? ("/" + nameStack.join("/")) : "/";
+  // TODO（长列表虚拟化）：大目录（>2000 项）全量渲染 DOM 会卡顿；未来可改为
+  // 分页/虚拟滚动 + 全表事件委托，当前保持直接渲染（目录页每次最多 1150 项）。
   for (const it of r.data.items){
     const tr=document.createElement("tr");
     if (it.is_dir) tr.className="row-dir";
@@ -4219,7 +4221,8 @@ function logLineHtml(item){
   const color = lv === "ERROR" ? "#f85149" : lv === "WARN" ? "#d29922" : "#7ee787";
   const typ = TYPE_LABELS[String(item.y || "SYSTEM")] || String(item.y || "SYSTEM");
   const time = String(item.t || "");
-  return `<span style="color:#8b949e">[${time}]</span> <span style="color:${color};font-weight:600">[${lv}]</span> <span style="color:#58a6ff">[${typ}]</span> ${escapeHtml(item.x || "")}`;
+  // level/type 也来自后端日志数据，统一转义，避免构造的日志行注入 HTML
+  return `<span style="color:#8b949e">[${escapeHtml(time)}]</span> <span style="color:${color};font-weight:600">[${escapeHtml(lv)}]</span> <span style="color:#58a6ff">[${escapeHtml(typ)}]</span> ${escapeHtml(item.x || "")}`;
 }
 function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 async function pollLog(){
@@ -4310,7 +4313,7 @@ async function refreshHistory(){
   const more = el("historyMoreBtn");
   tb.innerHTML="";
   if (!r.success){
-    empty.innerHTML = (r.message || "读取失败") + " · <a href=\"javascript:void(0)\" onclick=\"refreshHistory()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>";
+    empty.innerHTML = esc(r.message || "读取失败") + " · <a href=\"javascript:void(0)\" onclick=\"refreshHistory()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>";
     empty.hidden=false; el("historyTable").hidden=true; if(more) more.hidden=true;
     historyAll = [];
     return;

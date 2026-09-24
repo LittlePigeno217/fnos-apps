@@ -34,6 +34,34 @@ function posixDirname(value) {
   return text.slice(0, index);
 }
 
+/** STRM 路径 sanitize（TOP4）：云端文件/目录名不可信，可能含 ../、分隔符、控制字符 →
+ * 逐段清洗，剔除路径穿越与非法字符，保证输出只落在目标目录内。 */
+function sanitizeStrmSegment(seg) {
+  let s = String(seg == null ? "" : seg).replace(/\u0000/g, "");
+  // Windows 保留/路径分隔符与控制字符统一替换为下划线
+  s = s.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
+  s = s.replace(/^\.+/, "").replace(/[ .]+$/, ""); // 去首点（防 ../ 与隐藏文件）、去尾空格/点
+  if (s === "" || s === "." || s === "..") s = "_";
+  return s;
+}
+
+function sanitizeStrmRel(rel) {
+  return String(rel == null ? "" : rel)
+    .replace(/\\/g, "/")
+    .split("/")
+    .map(sanitizeStrmSegment)
+    .filter(Boolean)
+    .join("/");
+}
+
+/** 由（已 sanitize 的）相对路径推导 .strm 输出名。.iso 保留全名后缀（对齐插件）；
+ * 其余去掉最后一段扩展名。keepExt=true 时保留原扩展（用于同名不同扩展去冲突）。 */
+function strmOutName(sanRel, keepExt) {
+  if (sanRel.toLowerCase().endsWith(".iso")) return `${sanRel}.strm`;
+  if (keepExt) return `${sanRel}.strm`;
+  return sanRel.replace(/\.[^.]+$/, "") + ".strm";
+}
+
 function ok(data, message) {
   return { success: true, message: message || "", data: data === undefined ? {} : data };
 }
@@ -227,8 +255,13 @@ class FileWatcher {
         const records = this._server.store.getUploadRecords();
         const targetCid = String(mapping.target_cid || "0");
         for (const [relPath, size] of currentSnapshot) {
+          // TOP6：必须用绝对路径核对账本——records 以绝对路径为键（上传扫描用
+          // path.join(source, name) 落键），watcher 快照键是相对路径，直接用相对路径
+          // 会让 statSync 相对 cwd 解析失败、pathKey 相对 homedir 解析错位，
+          // 重启恢复时把「已上传文件」全部误判为待上传（整目录重传）。
+          const absolutePath = path.join(source, relPath);
           try {
-            if (!records.hasChanged(relPath, targetCid)) continue; // 已有记录：已上传过，跳过
+            if (!records.hasChanged(absolutePath, targetCid)) continue; // 已有记录：已上传过，跳过
           } catch {
             /* 记录异常按待上传处理 */
           }
@@ -333,8 +366,12 @@ class UploadWorker {
   }
 
   cancel() {
-    // 协作取消：只置标记，让扫描在文件安全检查点停下来；不强杀正在执行的请求。
+    // 协作取消：只对「当前正在执行的任务」置标记，队列中其余任务保留、继续执行。
+    // TOP6：空闲时不置粘滞标记——否则该标记会在下一次 submit 时被 _drain 消费，
+    // 把新入队的整个队列误当作「已取消」丢空。返回是否确有任务被取消。
+    if (!this._running) return false;
     this._cancelRequested = true;
+    return true;
   }
 
   cancelled() {
@@ -342,14 +379,11 @@ class UploadWorker {
   }
 
   async _drain() {
-    let completed = true;
     try {
       while (this._queue.length) {
-        if (this._cancelRequested) {
-          completed = false;
-          break;
-        }
         const scope = this._queue.shift();
+        // 每个任务开始前清除取消标记：取消只作用于「当前任务」，不波及后续队列。
+        this._cancelRequested = false;
         try {
           await this._runOnce(scope);
         } catch (err) {
@@ -359,8 +393,8 @@ class UploadWorker {
     } finally {
       this._running = false;
       this._cancelRequested = false;
-      // 队列自然清空（未被取消）→ 通知整轮上传完成（供「上传后生成 STRM」接线）
-      if (completed && typeof this._onIdle === "function") {
+      // 队列自然清空 → 通知整轮上传完成（供「上传后生成 STRM」接线）
+      if (typeof this._onIdle === "function") {
         try {
           this._onIdle();
         } catch (err) {
@@ -961,13 +995,11 @@ class Server {
         }
       }
     }
-    // 不在静态白名单但运行时 ACL 允许（用户用 pickUserFile 已实时授权），也放行
+    // TOP6：收紧 ACL——原先「不在白名单则回退 fs.accessSync(R_OK) 就放行」过宽：
+    // 应用以 root 运行时几乎任何目录都可读，等于白名单形同虚设。改为默认拒绝，
+    // 只认 TRIM_DATA_ACCESSIBLE_PATHS/SHARE_PATHS 静态白名单内的路径。
     if (roots.length && !inRoots) {
-      try { fs.accessSync(candidate, fs.constants.R_OK); inRoots = true; }
-      catch { /* 无权限，保持 false */ }
-    }
-    if (roots.length && !inRoots) {
-      return [null, `目录不在应用可访问范围内: ${candidate}`];
+      return [null, `目录不在应用可访问范围内（未在 TRIM_DATA_ACCESSIBLE_PATHS 白名单内）: ${candidate}`];
     }
     return [candidate, ""];
   }
@@ -1162,8 +1194,18 @@ class Server {
     if (kind && kind !== "upload") {
       return error(`暂不支持取消任务类型: ${kind}`);
     }
-    this._uploadWorker.cancel();
-    return ok(undefined, "已请求上传任务在下一个安全检查点停止");
+    const wasRunning = this._uploadWorker.cancel();
+    const pending = this._uploadWorker.pending();
+    if (!wasRunning) {
+      return ok(
+        { cancelled: false, active: false, pending },
+        "当前没有正在执行的上传任务（队列已保留，如有）"
+      );
+    }
+    return ok(
+      { cancelled: true, active: this._uploadWorker.active(), pending },
+      "已请求当前上传任务在下一个安全检查点停止（其余队列保留）"
+    );
   }
 
   uploadSweep(payload) {
@@ -1319,6 +1361,10 @@ class Server {
             console.log(`已上传 ${path.basename(filePath)}（${result.reused ? "秒传" : "上传"}）`);
             this._riskState.consecutiveFailures = 0;
             this._clearUploadFailure(filePath);
+            // TOP5：先把账本落盘、再删源。markUploaded 只改内存，若在整批结束前
+            // （大目录 + 风控拖时窗口）崩溃或热升级被杀，会「源已删而账本未落盘」→
+            // 账本与云端脱节。改为每项上传成功即增量落盘，崩溃最多丢最后一项。
+            this.store.saveUploadRecords(records);
             // 上传后生成 STRM（单文件粒度）：媒体落盘后立即生成对应 .strm
             // relPath 用本地相对源目录路径（remap 保持相对结构，云端/本地一致）
             this._maybeAutoStrmForFile(mapping, path.relative(source, filePath), {
@@ -1326,6 +1372,7 @@ class Server {
               pickcode: String((result.fileItem && result.fileItem.pickcode) || ""),
             });
             // upload_delete_source：上传成功后删除本地源文件（只删成功项）
+            // 此处执行时账本已落盘，删源后即便崩溃也不会丢失该项上传记录。
             if (config.upload_delete_source) {
               try {
                 fs.unlinkSync(filePath);
@@ -1936,13 +1983,45 @@ class Server {
     }
 
     // 2) 生成 STRM 内容并写入目标目录（保持相对路径、.iso 特例对齐插件）
+    // TOP4：文件名先 sanitize（防路径穿越）；同名不同扩展（a.mp4 / a.mkv → a.strm）
+    // 会互相覆盖并被增量清理误删 → 冲突时保留原扩展（a.mp4.strm / a.mkv.strm），
+    // 仍冲突再追加 -N 序号，保证一云端文件对应唯一 .strm，绝不静默覆盖。
     const expectedByRel = new Map();
-    for (const file of cloudFiles) {
-      const rel = file.relPath.replace(/\\/g, "/");
-      const outName = rel.toLowerCase().endsWith(".iso") ? `${rel}.strm` : rel.replace(/\.[^.]+$/, "") + ".strm";
+    // 预处理：sanitize + 统计基础输出名出现次数（判定是否需要保留扩展去冲突）
+    const prepared = cloudFiles.map((file) => {
+      const sanRel = sanitizeStrmRel(file.relPath);
+      return { file, sanRel, base: strmOutName(sanRel, false) };
+    });
+    const baseCount = new Map();
+    for (const p of prepared) baseCount.set(p.base, (baseCount.get(p.base) || 0) + 1);
+    // 稳定顺序：按 sanRel + pickcode 排序，保证冲突去重结果与遍历顺序无关（可复现）
+    prepared.sort((a, b) =>
+      a.sanRel === b.sanRel
+        ? String(a.file.pickcode).localeCompare(String(b.file.pickcode))
+        : a.sanRel.localeCompare(b.sanRel)
+    );
+    for (const { file, sanRel, base } of prepared) {
+      if (!sanRel) { counts.errors += 1; continue; } // 名称清洗后为空，跳过
+      // 同基础名多文件 → 保留原扩展以区分（a.mp4.strm / a.mkv.strm）
+      let outName = baseCount.get(base) > 1 ? strmOutName(sanRel, true) : base;
+      // 仍冲突（sanitize 后完全同名）→ 追加 -N 序号，杜绝静默覆盖
+      if (expectedByRel.has(outName)) {
+        const stem = outName.replace(/\.strm$/i, "");
+        let n = 1;
+        while (expectedByRel.has(`${stem}-${n}.strm`)) n += 1;
+        outName = `${stem}-${n}.strm`;
+      }
       const outputPath = path.join(targetDir, outName);
-      const sign = this.buildRedirectSignature(file.pickcode);
-      const qs = new URLSearchParams({ pickcode: file.pickcode, file_name: file.name, sign });
+      // 防路径穿越兜底：输出必须落在 targetDir 内，否则丢弃
+      const resolved = path.resolve(outputPath);
+      if (resolved !== path.resolve(targetDir) && !resolved.startsWith(path.resolve(targetDir) + path.sep)) {
+        counts.errors += 1;
+        console.warn(`[STRM] 丢弃越界输出路径：${outName}`);
+        continue;
+      }
+      const expires = this._redirectSignExpires(); // TTL（v2）
+      const sign = this.buildRedirectSignature(file.pickcode, expires);
+      const qs = new URLSearchParams({ pickcode: file.pickcode, file_name: file.name, expires, sign });
       // STRM 内容完全对齐插件 115 轻量助手（strm.py build_strm_url）：
       //   {base}/api/v1/plugin/P115LiteAssistant/redirect?pickcode=..&file_name=..&sign=..
       const content = `${baseUrl}/api/v1/plugin/P115LiteAssistant/redirect?${qs.toString()}\n`;
@@ -1988,7 +2067,8 @@ class Server {
                 continue;
               }
               try {
-                await client.downloadFile(sub.pickcode, subOut, true);
+                // 下载后核对字节数（sub.size 来自云端目录树），截断下载会被拒绝
+                await client.downloadFile(sub.pickcode, subOut, true, sub.size);
                 counts.subtitles += 1;
               } catch (err) {
                 counts.subtitles_errors += 1;
@@ -2234,17 +2314,27 @@ class Server {
         console.warn("上传后生成 STRM 失败：无法确定 STRM 基础地址");
         return;
       }
-      const rel = String(cloudRelPath || "").replace(/\\/g, "/");
+      const rel = sanitizeStrmRel(cloudRelPath); // TOP4：sanitize 防路径穿越
       if (!rel) return;
-      const outName = rel.toLowerCase().endsWith(".iso") ? `${rel}.strm` : rel.replace(/\.[^.]+$/, "") + ".strm";
+      const outName = strmOutName(rel, false);
       const outPath = path.join(dirOK, outName);
-      const sign = this.buildRedirectSignature(String(fileInfo.pickcode || ""));
-      const qs = new URLSearchParams({ pickcode: fileInfo.pickcode, file_name: name, sign });
+      // 防路径穿越兜底：输出必须落在授权目录内
+      const resolvedOut = path.resolve(outPath);
+      if (resolvedOut !== path.resolve(dirOK) && !resolvedOut.startsWith(path.resolve(dirOK) + path.sep)) {
+        console.warn(`上传后生成 STRM 失败：越界输出路径 ${outName}`);
+        return;
+      }
+      const expires = this._redirectSignExpires(); // TTL（v2）
+      const sign = this.buildRedirectSignature(String(fileInfo.pickcode || ""), expires);
+      const qs = new URLSearchParams({ pickcode: fileInfo.pickcode, file_name: name, expires, sign });
       // STRM 内容完全对齐插件（strm.py build_strm_url）与全量同步 _runStrmMapping
       const content = `${baseUrl}/api/v1/plugin/P115LiteAssistant/redirect?${qs.toString()}\n`;
       const outDir = path.dirname(outPath);
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-      fs.writeFileSync(outPath, content);
+      // TOP7：原子写（临时文件 + rename），避免半截 .strm 被播放器读到
+      const tmp = `${outPath}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, content);
+      fs.renameSync(tmp, outPath);
       this.recordLog(`上传完成，生成 STRM：${outName}`, "INFO", "STRM");
     } catch (err) {
       console.warn(`上传后生成 STRM 失败：${err.message}`);
@@ -2262,8 +2352,9 @@ class Server {
     try {
       const url = await this._getClient().getDownloadUrl(pickcode, userAgent, mode);
       if (!url) return error("取链失败，115 未返回下载地址");
-      const sign = this.buildRedirectSignature(pickcode);
-      const redirectUrl = `/app/${this._appName || "p115assistant"}/redirect?pickcode=${encodeURIComponent(pickcode)}&sign=${sign}`;
+      const expires = this._redirectSignExpires(); // TTL（v2）
+      const sign = this.buildRedirectSignature(pickcode, expires);
+      const redirectUrl = `/app/${this._appName || "p115assistant"}/redirect?pickcode=${encodeURIComponent(pickcode)}&expires=${expires}&sign=${sign}`;
       return ok({ url, pickcode, redirect_url: redirectUrl });
     } catch (err) {
       console.error(`取链失败：${err.message}`);
@@ -2272,35 +2363,59 @@ class Server {
   }
 
   // ── 302 匿名跳转签名（对齐插件 strm.py 的 build_redirect_signature）──
-  buildRedirectSignature(pickcode) {
+  // v2（带 TTL）：payload = p115liteassistant:v2:{pickcode}:{expires}，过期即失效。
+  // v1（无 TTL）仅用于兼容旧 STRM/旧链接，新增 STRM 一律 v2。
+  buildRedirectSignature(pickcode, expires) {
     const secret = this.store.getRedirectSecret();
     // pickcode 归一（对齐插件 normalize_pickcode：小写化），防止大小写变异导致验签失败
     const normalized = String(pickcode || "").trim().toLowerCase();
-    const payload = `p115liteassistant:v1:${normalized}`;
+    const payload = expires
+      ? `p115liteassistant:v2:${normalized}:${String(expires)}`
+      : `p115liteassistant:v1:${normalized}`;
     return crypto.createHmac("sha256", String(secret)).update(payload).digest("hex");
   }
 
-  verifyRedirectSignature(pickcode, sign) {
+  /** TTL 默认 7 天；expires 取「今天结束 + TTL」的粗粒度日界窗口：
+   * 同一天内生成的签名保持一致（STRM 内容稳定，增量同步不会每天全量重写），
+   * 且生成的签名至少有 ~6 天有效期。 */
+  _redirectSignExpires() {
+    const days = 7;
+    const now = new Date();
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    return Math.floor(endOfToday.getTime() / 1000) + days * 86400;
+  }
+
+  verifyRedirectSignature(pickcode, sign, expires) {
     const candidate = String(sign || "").trim().toLowerCase();
     const normalized = String(pickcode || "").trim().toLowerCase();
-    const expected = this.buildRedirectSignature(normalized);
     if (!candidate || !pickcode) return false;
-    if (candidate.length !== expected.length) return false;
-    try {
-      return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
-    } catch {
-      return false;
+    const safeEq = (expected) => {
+      if (candidate.length !== expected.length) return false;
+      try {
+        return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
+      } catch {
+        return false;
+      }
+    };
+    // v2：带 expires → 校验签名 + TTL（过期即拒，杜绝「播放签名永久有效」）
+    if (expires !== undefined && expires !== null && expires !== "") {
+      const exp = Number(String(expires).trim());
+      if (!Number.isFinite(exp) || exp <= 0) return false;
+      if (Date.now() / 1000 > exp) return false; // 已过期
+      return safeEq(this.buildRedirectSignature(normalized, String(expires).trim()));
     }
+    // v1 兼容：旧 STRM 无 expires 参数，按无 TTL 验签（迁移期保留可用性）
+    return safeEq(this.buildRedirectSignature(normalized));
   }
 
   // ── 匿名 302 目标：验签通过后按播放器 UA 取链 ──
   // 对齐插件 api.py redirect：URL 缓存（TTL=链接寿命-300s 安全窗口）、
   // singleflight 并发去重、取链失败重试 3 次（限流/认证错误不重试）。
-  async redirectTarget(pickcode, sign, file_name, userAgent) {
+  async redirectTarget(pickcode, sign, file_name, userAgent, expires) {
     const normalized = String(pickcode || "").trim();
     if (!normalized || !sign) return { code: 400, message: "缺少 pickcode 或签名" };
-    if (!this.verifyRedirectSignature(normalized, sign)) {
-      return { code: 403, message: "无效播放签名" };
+    if (!this.verifyRedirectSignature(normalized, sign, expires)) {
+      return { code: 403, message: expires ? "播放签名已过期或无效" : "无效播放签名" };
     }
     const ua = String(userAgent || "").trim();
     const cacheKey = `${normalized}|${ua}`;
@@ -2578,4 +2693,6 @@ module.exports = {
   mask,
   hashString,
   inCheckinWindow,
+  sanitizeStrmRel,
+  strmOutName,
 };

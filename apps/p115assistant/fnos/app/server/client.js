@@ -357,7 +357,9 @@ class U115Client {
   // ───── 二维码登录 ─────
   async generateQrcode(clientType) {
     clientType = this.qrcodeClientTypes.has(clientType) ? clientType : "alipaymini";
-    const { data, fallbackMsg } = await this._fetchQrcodeToken(false);
+    // TOP6：data 在下方回退分支 `data = legacy.data` 会被重赋值，必须用 let；
+    // 原先 const 在「主接口参数不完整 + 回退成功」路径上抛 Assignment to constant variable。
+    let { data, fallbackMsg } = await this._fetchQrcodeToken(false);
     let uid = String(data.uid || "");
     let timestamp = String(data.time || "");
     let sign = String(data.sign || "");
@@ -1038,7 +1040,9 @@ class U115Client {
     const stat = fs.statSync(localPath);
     const fileSize = stat.size;
     const fileSha1 = await this._calcSha1(localPath, null);
-    const preid = await this._calcSha1(localPath, 128 * 1024 * 1024);
+    // preid = 文件前 128KB 的 SHA1（115 Open 上传规范）；128 * 1024 是 128KB，
+    // 此前写成 128 * 1024 * 1024（128MB）会算错 preid，触发 115 二次认证/秒传误判。
+    const preid = await this._calcSha1(localPath, 128 * 1024);
     const targetCid = String((targetDir && targetDir.fileid) || "0");
     const initData = {
       file_name: path.basename(localPath),
@@ -1108,7 +1112,9 @@ class U115Client {
       const length = end - start + 1;
       const buf = Buffer.alloc(length);
       fs.readSync(fd, buf, 0, length, start);
-      const signValue = crypto.createHash("sha1").update(buf).digest("hex").toUpperCase();
+      // SHA1 全链路统一小写（对齐 fileid/preid 的 hexdigest() 与参考实现 p115client）：
+      // 此前 toUpperCase() 与其余 SHA1 大小写不一致，遇 115 侧大小写敏感比对会误判。
+      const signValue = crypto.createHash("sha1").update(buf).digest("hex");
       return {
         pick_code: String(initResult.pick_code || ""),
         sign_key: String(initResult.sign_key || ""),
@@ -1523,7 +1529,7 @@ class U115Client {
     return this._extractDownloadUrl(data);
   }
 
-  async downloadFile(pickcode, outputPath, createParent) {
+  async downloadFile(pickcode, outputPath, createParent, expectedSize) {
     const userAgent = this.iosUserAgent;
     const url = await this.getDownloadUrl(pickcode, userAgent);
     if (!url) throw new U115ApiError("未获取到 115 下载地址");
@@ -1535,6 +1541,14 @@ class U115Client {
       await httpDownloadToFile(url, { headers: { "User-Agent": userAgent } }, tempOutput, () => {
         this._raiseIfSharedAccessLimited();
       });
+      // 下载完整性校验：有期望大小时核对最终字节数，截断/半程下载直接失败（不留半截文件）
+      if (expectedSize !== undefined && expectedSize !== null) {
+        const want = Number(expectedSize);
+        const got = fs.statSync(tempOutput).size;
+        if (want > 0 && got !== want) {
+          throw new U115ApiError(`下载文件大小不符（期望 ${want}，实际 ${got}），已丢弃不完整下载`);
+        }
+      }
       fs.renameSync(tempOutput, outputPath);
     } catch (err) {
       if (isHttpStatusError(err) && err.status === 429) {
@@ -1960,8 +1974,18 @@ class U115Client {
             const limitError = new U115AccessLimitError("115 并发任务返回 HTTP 429，已停止本次任务");
             if (this._markSharedAccessLimited(limitError)) throw limitError;
             this._raiseIfSharedAccessLimited();
-            const delay = this._httpStatusRetryDelay(err, 1);
-            console.log(`【115 HTTP】请求返回 429，等待 ${delay} 秒后重试`);
+            // 429 必须纳入 attempt 上限：无 _limitState（未包在并发任务里）时，
+            // 上面两行都是 no-op，若直接 continue 会在 while(true) 里无限重试 → 卡死。
+            if (attempt >= transientAttempts - 1) {
+              throw new U115AccessLimitError(
+                "115 触发访问频率限制（HTTP 429），已达重试上限，请稍后再试"
+              );
+            }
+            attempt += 1;
+            const delay = this._httpStatusRetryDelay(err, attempt);
+            console.log(
+              `【115 HTTP】请求返回 429，等待 ${delay} 秒后重试（${attempt}/${transientAttempts - 1}）`
+            );
             await this._waitForRequestRetry(delay);
             continue;
           }

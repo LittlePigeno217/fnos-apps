@@ -95,6 +95,34 @@ function maskValue(key, value) {
   return value;
 }
 
+/* ── 写端点安全防线（TOP2-B）───────────────────────────────────────────
+ * 威胁：
+ *   1) socket 直连绕过网关：本地进程可连 app.sock，绕过 fnOS 网关会话校验，直接触发
+ *      apply_hotfix / save_config / run 等写操作。
+ *   2) CSRF：用户浏览器访问恶意页面时，跨站 form POST 会携带 fnOS 会话 Cookie，
+ *      经网关注入 X-Trim-Userid 后转发到本应用——仅靠网关头无法拦截，必须校验来源同源。
+ * 防线（对齐 checkin 1.5.0 起的 B1 鉴权）：所有 POST（状态变更）端点要求
+ *   a) X-Trim-Userid 非空（经网关，或本地直连显式带头）；
+ *   b) Origin/Referer 与请求 Host 同源（无来源头的非浏览器/本地 socket 客户端放行，交由 a 把关）。
+ * GET 只读端点不受影响（302 播放中转另有 HMAC 验签+限流）。 */
+const GATEWAY_HEADER = "x-trim-userid";
+const WRITE_DENY_GATEWAY = "未授权：写操作仅允许经 fnOS 网关访问（请从 fnOS 桌面打开应用）";
+const WRITE_DENY_CSRF = "拒绝跨站请求：来源校验未通过";
+
+/** Origin/Referer 与请求 Host 同源校验。无来源头（curl/本地 socket）返回 true，交由网关头把关。 */
+function sameOriginOk(headers, host) {
+  const src = String(headers["origin"] || "").trim() || String(headers["referer"] || "").trim();
+  if (!src) return true; // 非浏览器/本地直连无 Origin → 不在此拦，由 X-Trim-Userid 把关
+  let h;
+  try {
+    h = new URL(src).host;
+  } catch {
+    return false; // 畸形来源头直接拒
+  }
+  if (!host) return false; // 有来源头却无从比对自身 host → 保守拒绝
+  return h.toLowerCase() === String(host).toLowerCase();
+}
+
 class TrimHandler {
   constructor(server, req, res) {
     this.server = server;
@@ -204,6 +232,15 @@ class TrimHandler {
     const userid = String(headers["x-trim-userid"] || "");
     let resultPromise;
     if (method === "POST") {
+      // 写端点安全防线（TOP2-B）：网关头非空 + 来源同源，二者缺一即拒。
+      if (!userid.trim()) {
+        this._respond(403, _error(WRITE_DENY_GATEWAY));
+        return Promise.resolve();
+      }
+      if (!sameOriginOk(headers, this._reqMeta && this._reqMeta.host)) {
+        this._respond(403, _error(WRITE_DENY_CSRF));
+        return Promise.resolve();
+      }
       let payload = null;
       if (body.length) {
         try {
@@ -270,6 +307,7 @@ class TrimHandler {
     const pickcode = parsed.searchParams.get("pickcode") || "";
     const sign = parsed.searchParams.get("sign") || "";
     const file_name = parsed.searchParams.get("file_name") || "";
+    const expires = parsed.searchParams.get("expires") || ""; // v2 签名 TTL（可空=旧链接）
     const userAgent = String(headers["user-agent"] || "");
     const source = String(headers["x-forwarded-for"] || "").split(",")[0].trim()
       || String(headers["x-real-ip"] || "").trim()
@@ -293,7 +331,7 @@ class TrimHandler {
         if (now - b.start > 120000) limiter.delete(key);
       }
     }
-    return this.server.api.redirectTarget(pickcode, sign, file_name, userAgent).then((result) => {
+    return this.server.api.redirectTarget(pickcode, sign, file_name, userAgent, expires).then((result) => {
       if (result.code === 302) {
         // 播放器 302 播放：不设置 Content-Disposition（下载场景才需要，且
         // 中文/特殊字符文件名会触发 Node writeHead Invalid character 校验失败，

@@ -82,29 +82,58 @@ async function httpsGetRetry(url, tries) {
   throw last;
 }
 
-/** 双源拉取：raw 与 GitHub 代理镜像并行发起，最快成功者胜。
- * 串行（raw 失败才走镜像）在 raw 慢时会把总耗时拖到网关超时；并行通常 <5s 返回。 */
+/** 串行拉取（安全）：主源（raw.githubusercontent.com）成功即返回；失败才依次尝试镜像——
+ * 镜像仅作主源失败兜底，被攻陷的镜像也无法先于主源（GitHub）注入恶意内容。
+ * 此前的 Promise.race 并行拉取会让「更快的」镜像抢先返回，等同把信任交给第三方镜像。 */
 const GH_PROXIES = ["https://ghproxy.net/", "https://ghproxy.com/"];
 async function fetchWithMirror(primaryUrl) {
-  const candidates = [primaryUrl, ...GH_PROXIES.map((p) => p + primaryUrl)];
-  let remaining = candidates.map((u) => httpsGet(u));
   let lastErr = null;
-  while (remaining.length) {
-    const result = await Promise.race(
-      remaining.map((p, i) => p.then((b) => ({ ok: true, b, i }), (e) => ({ ok: false, e, i })))
-    );
-    if (result.ok) return result.b;
-    lastErr = result.e;
-    remaining = remaining.filter((_, i) => i !== result.i);
+  try { return await httpsGet(primaryUrl); } catch (e) { lastErr = e; }
+  for (const p of GH_PROXIES) {
+    try { return await httpsGet(p + primaryUrl); } catch (e) { lastErr = e; }
   }
   throw lastErr;
 }
 
+/** 十六进制 sha256（64 位）严格校验 */
+function isSha256Hex(s) {
+  return typeof s === "string" && /^[0-9a-f]{64}$/i.test(s);
+}
+
+/** 版本线校验（addVersionLine 语义）：x.y.z 且每段 0-9；patch 达 9 进位 minor，
+ * 永不出现 .10+。热更清单 version 若越过版本线（如 1.2.10）直接拒收。 */
+function isVersionLine(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(v || "").trim());
+  if (!m) return false;
+  return Number(m[1]) <= 9 && Number(m[2]) <= 9 && Number(m[3]) <= 9;
+}
+
+/** 清单是热更的信任根（无签名）：只信任 GitHub raw 主源，绝不接受镜像提供的清单——
+ * 文件内容可走镜像（有清单里的 sha256 兜底校验），但清单本身若来自被攻陷的镜像，
+ * 攻击者即可注入任意 files+sha256 → 数据目录级代码替换。故清单固定走 raw，且严格校验字段。 */
 async function fetchManifest() {
-  const buf = await fetchWithMirror(bust(MANIFEST_URL));
-  const m = JSON.parse(buf.toString("utf8"));
-  if (!m || typeof m.version !== "string" || !m.files || typeof m.files !== "object") {
-    throw new Error("清单格式错误");
+  const buf = await httpsGet(bust(MANIFEST_URL)); // 仅 raw 主源，不走镜像
+  let m;
+  try {
+    m = JSON.parse(buf.toString("utf8"));
+  } catch {
+    throw new Error("清单解析失败");
+  }
+  if (!m || typeof m.version !== "string" || !isVersionLine(m.version)) {
+    throw new Error("清单格式错误（version 需为 x.y.z 且每段 ≤9）");
+  }
+  if (!m.files || typeof m.files !== "object" || Array.isArray(m.files)) {
+    throw new Error("清单格式错误（files）");
+  }
+  // 严格逐项校验：路径白名单（safeRel）+ sha256 十六进制 + size 非负整数
+  for (const [rel0, info] of Object.entries(m.files)) {
+    safeRel(rel0); // 非白名单/含穿越片段直接抛错
+    if (!info || typeof info !== "object" || !isSha256Hex(info.sha256)) {
+      throw new Error(`清单字段非法（sha256）：${rel0}`);
+    }
+    if (!Number.isInteger(Number(info.size)) || Number(info.size) < 0) {
+      throw new Error(`清单字段非法（size）：${rel0}`);
+    }
   }
   return m;
 }
@@ -288,4 +317,4 @@ function runCli(cli, args, env) {
   });
 }
 
-module.exports = { checkHotfix, applyHotfix, MANIFEST_URL, sha256File };
+module.exports = { checkHotfix, applyHotfix, fetchManifest, isVersionLine, isSha256Hex, MANIFEST_URL, sha256File };

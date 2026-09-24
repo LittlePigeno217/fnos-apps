@@ -154,6 +154,20 @@ def load_version(slug):
         return "dev"
 
 
+def validate_version_line(v):
+    """版本线校验（addVersionLine 语义）：版本必须为 x.y.z，且每段 0-9；
+    patch 达 9 进位 minor、minor 达 9 进位 major——永不出现 .10+。
+    合法返回 None，非法返回错误字符串。显式 --version / --check 均走此校验，
+    防止绕过 bump_version 直接写 1.2.10 之类的越线版本。"""
+    s = str(v).strip()
+    if not re.fullmatch(r"\d+\.\d+\.\d+", s):
+        return f"版本格式非法（应为 x.y.z）：{v}"
+    parts = [int(x) for x in s.split(".")]
+    if any(x > 9 for x in parts):
+        return f"版本线违规（任一段不得 ≥10，patch 达 9 应进位 minor）：{v}"
+    return None
+
+
 def bump_version(v):
     """补丁号递增（功能热更发布用），遵守项目版本线：永不出现 .10+，
     1.0.9 的下个版本跳 1.1.0（patch 达 9 进位 minor；minor 达 9 进位 major）。
@@ -226,6 +240,11 @@ def main():
         manifest_path = paths["MANIFEST_PATH"]
         cur = json.load(open(manifest_path, encoding="utf-8")) if os.path.isfile(manifest_path) else {}
         declared = cur.get("version")
+        for v in [declared, load_version(slug)]:
+            if v:
+                verr = validate_version_line(v)
+                if verr:
+                    errors.append(verr)
         if declared and declared != load_version(slug):
             errors.append(f"版本不一致：VERSION={load_version(slug)} ≠ manifest={declared}（发布前运行 --bump）")
         if errors:
@@ -244,10 +263,18 @@ def main():
         print(f"功能版本已递增：VERSION -> {version}（源码版本字面量已同步）")
     elif args.version:
         version = args.version
+        verr = validate_version_line(version)
+        if verr:
+            print(f"❌ {verr}")
+            sys.exit(1)
         write_version(slug, version)
         sync_source_literals(version, slug, version_env)
     else:
         version = load_version(slug)
+        verr = validate_version_line(version)
+        if verr:
+            print(f"❌ {verr}")
+            sys.exit(1)
 
     manifest = build_manifest(version, slug)
     errors = []

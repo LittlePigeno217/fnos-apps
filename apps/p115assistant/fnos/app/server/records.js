@@ -20,8 +20,11 @@ class IncrementalRecordStore {
   }
 
   static fingerprint(p) {
-    const stat = fs.statSync(p);
-    return { size: stat.size, mtime_ns: stat.mtimeNs };
+    // 必须带 { bigint: true } 才能拿到 mtimeNs；否则 mtimeNs 恒为 undefined，
+    // 增量检测退化为仅比 size，同尺寸改写永不重传。
+    // BigInt 无法直接 JSON 序列化，故 size 收敛为 Number、mtime_ns 收敛为字符串。
+    const stat = fs.statSync(p, { bigint: true });
+    return { size: Number(stat.size), mtime_ns: stat.mtimeNs.toString() };
   }
 
   /** 只用于比较的路径键；兼容分隔符，统一 casefold。 */

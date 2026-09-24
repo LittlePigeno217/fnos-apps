@@ -1,26 +1,26 @@
 {
-  "version": "1.2.1",
-  "generated_at": "2026-09-21T13:11:18Z",
+  "version": "1.2.2",
+  "generated_at": "2026-09-24T12:46:11Z",
   "files": {
     "server/client.js": {
-      "sha256": "f79e50a308907ceeaf743c264fd4e8f451985381b739ff5e22a28bd556c048bb",
-      "size": 84576
+      "sha256": "b3d6e9aed2df0b3473ff562643dc1c4822e38b045ef6355e43458c804a51e8a7",
+      "size": 86210
     },
     "server/crypto.js": {
       "sha256": "5a769debc5140ca5be4ca7afdfa0f66ed66f8b6508fe6fd777a78ca16b2d8612",
       "size": 9885
     },
     "server/hotfix.js": {
-      "sha256": "8e27c51a6b6f591d5c6ab5a0daf33d576001a6667bdb8647ec796eb75cae2e45",
-      "size": 11858
+      "sha256": "b83c0a3f1d302ac8172a890ff6dcb5b618eb6b433fef36c91ad873f4115283b1",
+      "size": 13475
     },
     "server/limiter.js": {
       "sha256": "baeeeae545b3756ea592e43089d30a1d1815b9e5d23ba6f9ff66aa01650597e8",
       "size": 5820
     },
     "server/main.js": {
-      "sha256": "657e7421b670544bf3912031c640b14851036f9e0b9f95eb4456038e00813020",
-      "size": 24108
+      "sha256": "fa49b7d9d882520685b31584926a430816d7547ca2885eea82b6c40cab052b62",
+      "size": 26433
     },
     "server/notify.js": {
       "sha256": "c259b045ad4766f4b5ef565d01502a5ac87fa9b55bf1e47f5f7a9e209af32e30",
@@ -31,24 +31,24 @@
       "size": 17497
     },
     "server/records.js": {
-      "sha256": "915e9862b8a6e16cfc0f609c4767e62387d16673045d519054507c3b11dcd3eb",
-      "size": 4781
+      "sha256": "9972b5e5dd1072551c20fc4a8f8bda0161b9dc5d666c8584f499fe0069a4a26a",
+      "size": 5086
     },
     "server/server.js": {
-      "sha256": "6f07e7ca210fa42e257c5abc8525553783605a30a4bf2449e41fe3988156a23a",
-      "size": 104550
+      "sha256": "7001c5913a99575041f4c95bea6b17d55faaa171d541b08296801a26bcd63916",
+      "size": 111555
     },
     "server/store.js": {
-      "sha256": "8857be1b7c1e90320e96a7dae3a420de78a05c7562a3c719472ec3adf254b6fc",
-      "size": 11406
+      "sha256": "235ee0ca8773cd9605a162347a1e4f5b6d668708a8bccfdaf85c0b29b4ced95a",
+      "size": 12507
     },
     "server/update.js": {
       "sha256": "9dd9275482b8e8b54ea88cc50a4b4d08d2313d84a997a521b1c8867b204029c3",
       "size": 2946
     },
     "www/index.html": {
-      "sha256": "d0a4966a27a95de59acb13d6005eb08cfca8f6925cf0acefbd98869c3d248b6d",
-      "size": 173842
+      "sha256": "e7aadc7a4a6f96dd8c816b86ac2c0220adcf78667abb8b5f4d590d37173f0b97",
+      "size": 174198
     },
     "www/qrcode.js": {
       "sha256": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",

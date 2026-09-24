@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.2.1",
+  version: "1.2.2",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -168,11 +168,30 @@ class Store {
   }
 
   // ---- 302 取链 secret 与加密密钥 ----
+  /** 302 取链 secret 的落盘加密密钥：根密钥来自运行环境 TRIM_API_TOKEN（绝不落盘）
+   * ——攻击者只拿到数据目录 JSON 也无法解密。缺 env 时退化为「数据目录路径+应用名」
+   * 派生（保证 curl --unix-socket 等本地场景可解），同样不做明文落盘。 */
+  _redirectFileKey() {
+    const envSecret = String(process.env.TRIM_API_TOKEN || "").trim();
+    const basis = envSecret || `p115assistant|${this._dir}`;
+    return crypto.pbkdf2Sync(String(basis), ENCRYPTION_SALT + ":redirect:v1", 100000, 32, "sha256");
+  }
+
   getRedirectSecret() {
-    const secret = this._readJson(REDIRECT_SECRET_KEY);
-    if (typeof secret === "string" && secret.length >= 32) return secret;
+    const stored = this._readJson(REDIRECT_SECRET_KEY);
+    if (stored && typeof stored === "string") {
+      // 新格式：Fernet 密文（base64url），成功解密即返回
+      const plain = fernetDecrypt(stored, this._redirectFileKey());
+      if (plain !== null && plain.length >= 16) return plain;
+      // 旧格式迁移：明文 secret → 立即加密落盘（不留明文）
+      if (stored.length >= 32) {
+        this._writeJson(REDIRECT_SECRET_KEY, fernetEncrypt(stored, this._redirectFileKey()));
+        return stored;
+      }
+      // 未知内容视为损坏，重新生成
+    }
     const generated = crypto.randomBytes(32).toString("hex");
-    this._writeJson(REDIRECT_SECRET_KEY, generated);
+    this._writeJson(REDIRECT_SECRET_KEY, fernetEncrypt(generated, this._redirectFileKey()));
     return generated;
   }
 
