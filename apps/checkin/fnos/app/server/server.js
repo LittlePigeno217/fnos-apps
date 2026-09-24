@@ -31,6 +31,8 @@ function ok(data, message = "") {
 const SITE_TITLE_MAP = {
   "anyrouter.top": "Any Router",
   "agentrouter.org": "Agent Router",
+  // 1.7.5：api.justwoker.icu 品牌 JustDoWork（SPA 渲染站，后端静抓只有 <title>New API</title>，品牌在 JS 渲染的侧边栏 span）
+  "api.justwoker.icu": "JustDoWork",
 };
 const titleCache = new Map(); // url → { title, ts }
 const TITLE_CACHE_TTL = 60 * 60 * 1000;
