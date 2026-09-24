@@ -287,6 +287,11 @@
   /* 1.6.2：站点标题链接（NewAPI 系账号卡标题点击跳转平台） */
   .acct-card-title .t a.nm-link { color: var(--accent, #2563eb); text-decoration: none; }
   .acct-card-title .t a.nm-link:hover { text-decoration: underline; }
+  /* 1.7.2：认证方式标签（NewAPI 系副标题行） */
+  .auth-tag { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding: 1px 7px;
+              border-radius: 10px; font-size: 10px; line-height: 1.5; color: #9aa7b8;
+              background: rgba(128, 138, 158, .12); white-space: nowrap; vertical-align: middle; }
+  .auth-tag.warn { color: #e5484d; background: rgba(229, 72, 77, .10); }
   .acct-card-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
   .acct-card-title { min-width: 0; flex: 1; }
   .acct-card-title .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -404,7 +409,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.7.1</span>
+      <span class="ver" id="appVersion">v1.7.2</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -834,10 +839,22 @@ function switchAcctTab(i) {
   renderAccountList();
 }
 
+/** 认证方式标签（1.7.2 卡片重设计）：NewAPI 系副标题行展示当前凭据模式 */
+function authModeTag(m) {
+  const map = {
+    token: '<span class="auth-tag" title="已配置访问令牌（Bearer 认证）">🔑 访问令牌</span>',
+    cookie: '<span class="auth-tag" title="已配置手动 Cookie">🍪 Cookie</span>',
+    password: '<span class="auth-tag" title="已配置账号密码（签到现场登录）">👤 账密</span>',
+    none: '<span class="auth-tag warn" title="未配置任何凭据，签到会失败">⚠️ 未配置</span>',
+  };
+  return map[m] || "";
+}
+
 /** 单个账号卡（全局账号列表用）：站点来源标签 + 标题（备注优先）+ 余额/积分 + 状态 + 操作。 */
 function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
+  let nmAuthTag = ""; // 1.7.2：NewAPI 系认证方式标签（无凭据/非 NewAPI 系为空）
   // 卡片标题（备注优先）：anyrouter 已并入 newapi 语义 → 同一标题分支（NewAPI / NewAPI · base_url host），
   // 账号标识落副标题；其余站点：无备注 → 账号标识(label 脱敏) → 「账号 N」（站点名仅由来源标签 siteTag 承载）
   const acctLabel = a.label || (d && d.label) || "";
@@ -855,7 +872,9 @@ function renderAcctCard(key, a, cap) {
     // 1.6.6：站点标题匹配做尾斜杠归一（后端存储去斜杠；账号 base_url 可能带 /）
     const st = (window.SITE_TITLES || {})[String(baseUrl || "").replace(/\/+$/, "")] || "";
     title = st || (host ? ("NewAPI · " + host) : "NewAPI");
-    subLabel = (acctLabel && acctLabel !== title) ? acctLabel : "";
+    // 1.7.2 卡片重设计：副标题显示「平台地址 + 认证方式标签」；用户备注存在时优先备注
+    nmAuthTag = authModeTag(d && d.auth_mode);
+    subLabel = (acctLabel && acctLabel !== title) ? acctLabel : host;
   } else {
     title = acctLabel || ("账号 " + (a.id || ""));
     subLabel = "";
@@ -949,7 +968,8 @@ function renderAcctCard(key, a, cap) {
           ? '<a class="nm-link" href="' + esc(baseUrl) + '" target="_blank" rel="noopener nofollow">' + esc(title) + "</a>"
           : esc(title)) +
       "</div>" +
-      (subLabel ? '<div class="sub" title="' + esc(subLabel) + '">' + esc(subLabel) + "</div>" : "") +
+      // 1.7.2：副标题行 = 平台地址/备注（esc）+ 认证方式标签（authModeTag 内部键值固定，无注入）
+      (subLabel || nmAuthTag ? '<div class="sub" title="' + esc(subLabel || "") + '">' + esc(subLabel || "") + nmAuthTag + "</div>" : "") +
     "</div>" + loginBadge + "</div>" +
     balLine +
     '<div class="acct-meta">' + dayBadge + "</div>" +

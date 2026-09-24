@@ -701,6 +701,9 @@ class Server {
             balance_delta_display: (supportsBalance && rawDelta != null && rawDelta !== 0)
               ? ((rawDelta > 0 ? "+" : "") + fmt(rawDelta)) : "",
             // 当日累计新增余额：数值为今日生效值（日期非今天 → 0）+ workbuddy/NewAPI 系展示串（+N；0 → 空）
+            auth_mode: (["newapi", "anyrouter"].includes(key) && a)
+              ? (a.access_token ? "token" : ((a.cookie || a.cookies) ? "cookie" : ((a.username || a.email) ? "password" : "none")))
+              : "",
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
             daily_gain_display: (supportsBalance && ["workbuddy", "newapi", "anyrouter"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
