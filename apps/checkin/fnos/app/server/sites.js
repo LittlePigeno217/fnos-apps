@@ -164,6 +164,12 @@ function napiSignInSuccess(j) {
   return !!(j && (j.ret === 1 || j.code === 0 || j.success === true));
 }
 
+/** 本地年月（YYYY-MM）：NewAPI 主流签到状态 readback 的 month 参数（对齐上游 formatLocalMonthKey） */
+function localMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 /** NewAPI quota：500000 点 = $1（美元） */
 function napiUsd(quota) {
   return "$" + (Number(quota || 0) / 500000).toFixed(2);
@@ -1010,6 +1016,11 @@ const NEWAPI = {
   sub2MePath: "/api/v1/auth/me",
   sub2SignInPath: "/api/v1/redeem/checkin",
   sub2SignInStatusPath: "/api/v1/redeem/checkin/status",
+  // 主流 NewAPI 状态端点（签到回读，1.8.4）：GET /api/user/checkin/status；404/405 回落 GET /api/user/checkin?month=…（上游 readback）
+  checkinStatusPath: "/api/user/checkin/status",
+  // Genius-Programmer 系变体（/api/v1/user/checkin，today_checked_in 语义）：redeem 端点 404/405 时回退（上游 geniusProgrammerCheckIn）
+  geniusSignInPath: "/api/v1/user/checkin",
+  geniusSignInStatusPath: "/api/v1/user/checkin/status",
   // NewAPI 统一 OAuth（协议来源：开源 github.com/QuantumNous/new-api，公开源码非逆向）：
   //   1) POST /api/oauth/state {provider,intent:"login"} → {data:{flow_token}}（flow_token 即 state，CSRF）
   //   2) 客户端拼授权 URL（client_id 取自 /api/status 的 {provider}_client_id），跳转 provider
@@ -1066,48 +1077,155 @@ const NEWAPI = {
   _sub2Auth(cfg) {
     return { type: "token", token: String(cfg.access_token).trim(), base: this._base(cfg) };
   },
-  /** Sub2API 签到：Bearer JWT 直登。/api/v1/redeem/checkin 提交，
-   *  /status 探测、/auth/me 验身份。信封 {code,message,data:{message,reward_amount,new_balance,checked_in_at}}，
-   *  错误 403/409 + reason（DAILY_CHECKIN_DISABLED / ROLE_FORBIDDEN / ALREADY_CHECKED）。 */
+  /** 签到功能未开启（DAILY_CHECKIN_DISABLED / enabled=false）→ 跳过类结果：不判失败不重试
+   *  （与 1.8.3 跳签精神一致）；文案与「今日已签到」区分开。 */
+  _disabledResult(cfg, auth) {
+    return this._ok("今日已签到", "签到功能未开启，今日无需签到", "-", "-", cfg, auth);
+  },
+
+  /** NewAPI 主流状态回读（1.8.4）：GET /api/user/checkin/status → 404/405 回落
+   *  GET /api/user/checkin?month=YYYY-MM（上游 newApi.ts fetchCheckedInTodayStatus readback）。兼容
+   *  stats.checked_in_today（上游 NewApiCheckInStatus）/ today_checked_in / checked_in_today / checkedInToday。
+   *  返回 {enabled, checkedInToday}；端点全不可用/登录失效/WAF/解析失败 → null（调用方维持现有判定，
+   *  不因缺 status 误报失败）。 */
+  async _checkinStatus(cfg, auth, s) {
+    const paths = [this.checkinStatusPath, this.fallbackSignInPath + "?month=" + localMonthKey()];
+    for (const path of paths) {
+      const r = await s.get(auth.base + path, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
+      if (isLoginExpired(r.status, r.text)) return null;
+      if (r.status === 404 || r.status === 405) continue;
+      if (isWafChallenge(r.text)) return null;
+      const j = parseJson(r.text);
+      if (!j || typeof j !== "object") continue;
+      const d = (j.data && typeof j.data === "object") ? j.data : j;
+      const stats = (d.stats && typeof d.stats === "object") ? d.stats : {};
+      const checkedToday = stats.checked_in_today === true || d.today_checked_in === true ||
+        d.checked_in_today === true || d.checkedInToday === true || d.checked_in === true;
+      const disabled = d.enabled === false || j.enabled === false;
+      if (checkedToday || disabled) {
+        return { enabled: disabled ? false : true, checkedInToday: checkedToday };
+      }
+    }
+    return null;
+  },
+
+  /** Sub2/Genius 系状态探测（1.8.4）：redeem status 404/405 → genius status 回退（上游 sub2api 系列）。
+   *  兼容 checked_in_today（Sub2API Pro）/ today_checked_in（Genius-Programmer）/ checkedInToday / checked_in。
+   *  返回 {enabled, checkedInToday, data}；端点全不可用/登录失效/WAF/解析失败 → null。 */
+  async _sub2Status(cfg, auth, s) {
+    const paths = [this.sub2SignInStatusPath, this.geniusSignInStatusPath];
+    for (const path of paths) {
+      const r = await s.get(auth.base + path, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
+      if (isLoginExpired(r.status, r.text)) return null;
+      if (r.status === 404 || r.status === 405) continue;
+      if (isWafChallenge(r.text)) return null;
+      const j = parseJson(r.text);
+      if (!j || typeof j !== "object") continue;
+      const d = (j.data && typeof j.data === "object") ? j.data : j;
+      const checkedToday = d.checked_in_today === true || d.today_checked_in === true ||
+        d.checkedInToday === true || d.checked_in === true || d.checked_in === 1;
+      if (checkedToday || d.enabled === false) {
+        return { enabled: d.enabled === false ? false : true, checkedInToday: checkedToday, data: d };
+      }
+    }
+    return null;
+  },
+
+  /** Sub2API 签到：Bearer JWT 直登。/api/v1/redeem/checkin 提交，/status 探测（POST 后再回读确认，
+   *  status 为权威——上游 pattern）、/auth/me 验身份。信封 {code,message,data:{message,reward_amount,
+   *  new_balance,checked_in_at}}；错误 403/409 + reason（DAILY_CHECKIN_DISABLED / DAILY_CHECKIN_ROLE_FORBIDDEN
+   *  / DAILY_CHECKIN_ALREADY_DONE）。1.8.4：redeem 端点 404/405（路径不支持）→ 回退 Genius-Programmer 系
+   *  /api/v1/user/checkin；status 端点同理回退 /api/v1/user/checkin/status。 */
   async _runSub2Checkin(cfg) {
     const auth = this._sub2Auth(cfg);
     const s = new Session();
-    // 1) 状态探测：enabled=false → 禁用；已签到 → 直接返回
-    const st = await s.get(auth.base + this.sub2SignInStatusPath, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
-    if (isLoginExpired(st.status, st.text)) {
-      throw new Error("登录态失效（HTTP " + st.status + "）：access_token 无效或已过期，请重新获取");
-    }
-    const sj = parseJson(st.text);
-    if (sj && typeof sj.data === "object") {
-      const d = sj.data;
-      if (d.enabled === false) {
-        throw new Error(d.reason === "DAILY_CHECKIN_DISABLED" || d.reason === "DISABLED" ? "平台当日签到功能已关闭（" + (d.reason || "DISABLED") + "）" : (d.message || "签到功能已被平台禁用"));
-      }
-      if (d.checked_in_today === true || d.checkedInToday === true || d.checked_in === true || d.checked_in === 1) {
-        return this._ok("今日已签到", d.message || "今日已签到", "-", "-", cfg, auth);
-      }
+    // 1) 状态探测（redeem → genius 回退）：enabled=false → 今日无需签到（不判失败不重试）；已签到 → 直接返回
+    const st = await this._sub2Status(cfg, auth, s);
+    if (st) {
+      if (st.enabled === false) return this._disabledResult(cfg, auth);
+      if (st.checkedInToday) return this._ok("今日已签到", "今日已签到", "-", "-", cfg, auth);
     }
     // 2) 提交签到
     const r = await s.postJson(auth.base + this.sub2SignInPath, {}, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
     if (isLoginExpired(r.status, r.text)) {
       throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
     }
+    // 3) redeem 端点不支持（404/405，路径不存在）→ Genius-Programmer 系变体回退
+    if (r.status === 404 || r.status === 405 || /not found|method not allowed|接口不存在|不支持|invalid action/i.test(String(r.text || ""))) {
+      return this._runGeniusSub2Checkin(cfg, auth);
+    }
     const j = parseJson(r.text);
     if (!j || typeof j !== "object") {
       throw new Error(`Sub2API 签到接口没回 JSON：${cleanText(r.text).slice(0, 60) || "空响应"}`);
     }
-    // 业务信封 code===0 → 成功
+    // 4) 业务信封 code===0 → POST 后再回读 status 确认才判成功（上游 pattern：status 为权威）
     if (Number(j.code) === 0 && j.data && typeof j.data === "object") {
       const d = j.data;
       const reward = (d.reward_amount != null && d.reward_amount !== "") ? ((Number(d.reward_amount) >= 0 ? "+" : "") + d.reward_amount) : "";
       const total = (d.new_balance != null && d.new_balance !== "") ? String(d.new_balance) : "";
+      const st2 = await this._sub2Status(cfg, auth, s);
+      if (st2) {
+        if (st2.checkedInToday) {
+          return this._ok("签到成功", d.message || "签到成功", reward || "-", total || "-", cfg, auth);
+        }
+        if (st2.enabled === false) return this._disabledResult(cfg, auth);
+      }
+      // status 确认不可得（端点/网络异常）→ 维持现有直接判定，不因缺 status 误报失败
       return this._ok("签到成功", d.message || "签到成功", reward || "-", total || "-", cfg, auth);
     }
-    if (j.reason === "ALREADY_CHECKED" || /already|重复签到|已签到/.test(String(j.message || ""))) {
-      return this._ok("今日已签到", j.message || "ALREADY_CHECKED", "-", "-", cfg, auth);
+    // 5) 错误语义分类
+    if (j.reason === "DAILY_CHECKIN_ALREADY_DONE" || j.reason === "ALREADY_CHECKED" || /already|重复签到|已签到/.test(String(j.message || ""))) {
+      return this._ok("今日已签到", j.message || "今日已签到", "-", "-", cfg, auth);
     }
-    if (j.reason === "DAILY_CHECKIN_DISABLED" || (Number(j.code) === 403 && j.reason === "ROLE_FORBIDDEN")) {
-      throw new Error(j.message || "签到被拒绝：" + (j.reason || ""));
+    if (j.reason === "DAILY_CHECKIN_DISABLED") {
+      return this._disabledResult(cfg, auth);
+    }
+    if (Number(j.code) === 403 && j.reason === "DAILY_CHECKIN_ROLE_FORBIDDEN") {
+      throw new Error(j.message || "签到被拒绝：当前账号角色无权限签到（DAILY_CHECKIN_ROLE_FORBIDDEN）");
+    }
+    throw new Error((j.message || `签到失败（code=${j.code} ret=${j.ret}）`));
+  },
+
+  /** Genius-Programmer 系签到变体（1.8.4）：redeem 端点 404/405 时回退 /api/v1/user/checkin。
+   *  信封 {code,message,data:{new_reward,reward_amount}}；状态端点 {data:{enabled,today_checked_in}}；
+   *  new_reward=false → 已签到（already_checked）。 */
+  async _runGeniusSub2Checkin(cfg, auth) {
+    const s = new Session();
+    const r = await s.postJson(auth.base + this.geniusSignInPath, {}, { headers: this._headers(auth), timeout: 15000, useProxy: cfg.use_proxy });
+    if (isLoginExpired(r.status, r.text)) {
+      throw new Error("登录态失效（HTTP " + r.status + "）：access_token 无效或已过期，请重新获取");
+    }
+    if (r.status === 404 || r.status === 405 || /not found|method not allowed|接口不存在|不支持|invalid action/i.test(String(r.text || ""))) {
+      throw new Error("该平台无可用签到接口（通用 NewAPI 与 Sub2API redeem、Genius-Programmer 端点均不存在）");
+    }
+    const j = parseJson(r.text);
+    if (!j || typeof j !== "object") {
+      throw new Error(`Genius-Programmer 签到接口没回 JSON：${cleanText(r.text).slice(0, 60) || "空响应"}`);
+    }
+    // 业务信封 code===0 → data.new_reward 显式区分「成功奖励」/「已签到」（判定优先级：明确字段优先）
+    if (Number(j.code) === 0 && j.data && typeof j.data === "object") {
+      const d = j.data;
+      if (d.new_reward === false) {
+        return this._ok("今日已签到", d.message || "今日已签到", "-", "-", cfg, auth);
+      }
+      const reward = (d.reward_amount != null && d.reward_amount !== "") ? ((Number(d.reward_amount) >= 0 ? "+" : "") + d.reward_amount) : "";
+      if (d.new_reward === true || reward !== "") {
+        return this._ok("签到成功", d.message || "签到成功", reward || "-", "-", cfg, auth);
+      }
+      // 成功但无明确字段 / 响应含糊 → GET /api/v1/user/checkin/status 按 today_checked_in 确认
+      const st = await this._sub2Status(cfg, auth, s);
+      if (st) {
+        if (st.checkedInToday) return this._ok("签到成功", d.message || "签到成功", reward || "-", "-", cfg, auth);
+        if (st.enabled === false) return this._disabledResult(cfg, auth);
+      }
+      // status 不可得 → 维持现有直接判定，不因缺 status 误报失败
+      return this._ok("签到成功", d.message || "签到成功", reward || "-", "-", cfg, auth);
+    }
+    if (j.reason === "DAILY_CHECKIN_ALREADY_DONE" || j.reason === "ALREADY_CHECKED" || /already|重复签到|已签到/.test(String(j.message || ""))) {
+      return this._ok("今日已签到", j.message || "今日已签到", "-", "-", cfg, auth);
+    }
+    if (j.reason === "DAILY_CHECKIN_DISABLED") {
+      return this._disabledResult(cfg, auth);
     }
     throw new Error((j.message || `签到失败（code=${j.code} ret=${j.ret}）`));
   },
@@ -1323,13 +1441,18 @@ const NEWAPI = {
     const success = napiSignInSuccess(j);
     const data = (j.data && typeof j.data === "object") ? j.data : null;
 
-    // 结构化解读（NewApiCheckInStatus）：data.enabled===false → 禁用；data.checked_in===true → 已签到
+    // 结构化解读（NewApiCheckInStatus）：data.enabled===false → 签到未开启，今日无需签到（1.8.4：不判失败不重试）
     if (data && data.enabled === false) {
-      throw new Error(msg || "签到功能已被平台禁用（enabled=false）");
+      return this._disabledResult(cfg, auth);
     }
     if (data && data.checked_in === true && !cfg._deltaOk) {
       // 通用 newapi：结构化「已签到」直接返回；anyrouter（_deltaOk）不走此捷径，
       // 一律以签到前后余额实时对比判定（未增加 → 失败重试），避免把「响应说已签但余额没动」误判为成功。
+      return this._ok("今日已签到", msg || "今日已签到", "-", "-", cfg, auth);
+    }
+    // 签到响应自带结构化「今日已签」字段（Genius-Programmer 系 today_checked_in / Sub2 系 checked_in_today）
+    // → 判定优先级第 1 条：明确成功字段直接判已签，不再回读 status
+    if (data && (data.today_checked_in === true || data.checked_in_today === true || data.checkedInToday === true) && !cfg._deltaOk) {
       return this._ok("今日已签到", msg || "今日已签到", "-", "-", cfg, auth);
     }
 
@@ -1367,6 +1490,24 @@ const NEWAPI = {
       const detail = [rewardMsg, balanceMsg].filter(Boolean).join("；") || msg || "签到成功";
       return this._ok("签到成功", detail, rewardMsg || "-", balanceMsg || "-", cfg, auth);
     }
+
+    // 1.8.4：签到响应无明确成功字段（成功但含糊 / 未带 success/ret/code）→ GET status 端点确认
+    // （主流 GET /api/user/checkin/status；404/405 回落 /api/user/checkin?month=… readback）。按
+    // checkedInToday/today_checked_in 确认已签；enabled=false → 今日无需签到。anyrouter（_deltaOk）
+    // 不触发：delta 判定已先行走完（成功/失败均已返回），到不了这里——status 确认绝不绕过 delta 判定。
+    if (!cfg._deltaOk) {
+      const st = await this._checkinStatus(cfg, auth, new Session());
+      if (st) {
+        if (st.enabled === false) {
+          return this._disabledResult(cfg, auth);
+        }
+        if (st.checkedInToday) {
+          return this._ok("今日已签到", "今日已签到", "-", "-", cfg, auth);
+        }
+      }
+      // status 不可得（端点/网络异常）→ 维持现有判定，不因缺 status 误报失败
+    }
+
     if (isAlreadyCheckedIn(msg) || /已经签到|重复签到|already checked|already signed/i.test(msg)) {
       const detail = [balanceMsg || msg, rewardMsg].filter(Boolean).join("；") || "今日已签到";
       return this._ok("今日已签到", detail, "-", balanceMsg || "-", cfg, auth);
