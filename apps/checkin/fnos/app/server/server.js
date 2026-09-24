@@ -227,6 +227,22 @@ class Server {
     });
   }
 
+  /**
+   * 判断某账号今天是否已成功签到（与前端 accounts.today_ok / 站点 today_ok 同源）：
+   * 扫描该 site+account_id 的今日 history——任一「执行失败」→ 未完成（false，允许重签）；
+   * 否则今日存在「签到成功/今日已签到」记录 → true。无今日记录 → false。
+   */
+  _isAccountDoneToday(key, accountId, history) {
+    const accHist = (history || []).filter((h) => h && h.site === key && String(h.account_id) === String(accountId));
+    let done = false;
+    for (const h of accHist) {
+      if (!sameDayStr(h.time)) continue;
+      if (h.status === "执行失败") return false; // 今日有失败 → 需重签，不跳过
+      done = true;
+    }
+    return done;
+  }
+
   /** 立即执行签到：全部启用的站点；sites 参数可选（仅执行指定站点） */
   async runOnce(sitesArg) {
     if (this._running) {
@@ -241,6 +257,7 @@ class Server {
       const wanted = Array.isArray(sitesArg) && sitesArg.length ? sitesArg : null;
       const results = [];
       const history = [];
+      const priorHistory = this._store.getHistory(500); // 今日已签判定源（一次读取，循环内复用；与前端 today_ok 同源）
       for (const key of Object.keys(ADAPTERS)) {
         if (wanted && !wanted.includes(key)) continue;
         const site = cfg.sites[key];
@@ -249,8 +266,14 @@ class Server {
         const accs = (Array.isArray(site.accounts) ? site.accounts : []).filter((a) => a.enabled !== false);
         if (!accs.length) continue;
         for (const acc of accs) {
-          this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
           const accLabel = adapter.getAccountLabel(acc);
+          // 今日已成功签到的账号 → 跳过（不调 runCheckin、不触网），仅在批量「全部签到」路径生效
+          if (this._isAccountDoneToday(key, acc.id, priorHistory)) {
+            results.push({ site_key: key, account_id: acc.id, account: accLabel, site_name: adapter.name, status: "已跳过", message: "已跳过（今日已签）" });
+            this._log(`签到 ${adapter.name}${accLabel ? `（${accLabel}）` : ""} 已跳过（今日已签）`);
+            continue;
+          }
+          this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
           const who = accLabel ? `（${accLabel}）` : "";
           this._log(`签到 ${adapter.name}${who}…`);
           try {

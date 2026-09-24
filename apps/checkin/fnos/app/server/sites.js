@@ -213,9 +213,9 @@ const FLZT = {
   base: "https://flzt.club",
   loginPath: "/api/v1/passport/auth/login",
   checkinPath: "/api/v1/user/checkIn",
-  // 英雄大数字（当前持有量）：优先只读查询当前可用流量（transfer_enable - u - d，见 _queryHold），
-  // 语义与标签「当前流量」一致；查询不可用时回落签到响应里的 total_checkin_traffic（累计签到流量）。
-  holdLabel: "当前流量",
+  // 英雄大数字（当前持有量）：只读查询「可转换流量」（签到累计所得、可转换的流量，见 _queryHold），
+  // 语义与标签「可转换流量」一致；查询不可用时回落签到响应里的 total_checkin_traffic（累计签到流量）。
+  holdLabel: "可转换流量",
   fmtHold(v) { return fmtTraffic(v); },
 
   defaultConfig() {
@@ -248,29 +248,26 @@ const FLZT = {
   },
 
   /**
-   * 只读查询当前可用流量（hero 大数字源，绝不触发签到/写操作）。
-   * FLZT 为 V2Board/Xboard 面板（loginPath /api/v1/passport/auth/login 为其签名），
-   * GET /api/v1/user/getSubscribe 返回 transfer_enable（套餐总量）与 u/d（已用上/下行），
-   * 当前可用流量 = transfer_enable -（u + d），单位 bytes，与 fmtTraffic/checkin total 口径一致。
-   * 任一字段缺失/非有限值 → 返回 null（hero 显示「—」）。纯 GET 只读，异常一律吞掉，
-   * 绝不影响测试连接 / 签到结果；不回显订阅 URL（getSubscribe 内含 token 的 subscribe_url 从不输出）。
+   * 只读查询「可转换流量」（hero 大数字源，绝不触发签到/写操作）。
+   * FLZT 为 V2Board/Xboard 面板，GET /api/v1/user/info 返回 checkin_reward_traffic
+   *（累计签到所得、可转换的流量，单位 bytes）——即前端「可转换流量：N GB」的数据源
+   *（真机只读探测校准：checkin_reward_traffic=190684557803 ≈ 177.59 GB，与页面一致）。
+   * 注意：不再用 getSubscribe 的 transfer_enable-(u+d)（那是套餐剩余总量，会算出上万 GB 的错值）。
+   * 字段缺失/非有限值 → 返回 null（hero 显示「—」）。纯 GET 只读，异常一律吞掉，
+   * 绝不影响测试连接 / 签到结果；响应内含 token 的字段（如订阅 URL）从不输出。
    */
   async _queryHold(cfg, token) {
     try {
       const s = new Session();
-      const r = await s.get(this.base + "/api/v1/user/getSubscribe", {
+      const r = await s.get(this.base + "/api/v1/user/info", {
         headers: { authorization: token, Accept: "application/json, text/plain, */*" },
         timeout: 15000, useProxy: cfg.use_proxy,
       });
       const j = parseJson(r.text);
       const d = j && j.data ? j.data : null;
       if (!d) return null;
-      const total = Number(d.transfer_enable);
-      const up = Number(d.u);
-      const down = Number(d.d);
-      if (!Number.isFinite(total) || !Number.isFinite(up) || !Number.isFinite(down)) return null;
-      const remain = total - (up + down);
-      return Number.isFinite(remain) ? Math.max(0, remain) : null;
+      const convertible = Number(d.checkin_reward_traffic); // 可转换流量（bytes），与 fmtHold=fmtTraffic 口径一致
+      return Number.isFinite(convertible) ? Math.max(0, convertible) : null;
     } catch { return null; }
   },
 
@@ -306,7 +303,7 @@ const FLZT = {
     // 当天奖励累计源（server 侧按 status==="签到成功" 累计）：本次签到获得的流量，单位 MB
     const rewardVal = Number(data.reward_mb || data.reward || 0);
     const total = fmtTraffic(data.total_checkin_traffic);
-    // 当前持有量（hero 大数字源）：优先只读查询当前可用流量（与 testConnection 同源，语义匹配「当前流量」）；
+    // 当前持有量（hero 大数字源）：优先只读查询「可转换流量」（与 testConnection 同源，语义匹配「可转换流量」）；
     // 查询失败/字段缺失时回落累计签到流量 total_checkin_traffic（保证首签后 hero 始终有值，绝不回退到「—」）。
     const liveHold = await this._queryHold(cfg, token);
     const fallbackHold = Number.isFinite(Number(data.total_checkin_traffic)) ? Number(data.total_checkin_traffic) : null;
@@ -323,7 +320,7 @@ const FLZT = {
 
   async testConnection(cfg) {
     const token = await this._resolveToken(cfg); // 仅验证凭据可换取有效 token；不再回显 token 前缀（B11）
-    const hold = await this._queryHold(cfg, token); // 只读查询当前可用流量供 hero 快照（失败/无字段 → null → 「—」）
+    const hold = await this._queryHold(cfg, token); // 只读查询可转换流量供 hero 快照（失败/无字段 → null → 「—」）
     return { site: this.key, site_name: this.name, message: "登录测试成功，凭据有效（token 鉴权已确认）", hold_value: hold };
   },
 
@@ -358,8 +355,8 @@ const RIGHT_FORUM = {
   CHALLENGE_MARKERS: ["_waf_is_mobile", "CF_APP_WAF", '"sceneId"', 'id="renderData"'],
   // 真实验证码/安全验证标记（questionid 安全提问下拉框为 Discuz 常规字段，不计入）
   CAPTCHA_MARKERS: ["seccodeverify", "misc.php?mod=seccode", "请输入验证码", "需要验证码", "验证码不正确"],
-  // 英雄大数字标签：恩山签到响应只有「今日积分」credit（当天收益，非持有量），
-  // 站点未暴露稳定的「当前总积分」字段 → 不产出 hold_value，hero 大数字显示「—」（详见任务书调研）。
+  // 英雄大数字标签：hero 显示恩山「当前积分」（用户菜单顶栏 id="extcreditmenu" 的「积分: N」，
+  // 即当前持有总积分，非签到当日收益 credit）。只读 GET 页面抓取，见 _queryHold/_extractHold。
   holdLabel: "积分",
 
   defaultConfig() {
@@ -436,6 +433,45 @@ const RIGHT_FORUM = {
 
   _hasCaptcha(text) {
     return this.CAPTCHA_MARKERS.some((m) => String(text || "").includes(m));
+  },
+
+  /**
+   * 从 Discuz 页面 HTML 提取「当前总积分」（hero 大数字源）。
+   * 真机只读探测确认：登录后 forum.php 顶栏用户菜单含
+   *   <a ... id="extcreditmenu" ...>积分: 274</a>（即当前持有总积分）。
+   * 优先精确锚定 extcreditmenu；回落到清洗文本里的「积分: N」（排除「今日积分」当日收益）。
+   * 取不到 → null（hero 维持「—」，绝不误报）。
+   */
+  _extractHold(html) {
+    const raw = String(html || "");
+    // 主锚点：用户菜单 extcreditmenu 链接文本「积分: N」（最稳定，仅登录态出现）
+    let m = raw.match(/id=["']extcreditmenu["'][\s\S]{0,80}?积分[:：]?\s*(\d[\d,]*)/);
+    if (!m) {
+      // 回落：清洗后文本里的「积分: N」，用负向前瞻排除「今日积分」（当日收益，非持有量）
+      m = cleanText(raw).match(/(?<!今日)积分[:：]\s*(\d[\d,]*)/);
+    }
+    if (!m) return null;
+    const n = Number(String(m[1]).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  },
+
+  /**
+   * 只读查询当前总积分（hero 大数字源，绝不触发签到/写操作）。
+   * 纯 GET forum.php 顶栏用户菜单抓「积分: N」（登录态即含，无需 uid、单次请求最省）。
+   * Cookie 失效/被拦截/未登录 → 返回 null（hero 显示「—」）。异常一律吞掉，绝不影响测试/签到；
+   * Cookie 敏感值绝不输出。
+   */
+  async _queryHold(cfg, cookie) {
+    try {
+      const ck = (cookie || "").trim();
+      if (!ck) return null;
+      const s = new Session();
+      const r = await s.get(this.base + this.forumPage, { headers: this._headers(ck, this.forumPage), timeout: 15000, useProxy: cfg.use_proxy });
+      const text = String(r.text || "");
+      if (this._isChallenge(text)) return null;
+      if (/您需要登录|请先登录|立即登录/.test(text)) return null;
+      return this._extractHold(text);
+    } catch { return null; }
   },
 
   /** Discuz! 账号密码登录：GET 登录页取 formhash+loginhash → POST 提交 → 会话 jar 出 xxx_auth。
@@ -557,16 +593,32 @@ const RIGHT_FORUM = {
 
     // 当天奖励累计源：今日积分 credit（仅签到成功时 >0；已签为 0）。单位「积分」。history reward 仍保留 "-"（不改 points 聚合）
     const creditVal = Number(payload.credit || 0);
+    // 当前总积分（hero 大数字）：从已抓取的签到页文本提取「积分: N」，不新增触网；取不到 → null → 「—」
+    const holdVal = this._extractHold(pageText);
     return {
       site: this.key, site_name: this.name, status: statusText, message: finalMsg,
       reward: "-", total: "-", account: "Cookie", time: now(),
       reward_value: Number.isFinite(creditVal) ? Math.max(0, creditVal) : 0, reward_unit: "积分",
+      hold_value: holdVal,
     };
   },
 
+  /** 解析可用 Cookie：优先已存 Cookie；无 Cookie 但账密齐全 → Discuz 登录产出（只读，不签到）。 */
+  async _resolveCookie(cfg) {
+    let cookie = (cfg.cookie || "").trim();
+    if (!cookie && (cfg.username || "").trim() && (cfg.password || "").trim()) {
+      const login = await this._passwordLogin(cfg);
+      cookie = (login && login.cookie) || "";
+    }
+    return cookie;
+  },
+
   async testConnection(cfg) {
-    await this._fetchSignPage((cfg.cookie || "").trim(), cfg.use_proxy);
-    return { site: this.key, site_name: this.name, message: "Cookie 有效，签到页可访问" };
+    const cookie = await this._resolveCookie(cfg);
+    await this._fetchSignPage(cookie, cfg.use_proxy);
+    // 只读抓当前总积分供 hero 快照（forum.php 顶栏「积分: N」）；失败/无字段 → null → 「—」
+    const hold = await this._queryHold(cfg, cookie);
+    return { site: this.key, site_name: this.name, message: "Cookie 有效，签到页可访问", hold_value: hold };
   },
 };
 
