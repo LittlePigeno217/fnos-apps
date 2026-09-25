@@ -448,7 +448,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.5</span>
+      <span class="ver" id="appVersion">v1.2.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -869,6 +869,13 @@
             <div class="setting-desc">机器人 Webhook 地址；已配置时留空保存不修改</div>
           </div>
           <input type="password" id="feishuWebhook" placeholder="已配置请留空" style="max-width:240px" autofocus onchange="markDirty('settings')">
+        </div>
+        <div class="setting-row">
+          <div style="flex:1;min-width:0">
+            <div class="setting-label">可信来源域名</div>
+            <div class="setting-desc">出现「拒绝跨站请求：来源校验未通过」时，把 403 提示里的来源域名填入此处放行。逗号或换行分隔；<code>.example.com</code>（点开头）表示放行其所有子域。默认严格同源，请勿填写非本人可信的域名。</div>
+          </div>
+          <textarea id="trustedOrigins" placeholder="nas.example.com&#10;.mydomain.net" style="max-width:240px;min-height:52px;font-family:var(--mono, monospace);font-size:12px" onchange="markDirty('settings')"></textarea>
         </div>
         <div class="setting-row" style="justify-content:flex-end">
           <span class="muted" id="appCfgStatus" style="margin-right:8px"></span>
@@ -3614,6 +3621,12 @@ async function saveAppCfg(){
   };
   const hook = el("feishuWebhook").value.trim();
   if (hook) updates.feishu_webhook = hook; // 留空=保持当前
+  // 可信来源：按逗号/换行分隔，去空白与去重，元素小写化（域名大小写不敏感）
+  const toEl = el("trustedOrigins");
+  if (toEl) {
+    const list = toEl.value.split(/[\n,]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    updates.trusted_origins = Array.from(new Set(list));
+  }
   const r = await call("save_config", "POST", updates);
   if (r.success){ clearDirty("settings"); el("feishuWebhook").value = ""; return; }
   alert("保存失败：" + (r.message || ""));
@@ -4166,6 +4179,7 @@ async function loadAppSettings(d){
   setCfgCheck("checkinNotify", d.checkin_notify);
   if (el("checkinTimeRange")) el("checkinTimeRange").value = d.checkin_time_range || "06:00-09:00";
   if (el("relayPortInput")) el("relayPortInput").value = d.relay_port || 3667;
+  if (el("trustedOrigins")) el("trustedOrigins").value = Array.isArray(d.trusted_origins) ? d.trusted_origins.join("\n") : "";
 }
 async function saveCfgBool(ctlId, key){
   // 兼容旧调用（不再有 onchange 引用）；新逻辑走 saveXxxCfg 页级保存

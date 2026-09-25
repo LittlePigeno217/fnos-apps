@@ -112,8 +112,9 @@ const WRITE_DENY_CSRF = "拒绝跨站请求：来源校验未通过";
 /** fnOS 官方远程访问隧道域（fnconnect）。属于该域的 Origin 视为用户自己的 NAS 可信入口。 */
 const TRUSTED_TUNNEL_DOMAIN = "fnconnect.net";
 
-/** Origin/Referer 与请求 Host 同源校验。无来源头（curl/本地 socket）返回 true，交由网关头把关。 */
-function sameOriginOk(headers, host) {
+/** Origin/Referer 与请求 Host 同源校验。无来源头（curl/本地 socket）返回 true，交由网关头把关。
+ * trustedOrigins：用户显式配置的可信来源列表，命中则放行（不自动学习，仅显式配置生效）。 */
+function sameOriginOk(headers, host, trustedOrigins) {
   const src = String(headers["origin"] || "").trim() || String(headers["referer"] || "").trim();
   if (!src) return true; // 非浏览器/本地直连无 Origin → 不在此拦，由 X-Trim-Userid 把关
   let srcHostname;
@@ -128,6 +129,10 @@ function sameOriginOk(headers, host) {
   if (srcHostname === TRUSTED_TUNNEL_DOMAIN || srcHostname.endsWith("." + TRUSTED_TUNNEL_DOMAIN)) {
     return true;
   }
+  // 用户显式配置的可信来源：元素以 `.` 开头表示通配子域（hostname.endsWith），否则精确相等。
+  if (matchTrustedOrigin(srcHostname, trustedOrigins)) {
+    return true;
+  }
   if (!host) return false; // 有来源头却无从比对自身 host → 保守拒绝
   let selfHostname;
   try {
@@ -138,6 +143,38 @@ function sameOriginOk(headers, host) {
   }
   // 忽略端口的主机名比较：网关/隧道常剥离或改写端口，跨主机仍严格拒绝。
   return srcHostname === selfHostname;
+}
+
+/** 主机名是否命中用户配置的可信来源列表。元素以 `.` 开头=通配子域（endsWith），否则精确相等。
+ * 元素统一小写、去空白；空/非数组一律不命中。恶意 evil-example.com 不会命中 .example.com。 */
+function matchTrustedOrigin(hostname, trustedOrigins) {
+  hostname = String(hostname || "").trim().toLowerCase();
+  if (!hostname || !Array.isArray(trustedOrigins)) return false;
+  for (const raw of trustedOrigins) {
+    const item = String(raw || "").trim().toLowerCase();
+    if (!item) continue;
+    if (item.startsWith(".")) {
+      if (hostname.endsWith(item)) return true; // 通配子域
+    } else if (hostname === item) {
+      return true; // 精确
+    }
+  }
+  return false;
+}
+
+/** 来源校验失败时的响应文案：带上检测到的真实 origin host，指引用户配置可信来源。
+ * 无来源头 / 畸形来源头无法取出 host 时保持原文案。 */
+function csrfDenyMessage(headers) {
+  const src = String(headers["origin"] || "").trim() || String(headers["referer"] || "").trim();
+  if (!src) return WRITE_DENY_CSRF;
+  let originHost;
+  try {
+    originHost = new URL(src).hostname;
+  } catch {
+    return WRITE_DENY_CSRF;
+  }
+  if (!originHost) return WRITE_DENY_CSRF;
+  return `${WRITE_DENY_CSRF}（检测到来源 ${originHost}，如确需放行请在设置中添加可信来源）`;
 }
 
 class TrimHandler {
@@ -254,8 +291,15 @@ class TrimHandler {
         this._respond(403, _error(WRITE_DENY_GATEWAY));
         return Promise.resolve();
       }
-      if (!sameOriginOk(headers, this._reqMeta && this._reqMeta.host)) {
-        this._respond(403, _error(WRITE_DENY_CSRF));
+      let trustedOrigins = [];
+      try {
+        const cfg = this.server.api.store.getConfig();
+        if (cfg && Array.isArray(cfg.trusted_origins)) trustedOrigins = cfg.trusted_origins;
+      } catch {
+        /* 读取配置失败 → 视为无可信来源，走严格同源 */
+      }
+      if (!sameOriginOk(headers, this._reqMeta && this._reqMeta.host, trustedOrigins)) {
+        this._respond(403, _error(csrfDenyMessage(headers)));
         return Promise.resolve();
       }
       let payload = null;
@@ -700,4 +744,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, TrimHandler, ACTIONS, maskValue, configureLogging, startServer, startRedirectPort };
+module.exports = { main, TrimHandler, ACTIONS, maskValue, configureLogging, startServer, startRedirectPort, sameOriginOk, matchTrustedOrigin, csrfDenyMessage };

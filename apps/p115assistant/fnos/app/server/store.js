@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.2.5",
+  version: "1.2.6",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -47,6 +47,9 @@ const DEFAULT_CONFIG = {
   feishu_enabled: false,
   watch_enabled: false,
   upload_risk_profile: "conservative",
+  // 用户显式配置的可信来源（主机名或点开头通配子域，如 nas.example.com / .mydomain.net）。
+  // 来源同源校验失败时，命中此列表的 Origin 予以放行；默认空数组=沿用严格同源+官方隧道豁免。
+  trusted_origins: [],
 };
 
 const ENCRYPTION_SALT = "p115liteassistant_v1";
