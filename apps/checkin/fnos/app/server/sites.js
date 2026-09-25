@@ -1519,7 +1519,7 @@ const NEWAPI = {
     const auth = await this._resolveAuth(cfg);
     try {
       const info = await this._getUserInfo(auth, cfg.use_proxy);
-      if (!info) throw new Error("登录态有效，但用户信息接口未返回 quota");
+      if (!info) return { site: this.key, site_name: this.name, message: "连接成功，凭据有效（该站点未返回额度信息）" };
       const who = cfg.username ? maskEmail(cfg.username) : (auth.type === "token" ? "访问令牌" : "Cookie");
       return { site: this.key, site_name: this.name, message: `连接成功，${who} 有效，余额 ${this._fmtUsd(info.quota)}` };
     } catch (e) {
