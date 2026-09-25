@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.2.2",
+  version: "1.2.4",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -168,27 +168,53 @@ class Store {
   }
 
   // ---- 302 取链 secret 与加密密钥 ----
-  /** 302 取链 secret 的落盘加密密钥：根密钥来自运行环境 TRIM_API_TOKEN（绝不落盘）
-   * ——攻击者只拿到数据目录 JSON 也无法解密。缺 env 时退化为「数据目录路径+应用名」
-   * 派生（保证 curl --unix-socket 等本地场景可解），同样不做明文落盘。 */
+  /** 302 取链 secret 落盘加密的「稳定密钥」：仅由「数据目录路径+应用名」+ 常量盐派生，
+   * 永远稳定（不依赖任何运行时环境变量），是本机唯一权威的落盘密钥。
+   * 攻击者只拿到数据目录 JSON 无法解密（需知道派生盐与算法），同时不做明文落盘。 */
   _redirectFileKey() {
+    const basis = `p115assistant|${this._dir}`;
+    return crypto.pbkdf2Sync(basis, ENCRYPTION_SALT + ":redirect:v1", 100000, 32, "sha256");
+  }
+
+  /** 历史「环境密钥」：由运行环境 TRIM_API_TOKEN 派生（缺失时退化为稳定基础）。
+   * 仅用于兼容 1.2.3 及更早版本落盘的密文——TRIM_API_TOKEN 会随 app-center 重启漂移，
+   * 导致该密钥不稳定，因此只作为解密候选，命中后立即迁移为稳定密钥重加密。 */
+  _redirectEnvKey() {
     const envSecret = String(process.env.TRIM_API_TOKEN || "").trim();
-    const basis = envSecret || `p115assistant|${this._dir}`;
-    return crypto.pbkdf2Sync(String(basis), ENCRYPTION_SALT + ":redirect:v1", 100000, 32, "sha256");
+    if (!envSecret) return null; // 缺 env 时基础与稳定密钥相同，无需重复候选
+    return crypto.pbkdf2Sync(envSecret, ENCRYPTION_SALT + ":redirect:v1", 100000, 32, "sha256");
+  }
+
+  /** 解密候选密钥集合：稳定密钥优先，其后为历史环境密钥（去重、去空）。 */
+  _redirectKeyCandidates() {
+    const stable = this._redirectFileKey();
+    const candidates = [{ key: stable, stable: true }];
+    const envKey = this._redirectEnvKey();
+    if (envKey && !envKey.equals(stable)) candidates.push({ key: envKey, stable: false });
+    return candidates;
   }
 
   getRedirectSecret() {
     const stored = this._readJson(REDIRECT_SECRET_KEY);
     if (stored && typeof stored === "string") {
-      // 新格式：Fernet 密文（base64url），成功解密即返回
-      const plain = fernetDecrypt(stored, this._redirectFileKey());
-      if (plain !== null && plain.length >= 16) return plain;
-      // 旧格式迁移：明文 secret → 立即加密落盘（不留明文）
+      // 新格式：Fernet 密文（base64url）。依次尝试候选密钥，任一解出（len>=16）即成功。
+      for (const { key, stable } of this._redirectKeyCandidates()) {
+        const plain = fernetDecrypt(stored, key);
+        if (plain !== null && plain.length >= 16) {
+          // 若命中的是历史环境密钥 → 用同一 secret 值以稳定密钥重加密落盘，
+          // 之后永远稳定可解（同值 → 已生成的 STRM 302 签名继续有效）。
+          if (!stable) {
+            this._writeJson(REDIRECT_SECRET_KEY, fernetEncrypt(plain, this._redirectFileKey()));
+          }
+          return plain;
+        }
+      }
+      // 旧格式迁移：明文 secret → 立即以稳定密钥加密落盘（不留明文）
       if (stored.length >= 32) {
         this._writeJson(REDIRECT_SECRET_KEY, fernetEncrypt(stored, this._redirectFileKey()));
         return stored;
       }
-      // 未知内容视为损坏，重新生成
+      // 未知内容 / 全部候选失败视为损坏，重新生成
     }
     const generated = crypto.randomBytes(32).toString("hex");
     this._writeJson(REDIRECT_SECRET_KEY, fernetEncrypt(generated, this._redirectFileKey()));
