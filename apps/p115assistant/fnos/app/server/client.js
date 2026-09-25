@@ -1071,9 +1071,28 @@ class U115Client {
         data: initData,
         timeout: this.uploadRequestTimeout * 1000,
       });
+      // 二次认证（sign_check）响应若非成功载荷，直接暴露 115 真实错误；
+      // 否则失败 data 会被 merge 进 initResult，后续 _uploadToOss 误报
+      // “缺少对象存储信息”，掩盖签名校验失败等真因（见 1.3.0 修复）。
+      if (!this._isResponseSuccess(payload)) {
+        const message = this._payloadMessage(payload) || "115 上传二次认证失败";
+        return new UploadResult(false, false, null, message);
+      }
       const secondInitResult = this._responseData(payload);
       if (!secondInitResult || typeof secondInitResult !== "object") {
         return new UploadResult(false, false, null, "115 上传二次认证失败");
+      }
+      // data.code 非 0：仍要求签名校验（本实现只做单轮）或 data 层报错，
+      // 同样暴露真实错误，避免 merge 后误报缺少对象存储信息。
+      const secondCode = parseInt(secondInitResult.code, 10) || 0;
+      if (secondCode !== 0) {
+        const message =
+          this._payloadMessage(secondInitResult) ||
+          this._payloadMessage(payload) ||
+          (secondInitResult.sign_check
+            ? `115 上传二次认证仍要求签名校验（code=${secondCode}）`
+            : `115 上传二次认证失败（code=${secondCode}）`);
+        return new UploadResult(false, false, null, message);
       }
       initResult = this._mergeUploadInitResults(firstInitResult, secondInitResult);
     }

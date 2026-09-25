@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.2.9",
+  version: "1.3.0",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
