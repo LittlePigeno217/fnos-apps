@@ -1,4 +1,4 @@
-# FnOS-APP 仓库规范（AI 协作）
+# fnos-apps 仓库规范（AI 协作）
 
 本仓库是 115网盘助手（p115assistant）与 签到工具（checkin）的 fnOS 应用统一维护仓库，
 由 `scripts/update.sh` 统一引擎驱动。结构权威文档见 `docs/architecture.md`。
@@ -19,12 +19,12 @@
 ## 目录架构（与 fnos-apps 的关键差异）
 
 ```
-FnOS-APP/
+fnos-apps/
 ├── apps/<slug>/            # 应用自身：fnos/ 包内容 + VERSION + runtime-manifest.json
 │   ├── VERSION             # 功能版本单一事实源（--bump 递增）
 │   ├── runtime-manifest.json # 热更清单（gen_runtime_manifest.py 生成，不手工改）
 │   └── fnos/
-│       ├── manifest        # appname/display_name/version(=FPK 版本恒 1.0.0)/...
+│       ├── manifest        # appname/display_name/version(=FPK 版本，当前 1.0.1；纯热更模型稳定不递增，见下)/...
 │       ├── app/server/     # 后端运行时（打包进 app.tgz → server/）
 │       ├── app/ui/         # 前端运行时（打包进 app.tgz → www/）
 │       ├── ui/             # 桌面入口配置（config + images）
@@ -67,7 +67,7 @@ FnOS-APP/
 
 ```bash
 ./scripts/update.sh list            # 列出应用
-./scripts/update.sh <app>           # 构建单个应用 → dist/<app>_1.0.0_all.fpk
+./scripts/update.sh <app>           # 构建单个应用 → dist/<file_prefix>_<fpk_version>_all.fpk（fpk 版本取 manifest 实值）
 ./scripts/update.sh all             # 构建全部
 ```
 

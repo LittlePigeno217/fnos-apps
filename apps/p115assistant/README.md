@@ -2,16 +2,16 @@
 
 本地自研 fnOS 应用：115 网盘上传、STRM 生成、签到、302 中转播放、飞书通知。
 
-仓库路径：`apps/p115assistant/`（打包内容在 `fnos/` 下，结构与 conversun/fnos-apps 对齐）。
+仓库路径：`apps/p115assistant/`（打包内容在 `fnos/` 下）。由统一更新引擎 `scripts/update.sh` 维护构建与热更清单，结构权威文档见 `docs/architecture.md`。
 
 ## 版本双轨制（重要）
 
 | 版本 | 位置 | 含义 |
 |---|---|---|
-| **fpk 版本** | `fnos/manifest` → 构建注入 `config/bootstrap/p115assistant-version.env` | 安装包版本；应用中心与 UI 左下角显示（`get_config.fpk_version`） |
-| **功能版本** | `runtime-manifest.json` 的 `version` | 应用内功能热更新版本；「检查功能更新」使用 |
+| **功能版本** | `apps/p115assistant/VERSION`（单一事实源）→ 同步到 `runtime-manifest.json` 与 `store.js`/`update.js` 字面量 | 应用内功能热更新版本；前端左下角版本徽标与「检查功能更新」使用 |
+| **FPK 版本** | `fnos/manifest` `version` → 构建注入 `config/bootstrap/p115assistant-version.env` | 安装包版本；当前 `1.0.1`。发布模型=纯热更，不走 fpk 升级（FPK 版本不随功能热更递增） |
 
-**规则**：功能版本 ≤ fpk 版本时表示功能已收敛（无热更差异）。日常功能开发只提功能版本（改代码 → 生成清单 → 推送 → 热更），无需频繁发 fpk；fpk 版本在功能版本稳定后统一发布。
+**规则**：日常功能开发只升功能版本（改代码 → `--bump` 生成清单 → 推送 → NAS `apply_hotfix`），无需频繁发 fpk；FPK 版本在纯热更模型下保持 `1.0.1`，若未来启用 fpk 升级通道按官方语义随发布递增。
 
 ## 热更新机制
 
@@ -24,26 +24,30 @@
 - **回滚**：替换前备份到 `Backups/`（应用数据目录），SHA-256 校验失败自动回滚
 - **生效**：应用功能文件后自动重启（后端）或刷新（前端）；UI 左下角「检查功能更新」入口
 
-## 发布流程（热更新）
+## 发布流程（功能热更，统一引擎）
 
 ```bash
 # 1. 修改 fnos/app/server|ui 下运行时文件
-# 2. 构建（自动生成 fpk + 热更新清单，同版本）
-./apps/p115assistant/update_p115assistant.sh
-# 3. 推送仓库（runtime-manifest.json 必须随代码一起提交）
+# 2. 递增功能版本 + 同步 store.js/update.js/ui 字面量 + 生成热更清单
+python3 scripts/gen_runtime_manifest.py --app p115assistant --bump
+# 3. 构建（可选；纯热更可不构建 fpk）+ 重生成清单
+./scripts/update.sh p115assistant
+# 4. 校验清单与仓库一致
+python3 scripts/gen_runtime_manifest.py --app p115assistant --check
+# 5. 提交并推送（runtime-manifest.json 必须随代码一起提交）
 git add apps/p115assistant && git commit && git push
-# 4. 等 CDN 传播（约 5-10 分钟），NAS 上「检查功能更新」收敛为「已是最新」
+# 6. 等 CDN 传播（1-3 分钟），NAS 上 POST /apply_hotfix → 自动重启
 ```
 
-> 新增运行时文件：server/*.js 或 app/ui/* 自动被清单发现（gen 脚本自动扫描），无需手动注册；
+> 新增运行时文件：server/*.js 或 app/ui/* 自动被清单发现（`gen_runtime_manifest.py` 自动扫描），无需手动注册；
 > 唯一例外是 `server/package.json`（依赖清单，不属于热更文件）。
 
 ## 发布流程（fpk 安装包）
 
 ```bash
-./apps/p115assistant/update_p115assistant.sh     # 产物 dist/p115assistant_<VERSION>_all.fpk
+./scripts/update.sh p115assistant     # 产物 dist/p115assistant_<fpk_version>_all.fpk（fpk 版本取 manifest 实值）
 scp dist/*.fpk nas:/tmp/
-trim-cli app install-fpk /tmp/p115assistant_<VERSION>_all.fpk --accept-license --yes --custom-parameters "[]"
+trim-cli app install-fpk /tmp/p115assistant_<fpk_version>_all.fpk --accept-license --yes --custom-parameters "[]"
 ```
 
 ## 安全边界（威胁模型）
@@ -67,13 +71,13 @@ trim-cli app install-fpk /tmp/p115assistant_<VERSION>_all.fpk --accept-license -
 
 ```bash
 # 清单与仓库一致性校验（发布前跑）
-python3 scripts/apps/p115assistant/gen_runtime_manifest.py --check
+python3 scripts/gen_runtime_manifest.py --app p115assistant --check
 ```
 
 ## 构建合约（scripts/apps/p115assistant/）
 
 | 脚本 | 作用 |
 |---|---|
-| `build.sh` | 组装 app.tgz（server + www + ui + config），版本注入（store.js/update.js/version.env），Node 语法自检 |
-| `gen_runtime_manifest.py` | 生成/校验热更新清单（自动发现 + 双向映射校验；`--check` 模式供 CI） |
-| `update_p115assistant.sh` | 一键：build.sh → build-fpk.sh → dist/ 输出 → 自动生成热更新清单 |
+| `meta.env` | 构建合约（唯一差异承载点：FILE_PREFIX / RELEASE_TITLE / DEFAULT_PORT / HOMEPAGE_URL / CATEGORY / POST_INSTALL_NOTE） |
+| （统一引擎）`scripts/update.sh` | 构建 → `dist/<file_prefix>_<fpk_version>_all.fpk` + 自动重生成热更清单 |
+| （统一引擎）`scripts/gen_runtime_manifest.py` | 生成/校验热更新清单（自动发现 + 双向映射校验；`--check` 模式供 CI） |

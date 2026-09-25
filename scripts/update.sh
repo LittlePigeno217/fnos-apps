@@ -1,5 +1,5 @@
 #!/bin/bash
-# FnOS-APP 统一更新引擎（单一事实源：一份脚本管所有应用）。
+# fnos-apps 统一更新引擎（单一事实源：一份脚本管所有应用）。
 #
 # 用法:
 #   ./scripts/update.sh <app>   构建单个应用（apps/<app>）
@@ -10,7 +10,7 @@
 # 公共流程（每应用）:
 #   1. 校验应用注册（apps/<slug>/fnos/manifest + scripts/apps/<slug>/meta.env）
 #   2. 读 meta.env（FILE_PREFIX 等，应用差异唯一承载点）
-#   3. FPK 版本 = manifest version，校验恒 1.0.0
+#   3. FPK 版本 = manifest version 实值（非强制 1.0.0；纯热更模型下当前 1.0.1 稳定不递增）
 #   4. 功能版本 = apps/<slug>/VERSION（单一事实源，构建流程不写它）
 #   5. 公共构建函数 scripts/lib/build-app.sh → app.tgz（不注入源码版本）
 #   6. scripts/build-fpk.sh → dist/<file_prefix>_<ver>_all.fpk

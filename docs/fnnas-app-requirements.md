@@ -10,18 +10,19 @@
 `manifest` 放在应用包根目录，无扩展名（本仓库：`apps/<slug>/fnos/manifest`）。
 
 - `appname`：应用唯一标识（本仓库约定全小写无连字符：`p115assistant` / `checkin`）。
-- `version`：fnOS 应用包版本（本仓库 FPK 版本**恒 1.0.0**，功能版本走 VERSION 热更线，见 §9）。
+- `version`：fnOS 应用包版本。**官方语义：随 fpk 发布递增**（应用中心按「版本号高于已安装」判定可升级）。本仓库发布模型=**纯热更**：功能更新只升 `apps/<slug>/VERSION`，**不触碰本字段**，FPK 版本当前稳定为 `1.0.1`（不随功能热更递增，避免 fpk 版本漂移）；若未来启用 fpk 升级通道，按官方语义随 fpk 发布递增（勿降级）。见 §9 双版本体系。
 - `display_name` / `desc` / `source=thirdparty`：应用中心展示信息。
 - `platform`：x86 / arm / **all**（仅包内无特定架构二进制时用 all——本仓库为解释型应用，维持 all）。
 - `maintainer` / `maintainer_url`：开发者信息须填写。
 - `os_min_version` / `os_max_version`：**只声明实测支持过的范围，不得虚高**。
 - `ctl_stop`：静态/配置型应用可 false（不显示启停）。
-- `install_type`：root（系统分区）或留空（用户选择存储位置）。
-- `install_dep_apps`：依赖应用声明，`:` 分隔，`>` 声明最低版本（如 `database>2.2.2:cache`）。
+- `install_type`：root（系统分区）或留空（用户选择存储位置）。本仓库两应用均未声明 → 默认「用户选择存储位置」。
+- `install_dep_apps`：依赖应用声明，`:` 分隔，`>` 声明最低版本（如 `database>2.2.2:cache`）。**本仓库现状**：两应用 manifest 均未声明本字段，但运行时解释器为 nodejs_v24（cmd 脚本注释与探测路径均以其为准）——依赖应用未在 manifest 声明，属已知缺口（建议声明 `install_dep_apps=nodejs_v24`，需用户确认后改 manifest，见 §9）。
 - `desktop_uidir`（默认 `ui`）/ `desktop_applaunchname`（多入口时指定卡片默认入口）。
 - `service_port` / `checkport`：不监听固定端口的应用可省略 service_port 或设 `checkport=false`。
 - `disable_authorization_path`：应用不需要用户授权目录时 true。
 - `changelog`：面向用户的简洁更新说明。
+- `micro_app`：**官方文档未收录的实测字段**（装机验证有效：入口以网关模式挂载、不暴露固定端口）。置 `true` 时配合 `service_port=0`/`checkport=false` 使用；本仓库两应用均用（p115assistant / checkin manifest `micro_app=true`），勿盲目移除。对应 architecture.md §4.3 模板中的同名字段说明。
 
 ## 2. 应用框架与目录结构（安装后 `/var/apps/{appname}/`）
 
@@ -42,7 +43,7 @@
 - **脚本必须可重复执行**（安装/升级/配置可能被重新执行，本仓库 upgrade 时 venv/data 保留逻辑即为此设计）。
 - `cmd/main` status 退出码：**0=运行中，3=未运行**，其他失败。
 - 升级脚本适合做数据迁移/配置迁移/兼容性检查（可能先停应用、升级后再启动）。
-- 卸载逻辑尊重用户数据（是否保留由 wizard/uninstall 收集）。
+- 卸载逻辑尊重用户数据（是否保留由 wizard/uninstall 收集）。本仓库卸载 wizard 收集 `keep_data`，两应用覆盖的 `uninstall_callback` 不主动删除数据，去留由系统按 wizard 字段处理。
 
 ## 3. 环境变量（官方清单，节选与本仓库相关项）
 
@@ -75,6 +76,7 @@
 ## 5. 权限与资源
 
 - **权限**：默认 `run-as=package`（专用应用用户，非 root）；仅在访问特定用户组保护资源时 `join-groups`；**不建议 Root 模式**（放大 Web/API/后台/第三方依赖风险）；用户文件访问须用户明确授权目录。
+  - **本仓库现状偏离**：两应用 `config/privilege` 仍为 `run-as: root`（历史沿革，代码注释注明为有意选择：socket 0660 收紧 + fnOS 网关 X-Trim-* 可信头双防线）。与官方「默认 package、不建议 Root」不一致——**标注，未改造**（改造涉及文件属主/权限模型，需用户决策）。
 - **资源（config/resource）**：只声明实际需要的资源；资源名版本间稳定；**不把内部工具/内部数据目录作为共享资源暴露**；用户可见共享目录须在 UI/更新说明说明。
 - **中间件**：Redis / MinIO / RabbitMQ 通过 `install_dep_apps` 声明（本仓库当前不需）。
 - **运行时**：声明实际使用的运行时包；生命周期脚本调用运行时命令前把运行时 bin 加入 PATH；**应用自身依赖保存在应用目录或专用虚拟环境**；在干净设备上测试确认依赖可安装。（本仓库 checkin/p115assistant 的 venv/数据隔离即此要求的落实。）
@@ -83,6 +85,7 @@
 
 - 文件：`wizard/install|upgrade|uninstall|config`。
 - **字段命名**：使用稳定字段名（改名会改变环境变量名）；自定义字段用 `wizard_` 前缀；**不得使用 `TRIM_` 前缀**（系统保留）；兼容已发布版本的字段名。
+  - **本仓库现状**：uninstall 向导字段为 `keep_data`（未带 `wizard_` 前缀）；若 `keep_data` 非 fnOS 保留字段，按官方要求自定义字段应改 `wizard_keep_data`。另注意 shared/cmd/common 读取的 `wizard_delete_data` 与 `keep_data` 字段名不一致（应用覆盖的 uninstall_callback 不读取前者）——**标注，未改造**（需用户确认 `keep_data` 是否为 fnOS 保留字段语义）。
 - **设计**：只询问所需值；提供合理默认；简短标签+清晰校验；**密钥类用 password 类型**；**不将密钥写入日志**；生命周期脚本使用前再次校验。
 
 ## 7. 图标与入口
@@ -100,11 +103,12 @@
 
 | 官方要求 | 本仓库落实 |
 |---|---|
-| 功能版本与 FPK 版本分离 | `apps/<slug>/VERSION`（功能热更线）+ `fnos/manifest version`（恒 1.0.0）双版本体系 |
+| 功能版本与 FPK 版本分离 | `apps/<slug>/VERSION`（功能热更线，每次热更递增）+ `fnos/manifest version`（当前 1.0.1；纯热更模型下稳定不递增，避免 fpk 版本漂移；若启用 fpk 升级通道按官方语义随发布递增）双版本体系 |
 | 热更清单 | `scripts/gen_runtime_manifest.py --bump/--check`（版本字面量同步 store.js/update.js/ui） |
 | 生命周期脚本幂等 | shared/cmd 通用框架 + upgrade 保留 venv/data（PKGHOME） |
 | 不硬编码路径 | 部署脚本统一环境变量；运行时代码禁 IP/端口硬编码（p115assistant 1.2.2 审计） |
-| 网关用户 Header | 写端点校验 `X-Trim-Userid`（1.5.0+），热更带 `X-Trim-Userid: deploy` |
+| 运行时依赖声明 | cmd 注释声称解释器由 `install_dep_apps=nodejs_v24` 提供，但 manifest 未声明 `install_dep_apps` 字段——标注：建议补声明，需用户确认（见 §1） |
+| 网关用户 Header | 写端点校验 `X-Trim-Userid` 非空（1.5.0+）；热更自动化调用方（NAS 侧 apply_hotfix 命令）以字面量 `X-Trim-Userid: deploy` 通过网关写校验——该头由外部调用方产生，仓库代码不生成 |
 | 不暴露敏感文件 | 运行时不服务 @appdata 配置/密钥；展示日志遮罩密码/token/cookie |
 | 版本兼容 | 配置迁移白名单（store.js `_migrateAccounts`）、恢复脚本保留 |
 

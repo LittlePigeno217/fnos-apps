@@ -1,5 +1,5 @@
 #!/bin/bash
-# FnOS-APP 新应用脚手架（适配统一更新引擎的新结构）。
+# fnos-apps 新应用脚手架（适配统一更新引擎的新结构）。
 #
 # 用法: ./scripts/new-app.sh <slug> "<display_name>" <port>
 # 示例: ./scripts/new-app.sh jellyfin "Jellyfin 媒体服务器" 8096
@@ -48,7 +48,7 @@ mkdir -p "$APP_DIR/fnos/app/server" "$APP_DIR/fnos/app/ui" "$APP_DIR/fnos/cmd" \
          "$APP_DIR/fnos/config" "$APP_DIR/fnos/ui/images" "$APP_DIR/fnos/wizard"
 mkdir -p "$SCRIPTS_APP_DIR"
 
-# manifest（FPK 版本恒 1.0.0；功能更新走热更）
+# manifest（FPK 版本初始 1.0.0；纯热更模型下稳定不递增，功能更新走 VERSION 热更；若启用 fpk 升级按官方语义随发布递增）
 cat > "$APP_DIR/fnos/manifest" << EOF
 appname         = ${SLUG}
 version         = 1.0.0
@@ -57,7 +57,7 @@ platform        = all
 maintainer      = LittlePigeno
 maintainer_url  = https://github.com/LittlePigeno217
 distributor     = LittlePigeno
-distributor_url = https://github.com/LittlePigeno217/FnOS-APP
+distributor_url = https://github.com/LittlePigeno217/fnos-apps
 os_min_version  = 1.2.0401
 desktop_uidir   = ui
 desktop_applaunchname = ${SLUG}.main
@@ -105,6 +105,28 @@ cat > "$APP_DIR/fnos/config/resource" << EOF
 EOF
 
 # ui/config — 桌面入口
+# 端口=0（micro_app，无固定端口）→ 走 fnOS 统一网关（官方 §4：gatewaySocket 只填文件名、
+# 位于 target 目录；protocol/port 对网关入口被忽略）。端口>0 → 传统 port 转发入口。
+# 入口 ID 以 appname 前缀、图标约定 images/icon_{0}.png（官方 §7）。
+if [ "${PORT}" = "0" ]; then
+cat > "$APP_DIR/fnos/ui/config" << EOF
+{
+    ".url": {
+        "${SLUG}.main":
+        {
+            "title": "${DISPLAY_NAME}",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "",
+            "gatewayPrefix": "/app/${SLUG}",
+            "gatewaySocket": "app.sock",
+            "url": "/app/${SLUG}",
+            "allUsers": true
+        }
+    }
+}
+EOF
+else
 cat > "$APP_DIR/fnos/ui/config" << EOF
 {
     ".url": {
@@ -112,7 +134,7 @@ cat > "$APP_DIR/fnos/ui/config" << EOF
         {
             "title": "${DISPLAY_NAME}",
             "desc": "${DISPLAY_NAME}",
-            "icon": "images/{0}.png",
+            "icon": "images/icon_{0}.png",
             "type": "url",
             "port": "${PORT}",
             "protocol": "http",
@@ -122,6 +144,7 @@ cat > "$APP_DIR/fnos/ui/config" << EOF
     }
 }
 EOF
+fi
 
 # health.json
 cat > "$APP_DIR/fnos/health.json" << EOF
@@ -162,7 +185,7 @@ cat > "$SCRIPTS_APP_DIR/meta.env" << EOF
 FILE_PREFIX=${SLUG}
 RELEASE_TITLE="${DISPLAY_NAME}"
 DEFAULT_PORT=${PORT}
-HOMEPAGE_URL=https://github.com/LittlePigeno217/FnOS-APP
+HOMEPAGE_URL=https://github.com/LittlePigeno217/fnos-apps
 CATEGORY=media
 POST_INSTALL_NOTE="安装后在 fnOS 桌面打开 ${DISPLAY_NAME}。"
 # VERSION_ENV=${SLUG^^}_VERSION        # 可选：版本 env 变量名，默认 <SLUG>_VERSION

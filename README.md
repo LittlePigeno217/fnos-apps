@@ -1,4 +1,4 @@
-# FnOS-APP
+# fnos-apps
 
 面向飞牛 fnOS 的第三方应用统一维护仓库。本仓库为 115网盘助手（p115assistant）与签到工具（checkin）的
 统一维护落点（原 FnOS-APP 仓库已并入；旧版归档 `Projects/archive/fnos-apps-20260920-184738/`，
@@ -16,7 +16,7 @@
 ## 目录布局
 
 ```text
-FnOS-APP/
+fnos-apps/
 ├── apps/<slug>/        # 应用自身（fnos 包内容 + VERSION + runtime-manifest.json）
 ├── shared/             # 通用生命周期框架（cmd + wizard）
 ├── scripts/            # 统一引擎 + 打包器 + 公共库

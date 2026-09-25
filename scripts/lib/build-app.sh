@@ -8,7 +8,7 @@
 #   app_dir         应用目录（apps/<slug>）
 #   slug            应用 slug
 #   version_env_name bootstrap env 变量名（如 P115ASSISTANT_VERSION）
-#   fpk_version     FPK 版本（恒 1.0.0，由引擎校验后传入）
+#   fpk_version     FPK 版本（manifest 实值，由引擎读取后传入；纯热更模型下当前 1.0.1 稳定不递增）
 #   out_tgz         输出的 app.tgz 路径
 
 [ -n "${_BUILD_APP_LIB_LOADED:-}" ] && return 0
@@ -50,13 +50,13 @@ build_app_tgz() {
         # 目标版本必须随包带）
         mkdir -p "${work_dir}/config/bootstrap"
         cat > "${work_dir}/config/bootstrap/${slug}-version.env" <<EOF
-# ${slug} FPK 版本（恒 1.0.0，构建时注入；upgrade_callback 读取）
+# ${slug} FPK 版本（manifest 实值，构建时注入；upgrade_callback 读取）
 ${version_env_name}=${fpk_version}
 EOF
         echo "[${slug}] FPK 版本 env 已写入: config/bootstrap/${slug}-version.env"
 
         # 不向运行时源码注入版本：
-        #   fpk 版本恒 1.0.0，功能版本以 apps/<slug>/VERSION 为单一事实源，
+        #   fpk 版本（manifest 实值）与功能版本分离，功能版本以 apps/<slug>/VERSION 为单一事实源，
         #   store.js / update.js 的功能版本字面量由 gen_runtime_manifest.py --bump（或显式版本）同步。
         #   若在此注入 fpk 版本，安装后源码 sha 将与 runtime-manifest（按源码原样计算）永久不一致 →
         #   热更检查永远提示「有更新」，无法收敛。故此处保持源码原样打包。

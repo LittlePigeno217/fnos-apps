@@ -1,6 +1,6 @@
-# FnOS-APP 架构规划
+# fnos-apps 架构规划（原 FnOS-APP）
 
-> 本文档是 FnOS-APP 仓库结构的**唯一权威文档**。实现与本文档不一致时，以本文档为准；
+> 本文档是 fnos-apps 仓库结构（原计划名 FnOS-APP）的**唯一权威文档**。实现与本文档不一致时，以本文档为准；
 > 若实现有合理理由偏离，必须改本文档并记录原因。
 > 建立日期：2026-09-20。
 >
@@ -28,7 +28,7 @@
 ## 1. 顶层目录树
 
 ```text
-FnOS-APP/
+fnos-apps/
 ├── apps/                        # 应用目录：只含应用自身与 meta 差异
 │   ├── p115assistant/           # 115网盘助手
 │   │   ├── VERSION              # 功能版本单一事实源（--bump 递增）
@@ -128,7 +128,7 @@ FnOS-APP/
 |---|---|---|
 | `appname` | 安装包应用名 | = slug，`^[a-z0-9-]+$` |
 | `display_name` | 桌面显示名 | 人类可读中文名 |
-| `version` | **FPK 版本**（安装包维度） | 随 fpk 发布递增，**非强制 `1.0.0`**（fpk 升级只认「版本号高于已安装」）；功能热更走功能版本，不走 fpk 升级 |
+| `version` | **FPK 版本**（安装包维度） | 随 fpk 发布递增，**非强制 `1.0.0`**（fpk 升级只认「版本号高于已安装」）；功能热更走功能版本，不走 fpk 升级。**纯热更模型下当前保持 `1.0.1` 不递增**（不随功能热更变更为 VERSION，避免 fpk 版本漂移）；若启用 fpk 升级通道则按官方语义递增 |
 | `platform` | 目标平台 | `all` |
 | `distributor_url` | 分发渠道 | `https://github.com/LittlePigeno217/fnos-apps`（当前统一仓库远端） |
 | `maintainer_url` | 维护者主页 | `https://github.com/LittlePigeno217`（保留） |

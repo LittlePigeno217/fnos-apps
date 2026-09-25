@@ -1,7 +1,12 @@
 # FnOS-APP 迁移基线快照
 
-> 本文件记录从只读源仓库 `fnos-apps` 迁移到新仓库 `FnOS-APP` 前的源快照，
-> 以及迁移完成后的对比结果。源仓库只读，迁移全程不修改其中任何文件。
+> 本文件是 **2026-09-20 迁移当时** 的历史快照：记录从只读源仓库 `fnos-apps` 迁移到
+> 新仓库 `FnOS-APP` 前的源快照，以及迁移完成后的对比结果。**最终落点：2026-09-20 起
+> 统一维护仓库即本仓库（`fnos-apps`，GitHub `LittlePigeno217/fnos-apps`）**，原
+> `FnOS-APP` 内容并入、旧版归档 `Projects/archive/fnos-apps-20260920-184738/`（只读）。
+> 下文「源仓库只读」「新仓库 FnOS-APP」为迁移期表述，按历史背景理解；文中版本/ sha 均
+> 为快照时刻值（如 FPK 版本恒 1.0.0），与当前现状（manifest 1.0.1、功能版本 1.2.x / 1.8.x）
+> 不同属正常——现状以 `docs/architecture.md`、`AGENTS.md`、`docs/fnnas-app-requirements.md` 为准。
 
 ## 1. 源仓库（只读参考源）
 
