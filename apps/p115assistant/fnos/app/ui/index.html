@@ -476,7 +476,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.2.8</span>
+      <span class="ver" id="appVersion">v1.2.9</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -630,15 +630,7 @@
           </button>
           <span class="grow"></span>
           <span class="muted" id="sweepState"></span>
-          <button class="btn" id="watchToggle" onclick="toggleWatcher()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg>
-            开始监听
-          </button>
-          <span class="muted" id="watchStatus" hidden></span>
-          <button class="btn" onclick="toggleOnceCard('uploadOnceCard')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            指定目录上传一次
-          </button>
+          <span class="cap-seg cap-on" id="watchStatus" hidden title="监听由上传映射驱动：有映射即常开，无映射自动关闭"></span>
           <button class="btn primary" onclick="sweep()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m6 9 6-5 6 5"/><path d="M4 20h16"/></svg>
             立即上传全部
@@ -657,25 +649,8 @@
           </div>
           <div id="upFailList" style="margin-top:6px;max-height:160px;overflow:auto;font-size:12px"></div>
         </div>
-        <div class="pane" id="uploadOnceCard" hidden style="padding:14px 16px;margin-bottom:12px">
-          <div class="field-row" style="align-items:center;gap:8px">
-            <span class="muted" style="width:76px;flex:none">本地源目录</span>
-            <button class="btn" onclick="pickOnce('upload','srclocal')">选择本地目录</button>
-            <div style="flex:1;min-width:0" id="uploadOnceSource"><span class="muted">未选择</span></div>
-          </div>
-          <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
-            <span class="muted" style="width:76px;flex:none">115 目标目录</span>
-            <button class="btn" onclick="pickOnce('upload','tgt115')">选择 115 目录</button>
-            <div style="flex:1;min-width:0" id="uploadOnceTarget"><span class="muted">未选择</span></div>
-          </div>
-          <div class="field-row" style="margin-top:10px;justify-content:flex-end;gap:8px">
-            <span class="muted" id="uploadOnceResult"></span>
-            <button class="btn" onclick="toggleOnceCard('uploadOnceCard')">关闭</button>
-            <button class="btn primary" id="uploadOnceRunBtn" onclick="runUploadOnce()" disabled>上传一次</button>
-          </div>
-        </div>
         <div id="mappingList"></div>
-        <p class="empty" id="uploadEmpty">暂无上传映射，点击「添加映射」创建源目录 → 目标目录配对</p>
+        <p class="empty" id="uploadEmpty">暂无上传映射，点击「添加映射」创建源目录 → 目标目录配对（无映射目录时监听自动关闭，不轮询）</p>
         <div class="risk-bar" id="riskBar" hidden style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 12px;border-radius:6px;background:var(--surface);"></div>
         <details class="adv-block" id="advUploadExt" style="margin-top:10px;font-size:13px">
           <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">高级：上传扩展名 <span class="muted">（可选）</span></summary>
@@ -3835,36 +3810,24 @@ async function cancelTask(){
   refreshWatchStatus();
 }
 
-// ---- 实时文件监听 + 风控状态 ----
+// ---- 实时文件监听（只读展示）+ 风控状态 ----
+// 常驻化（1.2.9）：监听由上传映射驱动，前端不再提供开关，仅只读展示后端返回的运行态。
 let watchPollTimer = null;
-async function toggleWatcher(){
-  const btn=el("watchToggle");
-  if(btn.dataset.on==="1"){
-    const r=await call("watcher_stop","POST",{});
-    el("sweepState").textContent=r.message||"监听已停止";
-  }else{
-    const r=await call("watcher_start","POST",{});
-    el("sweepState").textContent=r.message||(r.success?"监听已启动":"启动失败");
-  }
-  refreshWatchStatus();
-}
 async function refreshWatchStatus(){
   const r=await call("watcher_status");
   if(!r.success) return;
   const d=r.data||{};
-  const btn=el("watchToggle"), st=el("watchStatus"), risk=el("riskBar");
-  btn.hidden=false;
-  if(d.running){
-    btn.dataset.on="1"; btn.classList.add("primary");
-    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg>停止监听';
-    st.hidden=false;
-    const w=d.watch||{};
-    const pending = w.mappings&&w.mappings.length ? `${w.mappings.reduce((a,m)=>a+(m.pending||0),0)} 个待稳定` : "";
-    st.textContent=`监听中${pending?" · "+pending:""}`;
-  }else{
-    btn.dataset.on="0"; btn.classList.remove("primary");
-    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/></svg>开始监听';
-    st.hidden=true;
+  const st=el("watchStatus"), risk=el("riskBar");
+  if(st){
+    if(d.running){
+      const w=d.watch||{};
+      const pending = w.mappings&&w.mappings.length ? w.mappings.reduce((a,m)=>a+(m.pending||0),0) : 0;
+      st.textContent=`● 监听中${pending?" · "+pending+" 个待稳定":""}`;
+      st.hidden=false;
+    }else{
+      st.textContent="";
+      st.hidden=true;
+    }
   }
   // 风控条
   const rk=d.risk||{};
@@ -3953,7 +3916,6 @@ function srcConfirm(){
   const fullPath = srcBase + (srcRelPath ? "/" + srcRelPath.replace(/\\/g, "/") : "");
   if (onceMode){
     if (onceMode.kind === "strm") onceSel.strm.target_dir = fullPath;
-    else onceSel.upload.source = fullPath;
     onceMode = null; closeSrcPicker(); renderOnceCards(); return;
   }
   const sm = activeStrmEdit();
@@ -4015,7 +3977,6 @@ function targetConfirm(){
   if (onceMode){
     const crumb = el("targetCrumb").textContent || "/";
     if (onceMode.kind === "strm"){ onceSel.strm.source_cid = targetCid; onceSel.strm.source_name = crumb; }
-    else { onceSel.upload.target_cid = targetCid; onceSel.upload.target_path = crumb; }
     onceMode = null; closeTargetPicker(); renderOnceCards(); return;
   }
   const sm = activeStrmEdit();
@@ -4409,7 +4370,6 @@ async function clearHistory(){
 let onceMode = null;
 const onceSel = {
   strm:   { source_cid:"", source_name:"", target_dir:"" },
-  upload: { source:"", target_cid:"0", target_path:"" },
 };
 function toggleOnceCard(id){
   const card = el(id);
@@ -4425,17 +4385,11 @@ function pickOnce(kind, field){
 }
 function renderOnceCards(){
   const s = onceSel.strm;
-  const u = onceSel.upload;
   el("strmOnceSource").innerHTML = s.source_cid
     ? `<span class="mono">${esc(s.source_name || s.source_cid)}</span>` : `<span class="muted">未选择</span>`;
   el("strmOnceTarget").innerHTML = s.target_dir
     ? `<span class="mono">${esc(s.target_dir)}</span>` : `<span class="muted">未选择</span>`;
   el("strmOnceRunBtn").disabled = !(s.source_cid && s.target_dir);
-  el("uploadOnceSource").innerHTML = u.source
-    ? `<span class="mono">${esc(u.source)}</span>` : `<span class="muted">未选择</span>`;
-  el("uploadOnceTarget").innerHTML = u.target_path
-    ? `<span class="mono">${esc(u.target_path)}</span>` : `<span class="muted">未选择</span>`;
-  el("uploadOnceRunBtn").disabled = !u.source;
 }
 async function runStrmOnce(){
   const s = onceSel.strm;
@@ -4451,21 +4405,6 @@ async function runStrmOnce(){
   btn.disabled = false;
   el("strmOnceResult").textContent = r.message || (r.success ? "生成完成" : "生成失败");
   tint("strmOnceResult", r.success);
-}
-async function runUploadOnce(){
-  const u = onceSel.upload;
-  if (!u.source){ alert("先选择本地源目录"); return; }
-  if (!confirm(`把本地目录\n${u.source}\n上传到 115：${u.target_path || "/"}\n\n不保存为映射，排队执行一次。继续？`)) return;
-  const btn = el("uploadOnceRunBtn");
-  btn.disabled = true;
-  el("uploadOnceResult").textContent = "提交中…";
-  tint("uploadOnceResult");
-  const r = await call("upload_once", "POST", {
-    source: u.source, target_cid: u.target_cid || "0", target_path: u.target_path || "/",
-  });
-  btn.disabled = false;
-  el("uploadOnceResult").textContent = r.message || (r.success ? "已排队" : "提交失败");
-  tint("uploadOnceResult", r.success);
 }
 
 /* ---- 工具 ---- */

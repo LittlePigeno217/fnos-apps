@@ -653,6 +653,7 @@ class Server {
       const before = this.store.getConfig();
       this.store.updateConfig(updates);
       const after = this.store.getConfig();
+      this._syncWatcher();   // 常驻化：总开关（enabled）变更后对齐监听启停
       const relayChanged = String(before.relay_port) !== String(after.relay_port);
       const linkChanged = ["strm_base_url", "relay_port"].some(
         (k) => String(before[k] === undefined ? "" : before[k]) !== String(after[k] === undefined ? "" : after[k])
@@ -1039,6 +1040,7 @@ class Server {
         mappings.push(item);
       }
       this.store.updateConfig({ upload_mappings: mappings });
+      this._syncWatcher();   // 常驻化：映射变更后立即对齐监听启停
       return ok({ id: item.id }, "上传映射已保存");
     } catch (err) {
       console.error(`保存上传映射失败：${err.message}`);
@@ -1055,6 +1057,7 @@ class Server {
         (m) => !(m && typeof m === "object" && String(m.id || "") === mappingId)
       );
       this.store.updateConfig({ upload_mappings: mappings });
+      this._syncWatcher();   // 常驻化：删除后若已无可用映射则自动停监听
       return ok(undefined, "上传映射已删除");
     } catch (err) {
       console.error(`删除上传映射失败：${err.message}`);
@@ -1137,6 +1140,38 @@ class Server {
   }
 
   // ── 实时文件监听 ──
+  // 监听常驻化（1.2.9）：监听状态由上传映射驱动 —— 只要存在启用且配了源目录的映射，
+  // 监听即常开；没有任何可用映射时自动关闭（空闲不轮询）。前端不再暴露开关，
+  // watch_enabled 仅作为兼容字段随实际状态同步（旧配置有值不破坏）。
+  _hasWatchableMappings(config) {
+    config = config || this.store.getConfig();
+    return (config.upload_mappings || []).some(
+      (m) => m && typeof m === "object" && m.enabled !== false && m.source
+    );
+  }
+
+  // 保存/删除映射、切换总开关、启动恢复后调用：把 watcher 实际启停对齐到「应否监听」。
+  _syncWatcher() {
+    try {
+      const config = this.store.getConfig();
+      const shouldWatch = Boolean(config.enabled) && this._hasWatchableMappings(config);
+      const running = this._fileWatcher.status().running;
+      if (shouldWatch && !running) {
+        this._fileWatcher.start();
+        this.recordLog("检测到上传映射，文件监听已自动开启", "INFO", "WATCH");
+      } else if (!shouldWatch && running) {
+        this._fileWatcher.stop();
+        this.recordLog("无可用上传映射，文件监听已自动关闭（空闲不轮询）", "INFO", "WATCH");
+      }
+      // watch_enabled 兼容字段：跟随实际状态，不再由用户开关控制。
+      if (Boolean(config.watch_enabled) !== shouldWatch) {
+        this.store.updateConfig({ watch_enabled: shouldWatch });
+      }
+    } catch (err) {
+      console.warn(`同步文件监听状态失败：${err.message}`);
+    }
+  }
+
   watcherStart(payload) {
     try {
       const config = this.store.getConfig();
@@ -1176,10 +1211,12 @@ class Server {
   watcherStatus() {
     try {
       const config = this.store.getConfig();
-      const running = Boolean(config.watch_enabled) && this._fileWatcher.status().running;
+      // 常驻化后：running 反映 watcher 真实运行态；enabled 保留兼容字段（watch_enabled）。
+      const running = this._fileWatcher.status().running;
       return ok({
         enabled: Boolean(config.watch_enabled),
         running,
+        has_mappings: this._hasWatchableMappings(config),
         watch: this._fileWatcher.status(),
         risk: this._riskStatus(),
       });

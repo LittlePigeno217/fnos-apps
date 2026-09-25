@@ -688,13 +688,9 @@ async function main(argv) {
   };
   console.log("后端已就绪");
 
-  // 启动时恢复上次启用的文件监听
+  // 启动时按映射驱动恢复文件监听：有可用映射即常开，否则空闲不轮询（1.2.9 常驻化）。
   try {
-    const cfg = store.getConfig();
-    if (cfg.watch_enabled) {
-      api._fileWatcher.start();
-      console.log("已恢复文件监听（watch_enabled=true）");
-    }
+    api._syncWatcher();
   } catch (err) {
     console.warn(`恢复文件监听失败：${err.message}`);
   }
