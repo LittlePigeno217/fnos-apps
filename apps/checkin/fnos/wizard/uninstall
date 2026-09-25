@@ -4,12 +4,12 @@
     "items": [
       {
         "type": "radio",
-        "field": "keep_data",
+        "field": "wizard_delete_data",
         "label": "数据保留",
-        "default": true,
+        "initValue": "false",
         "options": [
-          { "label": "保留应用数据（配置、上传记录）", "value": "true" },
-          { "label": "删除应用数据", "value": "false" }
+          { "label": "保留应用数据（配置、签到记录），以备重新安装", "value": "false" },
+          { "label": "删除应用数据（不可恢复）", "value": "true" }
         ]
       }
     ]

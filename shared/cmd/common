@@ -264,7 +264,11 @@ uninstall_callback ()
 {
     log_step "uninstall_callback"
     call_func "service_postuninst" install_log
-    if [ "$wizard_delete_data" = "true" ]; then
+    # 数据删除意图：优先新字段 wizard_delete_data（官方 wizard_ 前缀惯例）；
+    # 旧字段 keep_data 兜底兼容已发布向导（keep_data=false 表示删除）。
+    # 默认（两字段均未设置）保留数据，删除为安全侧，绝不因缺字段误删。
+    if [ "$wizard_delete_data" = "true" ] || \
+       { [ -z "$wizard_delete_data" ] && [ "$keep_data" = "false" ]; }; then
         echo "Removing files..." | install_log
         if [ "$(ls -A ${TRIM_PKGHOME})" != "" ]; then
             find ${TRIM_PKGHOME} -mindepth 1 -delete -print | install_log
