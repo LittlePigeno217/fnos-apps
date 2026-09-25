@@ -16,4 +16,5 @@ ctl_stop        = true
 micro_app       = true
 desc            = 在 fnOS 上登录 115 网盘，浏览、上传（秒传/增量/实时监听）、STRM 生成、签到与 302 取链。核心能力移植自 MoviePilot-Plugins 的 115 轻量助手。
 source          = thirdparty
+changelog       = 115网盘助手 fnOS 版：浏览 / 上传 / STRM / 签到 / 302 取链，支持应用内热更新。
 checksum        =

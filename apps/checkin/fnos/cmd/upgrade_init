@@ -6,7 +6,7 @@
 #      可能残留，导致新文件解压/权限设置失败（文件句柄占用）。
 #   2. 兜底删除 socket/pid，避免新版本启动时误判旧实例仍在运行。
 #   3. 记录升级前目录状态到 info.log，便于排查升级失败。
-#   4. 数据（TRIM_PKGVAR 下 config/records/secrets）永不删除，由系统保留。
+#   4. 数据（TRIM_PKGVAR 下 config/history）永不删除，由系统保留。
 set -u
 
 APP_DIR="${TRIM_APPDEST:-/vol1/@appcenter/checkin}"

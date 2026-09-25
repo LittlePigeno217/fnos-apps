@@ -16,4 +16,5 @@ ctl_stop        = true
 micro_app       = true
 desc            = 自用站点统一签到：FLZT / 恩山无线论坛 / 易破解。每日定时自动签到、漏签补跑、历史记录与飞书通知。核心能力移植自 MoviePilot-Plugins 自用签到工具。
 source          = thirdparty
+changelog       = 签到工具 fnOS 版：站点每日自动签到 / 漏签补跑 / 签到历史 / 飞书通知，支持应用内热更新。
 checksum        =
