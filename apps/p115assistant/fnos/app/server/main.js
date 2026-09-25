@@ -109,8 +109,8 @@ const GATEWAY_HEADER = "x-trim-userid";
 const WRITE_DENY_GATEWAY = "未授权：写操作仅允许经 fnOS 网关访问（请从 fnOS 桌面打开应用）";
 const WRITE_DENY_CSRF = "拒绝跨站请求：来源校验未通过";
 
-/** fnOS 官方远程访问隧道域（fnconnect）。属于该域的 Origin 视为用户自己的 NAS 可信入口。 */
-const TRUSTED_TUNNEL_DOMAIN = "fnconnect.net";
+/** fnOS 官方远程访问隧道域（fnconnect / fnOS 隧道 5ddd.com）。属于这些域的 Origin 视为用户自己的 NAS 可信入口。 */
+const TRUSTED_TUNNEL_DOMAINS = ["fnconnect.net", "5ddd.com"];
 
 /** Origin/Referer 与请求 Host 同源校验。无来源头（curl/本地 socket）返回 true，交由网关头把关。
  * trustedOrigins：用户显式配置的可信来源列表，命中则放行（不自动学习，仅显式配置生效）。 */
@@ -123,10 +123,10 @@ function sameOriginOk(headers, host, trustedOrigins) {
   } catch {
     return false; // 畸形来源头直接拒
   }
-  // fnOS 官方远程隧道（*.fnconnect.net）→ 用户自己 NAS 的可信入口，直接放行。
-  // 隧道转发后应用侧 host 是内网 IP、浏览器 Origin 是 fnconnect 域名，严格全等必然失败；
-  // 恶意跨站页面的 Origin 无法伪装成 fnconnect 官方域，故此豁免不削弱 CSRF 防护。
-  if (srcHostname === TRUSTED_TUNNEL_DOMAIN || srcHostname.endsWith("." + TRUSTED_TUNNEL_DOMAIN)) {
+  // fnOS 官方远程隧道（*.fnconnect.net / *.5ddd.com）→ 用户自己 NAS 的可信入口，直接放行。
+  // 隧道转发后应用侧 host 是内网 IP、浏览器 Origin 是隧道域名，严格全等必然失败；
+  // 恶意跨站页面的 Origin 无法伪装成官方隧道域，故此豁免不削弱 CSRF 防护。
+  if (TRUSTED_TUNNEL_DOMAINS.some((dom) => srcHostname === dom || srcHostname.endsWith("." + dom))) {
     return true;
   }
   // 用户显式配置的可信来源：元素以 `.` 开头表示通配子域（hostname.endsWith），否则精确相等。

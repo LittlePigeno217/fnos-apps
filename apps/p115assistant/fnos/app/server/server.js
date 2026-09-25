@@ -128,6 +128,7 @@ const EDITABLE_CONFIG_FIELDS = new Set([
   "strm_add_subtitles",
   "strm_base_url",
   "relay_port",
+  "trusted_origins",
 ]);
 
 function mask(value) {
