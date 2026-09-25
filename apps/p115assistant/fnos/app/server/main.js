@@ -109,24 +109,18 @@ const GATEWAY_HEADER = "x-trim-userid";
 const WRITE_DENY_GATEWAY = "未授权：写操作仅允许经 fnOS 网关访问（请从 fnOS 桌面打开应用）";
 const WRITE_DENY_CSRF = "拒绝跨站请求：来源校验未通过";
 
-/** Origin/Referer 与请求 Host 同源校验（忽略端口差异：网关/隧道转发常剥宿主机的端口，端口不同不应误伤）。无来源头（curl/本地 socket）返回 true，交由网关头把关。 */
+/** Origin/Referer 与请求 Host 同源校验。无来源头（curl/本地 socket）返回 true，交由网关头把关。 */
 function sameOriginOk(headers, host) {
   const src = String(headers["origin"] || "").trim() || String(headers["referer"] || "").trim();
   if (!src) return true; // 非浏览器/本地直连无 Origin → 不在此拦，由 X-Trim-Userid 把关
   let h;
   try {
-    h = new URL(src).hostname;
+    h = new URL(src).host;
   } catch {
     return false; // 畸形来源头直接拒
   }
   if (!host) return false; // 有来源头却无从比对自身 host → 保守拒绝
-  let hn;
-  try {
-    hn = new URL("http://" + host).hostname;
-  } catch {
-    hn = String(host).split(":")[0];
-  }
-  return h.toLowerCase() === hn.toLowerCase();
+  return h.toLowerCase() === String(host).toLowerCase();
 }
 
 class TrimHandler {
