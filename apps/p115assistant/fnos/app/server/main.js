@@ -109,18 +109,35 @@ const GATEWAY_HEADER = "x-trim-userid";
 const WRITE_DENY_GATEWAY = "未授权：写操作仅允许经 fnOS 网关访问（请从 fnOS 桌面打开应用）";
 const WRITE_DENY_CSRF = "拒绝跨站请求：来源校验未通过";
 
+/** fnOS 官方远程访问隧道域（fnconnect）。属于该域的 Origin 视为用户自己的 NAS 可信入口。 */
+const TRUSTED_TUNNEL_DOMAIN = "fnconnect.net";
+
 /** Origin/Referer 与请求 Host 同源校验。无来源头（curl/本地 socket）返回 true，交由网关头把关。 */
 function sameOriginOk(headers, host) {
   const src = String(headers["origin"] || "").trim() || String(headers["referer"] || "").trim();
   if (!src) return true; // 非浏览器/本地直连无 Origin → 不在此拦，由 X-Trim-Userid 把关
-  let h;
+  let srcHostname;
   try {
-    h = new URL(src).host;
+    srcHostname = new URL(src).hostname.toLowerCase();
   } catch {
     return false; // 畸形来源头直接拒
   }
+  // fnOS 官方远程隧道（*.fnconnect.net）→ 用户自己 NAS 的可信入口，直接放行。
+  // 隧道转发后应用侧 host 是内网 IP、浏览器 Origin 是 fnconnect 域名，严格全等必然失败；
+  // 恶意跨站页面的 Origin 无法伪装成 fnconnect 官方域，故此豁免不削弱 CSRF 防护。
+  if (srcHostname === TRUSTED_TUNNEL_DOMAIN || srcHostname.endsWith("." + TRUSTED_TUNNEL_DOMAIN)) {
+    return true;
+  }
   if (!host) return false; // 有来源头却无从比对自身 host → 保守拒绝
-  return h.toLowerCase() === String(host).toLowerCase();
+  let selfHostname;
+  try {
+    // host 可能带端口（含 IPv6 [::1]:port），用 URL 解析统一取 hostname，忽略端口差异。
+    selfHostname = new URL("http://" + String(host)).hostname.toLowerCase();
+  } catch {
+    return false; // 自身 host 畸形无法比对 → 保守拒绝
+  }
+  // 忽略端口的主机名比较：网关/隧道常剥离或改写端口，跨主机仍严格拒绝。
+  return srcHostname === selfHostname;
 }
 
 class TrimHandler {
