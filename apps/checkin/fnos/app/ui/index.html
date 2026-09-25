@@ -88,13 +88,19 @@
   .toast.seal { border-left:3px solid var(--seal); }
   /* 台账行：站点行压扁为低矮行，悬浮/展开才给阴影 */
   .site-row { background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
-              padding:11px 14px; margin-bottom:9px; cursor:pointer; transition: box-shadow .12s ease, border-color .12s ease; }
+              padding:12px 14px; margin-bottom:8px; cursor:pointer; transition: box-shadow .12s ease, border-color .12s ease; }
   .site-row:hover { border-color: var(--border); box-shadow: var(--shadow); }
   .site-row.open { box-shadow: var(--shadow); }
-  .row-badge { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; white-space:nowrap; }
-  .row-badge .dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
+  .row-badge { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; white-space:nowrap;
+               padding:2px 9px; border-radius:999px; border:1px solid transparent; font-weight:600; }
+  .row-badge .dot { width:7px; height:7px; border-radius:50%; display:inline-block; flex:none; }
   .dot-ok { background:var(--ok); } .dot-warn { background:var(--warn); }
-  .dot-err { background:var(--err); } .dot-mute { background:var(--border); }
+  .dot-err { background:var(--err); } .dot-mute { background:var(--muted-2); }
+  /* 今日状态徽标：颜色+底纹+描边一眼可读（已签绿实底 / 失败红实底 / 上次中性描边） */
+  .row-badge.b-ok { color:var(--ok); background:var(--ok-glow); border-color:var(--ok-border); }
+  .row-badge.b-ok .dot { box-shadow:0 0 0 3px var(--ok-glow); }
+  .row-badge.b-err { color:var(--err); background:var(--err-bg); border-color:var(--err); }
+  .row-badge.b-idle { color:var(--muted); background:transparent; border-color:var(--border); font-weight:500; }
   /* 账号配置页字段行：label 上行小字 + 输入框全宽，竖排整洁 */
   .cred-row { display:flex; flex-direction:column; gap:4px; margin-bottom:9px; }
   .cred-row .cred-label { font-size:11px; color:var(--muted); }
@@ -255,7 +261,7 @@
   /* 账号卡片：每个账号一张精简卡（网格容器见 .acct-grid-global） */
   .acct-card { display: flex; flex-direction: column; gap: 8px; min-width: 0;
                background: var(--card); border: 1px solid var(--border); border-radius: var(--jc-radius);
-               padding: 12px 13px; transition: border-color .15s ease, box-shadow .15s ease; }
+               padding: 14px; transition: border-color .15s ease, box-shadow .15s ease; }
   .acct-card:hover { border-color: var(--accent); box-shadow: 0 6px 18px rgba(30,40,80,.08); }
   /* 全局账号列表：跨站点每行三卡（自适应降列），站点来源用卡上小标签区分 */
   .acct-section-head { display: flex; align-items: baseline; gap: 8px; margin: 4px 2px 10px; flex-wrap: wrap; }
@@ -276,7 +282,11 @@
   .acct-tab .acct-tab-c { font-size: 11.5px; font-variant-numeric: tabular-nums;
                           padding: 1px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--muted); }
   .acct-tab.active .acct-tab-c { background: rgba(255,255,255,.22); color: #fff; }
-  .acct-group-empty { font-size: 12.5px; color: var(--muted); padding: 16px 2px; text-align: center; }
+  .acct-group-empty { display:flex; flex-direction:column; align-items:center; gap:8px;
+                      padding:36px 16px 34px; text-align:center; border:1px dashed var(--border);
+                      border-radius:var(--jc-radius); background:rgba(127,127,127,.03); }
+  .acct-group-empty .ttl { font-size:14px; font-weight:600; color:var(--ink); }
+  .acct-group-empty .sub { font-size:12.5px; color:var(--muted); max-width:340px; line-height:1.55; margin-bottom:2px; }
   @media (max-width: 560px) { .acct-grid-global { grid-template-columns: 1fr; } }
   /* 账号卡站点来源标识（色块小标签 + 站点名） */
   .acct-site { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; }
@@ -409,7 +419,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.8.6</span>
+      <span class="ver" id="appVersion">v1.8.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -427,13 +437,13 @@
       <section id="tab-sites">
         <!-- 工具条 -->
         <div class="toolbar">
-          <button class="btn primary" onclick="openAddAccount('')" title="选择已有站点添加账号">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            添加账号
-          </button>
-          <button class="btn" id="runAllBtn" onclick="runAll()">
+          <button class="btn primary" id="runAllBtn" onclick="runAll()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
             立即签到全部
+          </button>
+          <button class="btn" onclick="openAddAccount('')" title="选择已有站点添加账号">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            添加账号
           </button>
           <button class="btn" onclick="openHistoryPanel()" title="签到历史统计 / 日历热力图 / 导出 CSV">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-9M12 20V4M18 20v-6"/><path d="M3 20h18"/></svg>
@@ -829,7 +839,11 @@ function renderAccountList() {
   const cards = acctGroupCards(groupKeys[ACCT_TAB]);
   list.innerHTML = cards.length
     ? '<div class="acct-grid-global">' + cards.join("") + "</div>"
-    : '<div class="acct-group-empty">该分组暂无账号，点击上方「添加账号」添加</div>';
+    : '<div class="acct-group-empty">' +
+        '<div class="ttl">这个分组还没有账号</div>' +
+        '<div class="sub">添加一个账号后，就能在这里立即签到、查看积分和登录状态。</div>' +
+        '<button type="button" class="btn primary" onclick="openAddAccount(\'\')">添加账号</button>' +
+      '</div>';
   if (cnt) cnt.textContent = total ? "共 " + total + " 个账号" : "";
 }
 
@@ -910,14 +924,17 @@ function renderAcctCard(key, a, cap) {
     const t = esc(shortTime(last.time));
     if (last.status === "执行失败") {
       const sameDay = lastDate && lastDate === todayDate();
-      dayBadge = '<span class="row-badge"><span class="dot dot-err"></span><span class="err">失败 ' + t + (sameDay ? "" : (lastDate ? "（" + mdDate(lastDate) + "）" : "")) + "</span></span>";
+      dayBadge = '<span class="row-badge b-err"><span class="dot dot-err"></span>失败 ' + t + (sameDay ? "" : (lastDate ? "（" + mdDate(lastDate) + "）" : "")) + "</span>";
     } else if (todayOk) {
       // 已签文案带当天签到奖励（flzt/right_forum/ypojie）：daily_reward_display 非空 → 追加「· 当天 +X 单位」
       const rw = (d && d.daily_reward_display) ? (' · 当天 ' + esc(d.daily_reward_display)) : "";
-      dayBadge = '<span class="row-badge"><span class="dot dot-ok"></span><span style="color:var(--ok)">已签 ' + t + rw + "</span></span>";
+      dayBadge = '<span class="row-badge b-ok"><span class="dot dot-ok"></span>已签 ' + t + rw + "</span>";
     } else {
-      dayBadge = '<span class="row-badge"><span class="dot dot-mute"></span><span class="muted">上次 ' + t + (lastDate ? "（" + mdDate(lastDate) + "）" : "") + "</span></span>";
+      dayBadge = '<span class="row-badge b-idle"><span class="dot dot-mute"></span>上次 ' + t + (lastDate ? "（" + mdDate(lastDate) + "）" : "") + "</span>";
     }
+  } else {
+    // 从无签到记录：中性「待签到」占位，避免状态行空白，让「今天还没签」一眼可读
+    dayBadge = '<span class="row-badge b-idle"><span class="dot dot-mute"></span>待签到</span>';
   }
   // F3 修复：徽标三段语义——① 有 session →「已登录」；② 无 session 但凭据齐全（账密/cookie 可签到）
   // → 中性「凭据已配置」；③ 无凭据 →「未配置」。依赖 session 的站点（无交互登录能力）行为不变。
