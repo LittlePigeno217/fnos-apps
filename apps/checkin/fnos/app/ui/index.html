@@ -433,7 +433,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.8.8</span>
+      <span class="ver" id="appVersion">v1.8.9</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -788,7 +788,7 @@ function renderSiteCards(serverSites) {
 /* 账号列表分组：固定 NewApi → WorkBuddy → 其他站点。
  * 「其他站点」显式含 flzt/right_forum(恩山)/ypojie，并兜底收纳任何未归入前两组的站点，避免账号漏显。 */
 const ACCT_GROUPS = [
-  { title: "NewApi", keys: ["newapi", "anyrouter"] },
+  { title: "NewApi", keys: ["newapi"] },
   { title: "WorkBuddy", keys: ["workbuddy"] },
   { title: "其他站点", keys: ["flzt", "right_forum", "ypojie"] },
 ];
@@ -892,13 +892,14 @@ function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
   let nmAuthTag = ""; // 1.7.2：NewAPI 系认证方式标签（无凭据/非 NewAPI 系为空）
-  // 卡片标题（备注优先）：anyrouter 已并入 newapi 语义 → 同一标题分支（NewAPI / NewAPI · base_url host），
+  // 卡片标题（备注优先）：newapi 合并单站点 → 同一标题分支（NewAPI / NewAPI · base_url host），
   // 账号标识落副标题；其余站点：无备注 → 账号标识(label 脱敏) → 「账号 N」（站点名仅由来源标签 siteTag 承载）
   const acctLabel = a.label || (d && d.label) || "";
-  // 1.7.3：anyrouter 账号无 base_url 字段（provider 驱动）→ 按 provider 推导平台 URL，标题才可达
+  // newapi 账号可无 base_url（provider 驱动 anyrouter/agentrouter）→ 按 provider 推导平台 URL，标题才可达
+  const provVal = (d && d.field_values && d.field_values.provider) || "";
   const baseUrl = (d && d.field_values && d.field_values.base_url)
-    || (key === "anyrouter"
-      ? ((d && d.field_values && d.field_values.provider) === "agentrouter" ? "https://agentrouter.org" : "https://anyrouter.top")
+    || (key === "newapi"
+      ? (provVal === "agentrouter" ? "https://agentrouter.org" : provVal === "anyrouter" ? "https://anyrouter.top" : "")
       : "")
     || "";
   const hostOf = (u) => {
@@ -909,7 +910,7 @@ function renderAcctCard(key, a, cap) {
   if (a.remark) {
     title = a.remark;
     subLabel = (acctLabel && acctLabel !== a.remark) ? acctLabel : "";
-  } else if (key === "newapi" || key === "anyrouter") {
+  } else if (key === "newapi") {
     const host = hostOf(baseUrl);
     // 1.6.6：站点标题匹配做尾斜杠归一（后端存储去斜杠；账号 base_url 可能带 /）
     const st = (window.SITE_TITLES || {})[String(baseUrl || "").replace(/\/+$/, "")] || "";
@@ -958,8 +959,8 @@ function renderAcctCard(key, a, cap) {
   // F7-1：登录徽标接入交互登录弹窗——未配置/凭据已配置点击 → siteLogin(key, accountId)；
   // 已登录点击仅提示（无操作，避免误开登录流覆盖会话）；站点无交互登录能力不渲染徽标。
   let loginBadge = "";
-  // 1.6.8：NewAPI 系（通用/其他）不保持登录态（每次签到现场认证）→ 不显示登录状态徽标（无「已登录/凭据已配置/未配置」）
-  if (!["newapi", "anyrouter"].includes(key) && (cap || hasSession)) {
+  // 1.6.8：NewAPI 合并站点不保持登录态（每次签到现场认证）→ 不显示登录状态徽标（无「已登录/凭据已配置/未配置」）
+  if (key !== "newapi" && (cap || hasSession)) {
     const badgeOn = ' onclick="badgeLoginAction(\'' + key + "','" + esc(a.id || "") + '\',' + (hasSession ? "true" : "false") + ')" style="cursor:pointer"';
     if (hasSession) {
       loginBadge = '<span class="login-badge on"' + badgeOn + '><span class="dot"></span>已登录</span>';
@@ -997,7 +998,7 @@ function renderAcctCard(key, a, cap) {
     siteTag +
     '<div class="acct-card-top"><div class="acct-card-title">' +
       '<div class="t" title="' + esc(title) + '">' +
-        ((key === "newapi" || key === "anyrouter") && baseUrl
+        (key === "newapi" && baseUrl
           ? '<a class="nm-link" href="' + esc(baseUrl) + '" target="_blank" rel="noopener nofollow">' + esc(title) + "</a>"
           : esc(title)) +
       "</div>" +

@@ -91,9 +91,10 @@ class Server {
     for (const sk of Object.keys(cfg.sites || {})) {
       for (const a of ((cfg.sites[sk] || {}).accounts || [])) {
         let b = a && a.base_url;
-        // 1.7.3：anyrouter 账号无 base_url（provider 驱动）→ 按 provider 推导，标题映射/抓取才可达
-        if (sk === "anyrouter" && !b && a) {
-          b = a.provider === "agentrouter" ? "https://agentrouter.org" : "https://anyrouter.top";
+        // newapi 账号可无 base_url（provider 驱动 anyrouter/agentrouter）→ 按 provider 推导，标题映射/抓取才可达
+        if (sk === "newapi" && !b && a) {
+          if (a.provider === "agentrouter") b = "https://agentrouter.org";
+          else if (a.provider === "anyrouter") b = "https://anyrouter.top";
         }
         if (b && /^https?:\/\//i.test(b)) urls.add(String(b).replace(/\/+$/, ""));
       }
@@ -248,11 +249,11 @@ class Server {
   }
 
   /** 1.8.3：Turnstile 类「站点签到需人机验证」识别 → 为账号写入持久标记（signin_skip="turnstile"
-   *  + skip_reason 展示文案）。仅 NEWAPI 系（newapi/anyrouter 同面板机制；FLZT/恩山等天然不涉及，
+   *  + skip_reason 展示文案）。仅 NEWAPI 合并站点（同面板机制；FLZT/恩山等天然不涉及，
    *  防误伤）。匹配到且未标记 → 写标记（已有同类型标记不重复写）；返回是否命中。 */
   _maybeMarkTurnstileSkip(adapter, acc, msg) {
     if (!adapter || !acc || !msg) return false;
-    if (adapter.key !== "newapi" && adapter.key !== "anyrouter") return false;
+    if (adapter.key !== "newapi") return false;
     if (!isTurnstileRequired(msg)) return false;
     if (!acc.signin_skip) {
       acc.signin_skip = "turnstile";
@@ -511,8 +512,8 @@ class Server {
       acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
       acc.balance = next;
       acc.balance_ts = Date.now();
-      // 当日累计新增余额：workbuddy（积分）与 NewAPI 系（newapi/anyrouter 余额）签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
-      if (opts && opts.from === "checkin" && ["workbuddy", "newapi", "anyrouter"].includes(adapter.key)) {
+      // 当日累计新增余额：workbuddy（积分）与 NewAPI 系（newapi 余额）签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
+      if (opts && opts.from === "checkin" && ["workbuddy", "newapi"].includes(adapter.key)) {
         const today = localDateStr();
         if (acc.daily_gain_date !== today) {
           acc.daily_gain = 0;
@@ -843,12 +844,12 @@ class Server {
             balance_delta_display: (supportsBalance && rawDelta != null && rawDelta !== 0)
               ? ((rawDelta > 0 ? "+" : "") + fmt(rawDelta)) : "",
             // 当日累计新增余额：数值为今日生效值（日期非今天 → 0）+ workbuddy/NewAPI 系展示串（+N；0 → 空）
-            auth_mode: (["newapi", "anyrouter"].includes(key) && a)
+            auth_mode: (key === "newapi" && a)
               ? (a.access_token ? "token" : ((a.cookie || a.cookies) ? "cookie" : ((a.username || a.email) ? "password" : "none")))
               : "",
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
-            daily_gain_display: (supportsBalance && ["workbuddy", "newapi", "anyrouter"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+            daily_gain_display: (supportsBalance && ["workbuddy", "newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
             // 当天签到奖励累计展示（flzt/right_forum/ypojie）：+X 单位（如 "+50 MB"）；今日无 / 目标外站点 → 空
             daily_reward: dailyReward,
             daily_reward_unit: dailyRewardUnit,
@@ -861,7 +862,7 @@ class Server {
                 return {
                   hero_label: adapter.balanceLabel || "余额",
                   hero_display: (rawBal != null) ? fmt(rawBal) : "",
-                  hero_delta_display: (["workbuddy", "newapi", "anyrouter"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+                  hero_delta_display: (["workbuddy", "newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
                 };
               }
               if (hasHold) {
