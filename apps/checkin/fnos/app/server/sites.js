@@ -184,7 +184,7 @@ async function fetchUserInfo(base, auth, useProxy) {
     throw new Error(`平台 WAF 人机验证拦截了用户信息接口：Cookie 缺少 acw_sc__v2 等验证标识，请在浏览器访问 ${base} 通过验证后复制完整 Cookie`);
   }
   const j = parseJson(r.text);
-  if (!j || !j.success || !(j.data || {}).quota) return null;
+  if (!j || !j.success || !(j.data && typeof j.data === "object") || !Object.prototype.hasOwnProperty.call(j.data, "quota")) return null;
   return { quota: Number(j.data.quota) || 0, used_quota: Number(j.data.used_quota) || 0 };
 }
 
