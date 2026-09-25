@@ -101,6 +101,10 @@
   .row-badge.b-ok .dot { box-shadow:0 0 0 3px var(--ok-glow); }
   .row-badge.b-err { color:var(--err); background:var(--err-bg); border-color:var(--err); }
   .row-badge.b-idle { color:var(--muted); background:transparent; border-color:var(--border); font-weight:500; }
+  /* 1.8.8：统一徽标体系新增「已跳过」（人机验证跳过，琥珀色，与失败红/成功绿区分） */
+  .row-badge.b-skip { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+  .row-badge.b-skip .dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+  .dot-skip { background: var(--warn); }
   /* 账号配置页字段行：label 上行小字 + 输入框全宽，竖排整洁 */
   .cred-row { display:flex; flex-direction:column; gap:4px; margin-bottom:9px; }
   .cred-row .cred-label { font-size:11px; color:var(--muted); }
@@ -151,7 +155,6 @@
                 background: var(--brand-grad);
                 box-shadow: 0 6px 18px rgba(79,70,229,.38); }
   .brand-name { font-weight: 700; font-size: 14.5px; letter-spacing: .2px; }
-  .brand-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
   .nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
   .nav button { position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
                 padding: 9px 10px; border: 0; background: transparent; color: var(--ink);
@@ -307,28 +310,25 @@
   .acct-card-title .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .acct-card-title .sub { font-size: 11px; color: var(--muted); margin-top: 1px;
                           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* 余额 / 积分行 */
-  .acct-bal { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
-  .acct-bal .bl { font-size: 11px; color: var(--muted); }
-  .acct-bal .bv { font-size: 16px; font-weight: 700; color: var(--accent-strong); }
-  .acct-bal .bd { font-size: 11.5px; font-weight: 600; }
-  .acct-bal .bd.up { color: var(--ok); } .acct-bal .bd.down { color: var(--err); }
-  .acct-bal.empty .bv { color: var(--muted-2); font-weight: 600; }
-  /* workbuddy 积分主视觉（大数字 chip + delta 徽标）：积分为卡片视觉焦点 */
-  .acct-hero { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
-               background: linear-gradient(135deg, rgba(37,99,235,.12), rgba(79,70,229,.14));
+  /* 账号数值主视觉（1.8.8 重新设计）：主值适度大小（20px）+ 标签行右端「今日收益」小徽标，
+     字号阶梯明确（标签 11 / 主值 20 / 徽标 10.5）、间距统一、对齐一致；收益完整不截断（单位/千分位/标签齐全）。 */
+  .acct-hero { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: 11px;
+               background: linear-gradient(135deg, rgba(37,99,235,.08), rgba(79,70,229,.10));
                border: 1px solid var(--brand-soft); font-variant-numeric: tabular-nums; }
-  .acct-hero .hero-ico { width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center;
-                         background: var(--brand-grad); color: #fff; box-shadow: 0 4px 12px rgba(79,70,229,.32); }
-  .acct-hero .hero-ico svg { width: 17px; height: 17px; }
-  .acct-hero .hero-main { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-  .acct-hero .hero-lb { font-size: 10.5px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
-  .acct-hero .hero-num { font-size: 26px; font-weight: 800; letter-spacing: -.5px;
+  .acct-hero .hero-ico { width: 26px; height: 26px; flex: none; border-radius: 8px; display: grid; place-items: center;
+                         background: var(--brand-grad); color: #fff; box-shadow: 0 3px 10px rgba(79,70,229,.28); }
+  .acct-hero .hero-ico svg { width: 15px; height: 15px; }
+  .acct-hero .hero-main { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; line-height: 1.2; }
+  .acct-hero .hero-lb-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+  .acct-hero .hero-lb { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .2px;
+                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-hero .hero-num { font-size: 20px; font-weight: 800; letter-spacing: -.3px;
                          background: var(--hero-num-grad); -webkit-background-clip: text; background-clip: text;
-                         -webkit-text-fill-color: transparent; color: var(--brand-a); }
+                         -webkit-text-fill-color: transparent; color: var(--brand-a);
+                         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .acct-hero.empty .hero-num { background: none; -webkit-text-fill-color: initial; color: var(--muted-2); }
-  .acct-hero .hero-delta { margin-left: auto; flex: none; align-self: flex-start; font-size: 12px; font-weight: 700;
-                           padding: 2px 9px; border-radius: 999px; }
+  .acct-hero .hero-delta { flex: none; display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700;
+                           padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
   .acct-hero .hero-delta.up { color: var(--ok); background: var(--ok-glow); }
   .acct-hero .hero-delta.down { color: var(--err); background: var(--err-bg); }
   .acct-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; }
@@ -356,33 +356,48 @@
   .stat-card .stat-k { font-size: 11px; color: var(--muted); }
   .stat-card .stat-v { font-size: 15px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums;
                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hist-block { border: 1px solid var(--border); border-radius: var(--jc-radius); padding: 14px 16px;
-                margin-bottom: 12px; background: var(--bg); }
-  .hist-block-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
-  .hist-axis { font-size: 10px; fill: var(--muted); font-family: var(--font-mono); }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-  .cal-wd { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
-  .cal-cell { position: relative; aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--border);
-              display: flex; flex-direction: column; align-items: center; justify-content: center;
-              font-size: 12px; font-family: var(--font-mono); }
-  .cal-none { background: rgba(127,127,127,.06); color: var(--muted-2); }
-  .cal-ok { background: var(--accent-soft); color: var(--accent-strong); font-weight: 700; }
-  .cal-fail { background: rgba(239,68,68,.12); color: var(--err); font-weight: 700; }
-  .cal-both { background: rgba(245,158,11,.16); color: #d97706; font-weight: 700; }
-  .cal-empty { border: none; background: transparent; }
-  .cal-dot { position: absolute; top: 1px; right: 2px; min-width: 13px; height: 13px; padding: 0 3px;
-             border-radius: 999px; background: var(--err); color: #fff; font-size: 9px; line-height: 13px;
-             text-align: center; font-family: var(--font-mono); }
-  .cal-legend { display: flex; gap: 12px; align-items: center; margin-top: 10px; font-size: 11px;
-                color: var(--muted); flex-wrap: wrap; }
-  .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px;
-                  vertical-align: -1px; }
+  /* ---------- 签到历史（1.8.8 重新设计：概览统计 + 按日期分组的签到明细） ----------
+   * 分组：今天 / 昨天 / 更早 折叠组；每条：站点 · 账号 → 状态徽标 · 本地时间 · 收益（如有）。
+   * 状态徽标复用 .row-badge 统一体系（成功/失败/已跳过/待签），失败原因归一为短文案。 */
+  .hist-groups { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .hist-group { border: 1px solid var(--border); border-radius: var(--jc-radius); background: var(--bg); overflow: hidden; }
+  .hist-group-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px;
+                     background: transparent; border: 0; color: var(--ink); font-size: 13px; font-weight: 700;
+                     cursor: pointer; text-align: left; }
+  .hist-group-head:hover { background: var(--hover); }
+  .hist-group-head .hg-date { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .hist-group-head .hg-date em { font-style: normal; font-weight: 500; font-size: 11.5px; color: var(--muted); }
+  .hist-group-head .hg-count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--muted);
+                               padding: 1px 8px; border-radius: 999px; background: var(--border-soft); }
+  .hist-group-head .hg-chev { flex: none; width: 14px; height: 14px; color: var(--muted); transition: transform .15s ease; }
+  .hist-group.closed .hg-chev { transform: rotate(-90deg); }
+  .hist-group-body { border-top: 1px solid var(--border); padding: 4px 10px 8px; }
+  .hist-group.closed .hist-group-body { display: none; }
+  .hist-item { display: flex; align-items: center; gap: 10px; padding: 8px 6px; flex-wrap: wrap; }
+  .hist-item + .hist-item { border-top: 1px dashed var(--border); }
+  .hist-item .site-tag { width: 26px; height: 26px; flex: none; border-radius: 8px; font-size: 10px; }
+  .hist-item-main { flex: 1; min-width: 130px; }
+  .hist-item-who { font-size: 12.5px; font-weight: 600; color: var(--ink);
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-item-fail { font-size: 11px; color: var(--err); margin-top: 1px;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-item .row-badge { font-size: 11px; flex: none; }
+  .hist-item-side { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .hist-item-time { font-size: 11px; color: var(--muted); font-family: var(--font-mono); white-space: nowrap; }
+  .hist-item-reward { font-size: 11px; font-weight: 700; color: var(--ok); white-space: nowrap; }
+  .hist-list-title { font-size: 13px; font-weight: 700; margin: 16px 2px 2px; }
+  .hist-empty { padding: 34px 12px 30px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.8; }
+  .hist-empty::before { content: "▦"; display: block; margin-bottom: 8px; font-size: 26px;
+                        color: var(--accent); opacity: .5; }
+  @media (max-width: 560px) {
+    .hist-item-side { flex-basis: 100%; justify-content: flex-end; }
+  }
 
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
     .sidebar { position: fixed; z-index: 50; width: 62px; padding: 14px 8px 12px; }
     .brand { justify-content: center; padding: 0 0 16px; }
-    .brand-name, .brand-sub { display: none; }
+    .brand-name { display: none; }
     .nav button { justify-content: center; padding: 10px; }
     .nav button span { display: none; }
     .sidebar-foot .ver { font-size: 10px; }
@@ -401,7 +416,6 @@
       <div class="brand-mark">签</div>
       <div>
         <div class="brand-name">签到工具</div>
-        <div class="brand-sub">FLZT / 恩山 / 易破解 / NewApi / AnyRouter</div>
       </div>
     </div>
     <nav class="nav" id="tabs" aria-label="主导航">
@@ -419,7 +433,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.8.7</span>
+      <span class="ver" id="appVersion">v1.8.8</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -445,7 +459,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
             添加账号
           </button>
-          <button class="btn" onclick="openHistoryPanel()" title="签到历史统计 / 日历热力图 / 导出 CSV">
+          <button class="btn" onclick="openHistoryPanel()" title="签到历史（按日期分组查看 / 导出 CSV）">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-9M12 20V4M18 20v-6"/><path d="M3 20h18"/></svg>
             签到历史
           </button>
@@ -603,7 +617,7 @@
   </div>
 </div>
 
-<!-- 签到历史面板（1.5.4）：概览 + 近30天成功折线 + 当月日历热力图 + 导出 CSV -->
+<!-- 签到历史面板（1.8.8 重新设计）：概览统计 + 按日期分组（今天/昨天/更早）的签到明细 + 导出 CSV -->
 <div id="historyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
   <div class="history-panel">
     <div class="history-head">
@@ -917,18 +931,20 @@ function renderAcctCard(key, a, cap) {
     '<span class="nm" title="' + esc(siteName(key)) + '">' + esc(siteName(key)) + "</span></div>";
   // 今日判定徽标（F2）：有今日签到成功 → 「已签 HH:MM」；仅上次记录 → 「上次 HH:MM（M-D）」；无记录 → 空。
   // 失败保留红色展示（今日失败无日期；历史失败附 M-D，避免旧失败误导为今日）。
+  // 1.8.8：统一徽标体系新增「已跳过」——站点签到需人机验证（signin_skip）→ 琥珀色跳过徽标；
+  //   已签徽标不再重复「· 当天 +X」收益（当日收益已由 hero 区「今日收益」徽标统一展示，避免信息重复）。
   const todayOk = !!(d && d.today_ok);
   const lastDate = (d && d.last_date) || "";
   let dayBadge = "";
-  if (last) {
+  if (a.signin_skip) {
+    dayBadge = '<span class="row-badge b-skip" title="站点签到需人机验证，请在浏览器过验证后更新 Cookie"><span class="dot dot-skip"></span>已跳过 · 人机验证</span>';
+  } else if (last) {
     const t = esc(shortTime(last.time));
     if (last.status === "执行失败") {
       const sameDay = lastDate && lastDate === todayDate();
       dayBadge = '<span class="row-badge b-err"><span class="dot dot-err"></span>失败 ' + t + (sameDay ? "" : (lastDate ? "（" + mdDate(lastDate) + "）" : "")) + "</span>";
     } else if (todayOk) {
-      // 已签文案带当天签到奖励（flzt/right_forum/ypojie）：daily_reward_display 非空 → 追加「· 当天 +X 单位」
-      const rw = (d && d.daily_reward_display) ? (' · 当天 ' + esc(d.daily_reward_display)) : "";
-      dayBadge = '<span class="row-badge b-ok"><span class="dot dot-ok"></span>已签 ' + t + rw + "</span>";
+      dayBadge = '<span class="row-badge b-ok"><span class="dot dot-ok"></span>已签 ' + t + "</span>";
     } else {
       dayBadge = '<span class="row-badge b-idle"><span class="dot dot-mute"></span>上次 ' + t + (lastDate ? "（" + mdDate(lastDate) + "）" : "") + "</span>";
     }
@@ -953,20 +969,21 @@ function renderAcctCard(key, a, cap) {
       loginBadge = '<span class="login-badge"' + badgeOn + '><span class="dot"></span>未配置</span>';
     }
   }
-  // 统一英雄大数字（所有站点）：hero-num = 当前持有量（hero_display，空 → 「—」）；
-  //   hero-delta = 当天签到收益（hero_delta_display，>0 才有值）。图标按持有量语义选（流量/积分·余额·金币）。
+  // 统一数值主视觉（所有站点，1.8.8 重新设计）：主值 hero-num 适度大小 + 标签行右端「今日收益」小徽标
+  //   （hero_delta_display，>0 才有值；完整展示单位/千分位/标签，不截断）。图标按持有量语义选（流量/积分·余额·金币）。
   let balLine = "";
   if (d && d.hero_label) {
     const bl = esc(d.hero_label);
     const ico = heroIcon(d.hero_label);
     const hasVal = d.hero_display != null && d.hero_display !== "";
     const delta = d.hero_delta_display
-      ? '<span class="hero-delta up">' + esc(d.hero_delta_display) + "</span>"
+      ? '<span class="hero-delta up" title="当天签到收益">今日 ' + esc(d.hero_delta_display) + "</span>"
       : "";
     balLine = '<div class="acct-hero' + (hasVal ? "" : " empty") + '">' + ico +
-      '<span class="hero-main"><span class="hero-lb">' + bl + '</span><span class="hero-num">' +
-      (hasVal ? esc(d.hero_display) : "—") + "</span></span>" +
-      delta + "</div>";
+      '<span class="hero-main">' +
+        '<span class="hero-lb-row"><span class="hero-lb">' + bl + "</span>" + delta + "</span>" +
+        '<span class="hero-num">' + (hasVal ? esc(d.hero_display) : "—") + "</span>" +
+      "</span></div>";
   }
   // 账号卡「编辑」入口：打开该账号的纯账号配置页（无站点级功能）；改凭据保存即覆盖登录态。
   const editBtn = '<button class="btn btn-mini" title="编辑该账号配置（凭据/备注/启用）" onclick="openAccountEditor(\'' + key + "','" + esc(a.id || "") + '\')">' +
@@ -1776,10 +1793,12 @@ async function logClear() {
   } else alert("清空失败：" + (r.message || ""));
 }
 
-/* ── 签到历史可视化（1.5.4）─────────────────────────────────
- * 面板：概览 stat 卡 + 近30天成功数 SVG 折线 + 当月日历热力图 + 导出 CSV。
- * 数据：打开时 GET checkin/history_stats 一次；「刷新」重新拉取。
- * 纯 CSS/SVG 实现，不引入图表库（fnOS 单文件前端重量受限）。 */
+/* ── 签到历史（1.8.8 重新设计）────────────────────────────────
+ * 面板：概览 stat 卡 + 按日期分组的签到明细（今天 / 昨天 / 更早 折叠组）。
+ * 数据：打开时 GET history?limit=500（store 持久化上限 500，实际为全量）一次；「刷新」重新拉取。
+ * 每条明细：站点 · 账号 → 状态徽标（成功/失败/已跳过/待签）· 本地时间 · 收益（如有）；
+ * 失败原因归一为直观短文案（Cookie 过期 / 登录态失效 / 人机验证 / 账号或密码错误 / 网络或 IP 限制）。
+ * 纯 CSS 实现，不引入图表库（fnOS 单文件前端重量受限）。 */
 
 async function openHistoryPanel() {
   $("historyModal").style.display = "flex";
@@ -1791,126 +1810,195 @@ function closeHistoryPanel() {
   $("historyModal").style.display = "none";
 }
 
-/** 重新拉取 history_stats 并渲染面板（加载/失败态明确提示） */
+/** 重新拉取签到历史并渲染（加载/失败态明确提示） */
 async function refreshHistoryPanel() {
   const box = $("histBody");
   box.innerHTML = '<div class="empty">正在加载签到历史…</div>';
-  const r = await call("checkin/history_stats");
-  if (!(r && r.success && r.data)) {
+  const r = await call("history?limit=500");
+  if (!(r && r.success && r.data && Array.isArray(r.data.records))) {
     box.innerHTML = '<div class="empty">⚠ 加载失败：' + esc((r && r.message) || "未知错误") + "</div>";
     return;
   }
-  renderHistoryStats(r.data);
-  renderHistoryLine(r.data);
-  renderHistoryCalendar(r.data);
+  renderHistStats(r.data.records);
+  renderHistGroups(r.data.records);
 }
 
-/** 概览块：总记录 / 成功率 / 首签时间 / 最近签到 四卡 */
-function renderHistoryStats(d) {
-  const t = d.totals || {};
+/** 概览块：总记录 / 今日成功 / 成功率 / 最近签到 四卡（由本次拉取的历史记录本地计算，本地时区） */
+function renderHistStats(records) {
+  const ok = records.filter((r) => /成功|已签到/.test(String(r.status || ""))).length;
+  const fail = records.filter((r) => /失败/.test(String(r.status || ""))).length;
+  const todayK = todayDate();
+  const todayOk = records.filter((r) => /成功|已签到/.test(String(r.status || "")) && histDateKey(r.time) === todayK).length;
+  const attempts = ok + fail;
+  const rate = attempts ? Math.round((ok / attempts) * 1000) / 10 : 0;
+  const last = records[0] || null;
   const cards = [
-    { k: "总记录", v: String(t.records || 0) },
-    { k: "成功率", v: (t.success_rate != null ? String(t.success_rate) : "0") + "%" },
-    { k: "首签时间", v: t.first_time || "—" },
-    { k: "最近签到", v: t.last_time || "—" },
+    { k: "总记录", v: String(records.length) },
+    { k: "今日成功", v: String(todayOk) },
+    { k: "成功率", v: rate + "%" },
+    { k: "最近签到", v: last ? (histMd(last.time) + " " + histHm(last.time)).trim() : "—" },
   ];
   $("histBody").innerHTML =
     '<div class="stat-grid">' +
     cards.map((c) => '<div class="stat-card"><div class="stat-k">' + esc(c.k) + '</div><div class="stat-v" title="' + esc(c.v) + '">' + esc(c.v) + "</div></div>").join("") +
-    "</div>";
+    "</div>" +
+    '<div class="hist-list-title">签到明细 <span class="muted" style="font-weight:400;font-size:11.5px">按日期分组 · 本地时间</span></div>';
 }
 
-/** 折线块：近 30 天签到成功数（纯 SVG：基线 + polyline + 端点圆点；y 整数自动刻度；x 周标签 5 刻度） */
-function renderHistoryLine(d) {
-  const trend = Array.isArray(d.trend) ? d.trend : [];
+/* ── 历史记录 → 分组明细 ────────────────────────────── */
+
+/** history time 串（"2026/9/26 01:00:33"，服务器本地格式）→ 本地日期键 YYYY-MM-DD（与今天/昨天比对） */
+function histDateKey(t) {
+  const m = String(t || "").match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? (m[1] + "-" + String(+m[2]).padStart(2, "0") + "-" + String(+m[3]).padStart(2, "0")) : "";
+}
+
+/** history time 串 → HH:MM */
+function histHm(t) {
+  const m = String(t || "").match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  return m ? m[1] + ":" + m[2] : "";
+}
+
+/** history time 串 → M-D（更早分组内区分日期；锚定 4 位年，避免误取年月段） */
+function histMd(t) {
+  const m = String(t || "").match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? Number(m[2]) + "-" + Number(m[3]) : "";
+}
+
+/** 相对今天偏移 N 天的本地日期键（昨天 = -1） */
+function offsetDateKey(off) {
+  const d = new Date();
+  d.setDate(d.getDate() + off);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+function weekdayName(date) {
+  return "周" + "日一二三四五六"[date.getDay()];
+}
+
+/** 状态徽标（统一徽标体系：成功/失败/已跳过/其他，与账号卡 .row-badge 同款） */
+function histStatusBadge(rec) {
+  const s = String((rec && rec.status) || "");
+  if (/成功|已签到/.test(s)) return '<span class="row-badge b-ok"><span class="dot dot-ok"></span>成功</span>';
+  if (/失败/.test(s)) return '<span class="row-badge b-err"><span class="dot dot-err"></span>失败</span>';
+  if (/跳过|skip/i.test(s)) return '<span class="row-badge b-skip"><span class="dot dot-skip"></span>已跳过</span>';
+  return '<span class="row-badge b-idle"><span class="dot dot-mute"></span>' + esc(s || "待签") + "</span>";
+}
+
+/** 失败原因 → 直观短文案；无法归类的回落原文（截断 26 字），完整原因放 title。 */
+function shortFail(msg) {
+  const s = String(msg || "").trim();
+  if (!s) return "签到失败";
+  if (/人机|验证码|captcha|seccode|turnstile|WAF|waf|sceneId|安全验证/.test(s)) return "人机验证";
+  if (/登录态失效|access_token.*(?:无效|过期)|HTTP 401|HTTP 403|unauthoriz/.test(s)) return "登录态失效";
+  if (/Cookie|cookie/.test(s) && /过期|失效|无效|invalid|expired|401|403/.test(s)) return "Cookie 过期";
+  if (/账号或密码错误|用户名或密码|登录失败次数过多/.test(s)) return "账号或密码错误";
+  if (/超时|timeout|网络|ECONN|ENOTFOUND|IP 受限|连接被拒|refused|DNS/.test(s)) return "网络或 IP 限制";
+  if (/未配置|请先配置|请先填写/.test(s)) return "未配置凭据";
+  if (/没回 JSON|空响应|插件不可用|无可用签到接口|拒了|来源校验失败/.test(s)) return "站点接口异常";
+  return s.length > 26 ? s.slice(0, 26) + "…" : s;
+}
+
+/** 该条记录的收益展示：优先从 message 提取（含单位，完整不截断）；退路用 reward 裸值 + 站点单位启发 */
+function histReward(rec) {
+  if (!rec) return "";
+  const msg = String(rec.message || "");
+  let m = msg.match(/今日积分[:：]\s*([+\-]?\d[\d,]*(?:\.\d+)?)/);
+  if (m) return "+" + m[1] + " 积分";
+  m = msg.match(/本次签到增加[:：]\s*([+\-]?\d[\d,]*(?:\.\d+)?)\s*(积分|MB|GB|流量)?/i);
+  if (m) return "+" + m[1] + (m[2] ? " " + m[2] : "");
+  m = msg.match(/(?:奖励|获得)\s*([+\-]?[$¥]?\d[\d,]*(?:\.\d+)?)\s*([^\s，。;；]*)/i);
+  if (m) {
+    const num = m[1] || "";
+    const unit = (m[2] || "").trim();
+    return (num && !/^[+\-]/.test(num) ? "+" : "") + num + (unit ? " " + unit : "");
+  }
+  const rw = String(rec.reward || "");
+  if (rw && rw !== "-" && rw !== "0" && rw !== "+0") {
+    return (rw[0] === "+" || rw[0] === "-" ? "" : "+") + rw + (rec.site === "flzt" ? " MB" : "");
+  }
+  return "";
+}
+
+/** 单条明细行：站点 · 账号 → 状态徽标 · 本地时间 · 收益（如有）· 失败短文案（如有） */
+function histItemHtml(rec, inEarlier) {
+  const md = histMd(rec.time), hm = histHm(rec.time);
+  const timeTxt = inEarlier ? (md ? md + " " + hm : hm) : hm;
+  const site = esc(rec.site_name || rec.site || "?");
+  const who = esc(rec.account || "");
+  const isFail = /失败/.test(String(rec.status || ""));
+  const badge = histStatusBadge(rec);
+  const reward = histReward(rec);
+  const failLine = isFail
+    ? '<div class="hist-item-fail" title="' + esc(rec.error || rec.message || "") + '">' + esc(shortFail(rec.error || rec.message || "")) + "</div>"
+    : "";
+  return '<div class="hist-item">' +
+    '<span class="site-tag ' + siteTagClass(rec.site) + '">' + esc(siteShort(rec.site)) + "</span>" +
+    '<div class="hist-item-main">' +
+      '<div class="hist-item-who"><b>' + site + "</b>" + (who ? " · " + who : "") + "</div>" +
+      failLine +
+    "</div>" +
+    badge +
+    '<div class="hist-item-side">' +
+      (timeTxt ? '<span class="hist-item-time">' + timeTxt + "</span>" : "") +
+      (reward ? '<span class="hist-item-reward" title="当天签到收益">' + reward + "</span>" : "") +
+    "</div>" +
+  "</div>";
+}
+
+/** 按日期分组渲染（今天 / 昨天 / 更早 折叠组；分组计数；空态引导） */
+function renderHistGroups(records) {
+  const box = $("histBody");
   const sec = document.createElement("div");
-  sec.className = "hist-block";
-  sec.innerHTML = '<div class="hist-block-title">近 30 天签到成功数</div><div id="histLine"></div>';
-  $("histBody").appendChild(sec);
-  const line = $("histLine");
-  if (!trend.length || (d.totals && d.totals.records === 0)) {
-    line.innerHTML = '<div class="empty" style="padding:18px 0">暂无签到记录</div>';
+  sec.className = "hist-groups";
+  if (!records || !records.length) {
+    const empty = document.createElement("div");
+    empty.className = "hist-empty";
+    empty.innerHTML = "<b>还没有签到记录</b><br><span class=\"muted\">点击「立即签到全部」开始签到，成功 / 失败的记录会按日期出现在这里。</span>";
+    sec.appendChild(empty);
+    box.appendChild(sec);
     return;
   }
-  const W = 720, H = 150, PL = 40, PR = 14, PT = 10, PB = 24;
-  const n = trend.length;
-  const vals = trend.map((x) => Number((x && x.success) || 0));
-  const maxV = Math.max.apply(null, vals);
-  const step = niceTick(maxV);
-  const yMax = step ? Math.ceil(maxV / step) * step : 1;
-  const xR = W - PL - PR, yR = H - PT - PB;
-  const px = (i) => PL + (n > 1 ? (xR * i) / (n - 1) : xR);
-  const py = (v) => PT + yR * (1 - (yMax ? v / yMax : 0));
-  // y 网格线 + 整数刻度标签
-  let grid = "";
-  for (let v = 0; v <= yMax; v += step) {
-    const yv = py(v);
-    grid += '<line x1="' + PL + '" y1="' + yv.toFixed(1) + '" x2="' + (W - PR) + '" y2="' + yv.toFixed(1) + '" stroke="var(--border)" stroke-width="1"/>' +
-            '<text x="' + (PL - 6) + '" y="' + (yv + 3).toFixed(1) + '" text-anchor="end" class="hist-axis">' + v + "</text>";
+  const todayK = todayDate();
+  const yestK = offsetDateKey(-1);
+  const today = [], yest = [], earlier = [];
+  for (const rec of records) {
+    const k = histDateKey(rec.time);
+    if (k === todayK) today.push(rec);
+    else if (k === yestK) yest.push(rec);
+    else earlier.push(rec);
   }
-  // x 轴周标签（5 个刻度，M/D 格式）
-  let labels = "";
-  for (let i = 0; i < 5; i++) {
-    const idx = Math.round(((n - 1) * i) / 4);
-    const m = String(trend[idx] && trend[idx].date || "").match(/(\d{4})-(\d{2})-(\d{2})/);
-    const lb = m ? Number(m[2]) + "/" + Number(m[3]) : "";
-    labels += '<text x="' + px(idx).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" class="hist-axis">' + lb + "</text>";
+  const dToday = new Date(), dYest = new Date();
+  dYest.setDate(dYest.getDate() - 1);
+  const groups = [
+    { label: "今天", date: dToday, items: today, open: true },
+    { label: "昨天", date: dYest, items: yest, open: true },
+    { label: "更早", date: null, items: earlier, open: false },
+  ];
+  for (const g of groups) {
+    if (!g.items.length) continue;
+    const dateHtml = g.date
+      ? " <em>" + (g.date.getMonth() + 1) + "月" + g.date.getDate() + "日 " + weekdayName(g.date) + "</em>"
+      : "";
+    const bodyHtml = g.items.map((rec) => histItemHtml(rec, g.label === "更早")).join("");
+    const group = document.createElement("div");
+    group.className = "hist-group" + (g.open ? "" : " closed");
+    group.innerHTML =
+      '<button type="button" class="hist-group-head" aria-expanded="' + (g.open ? "true" : "false") + '" onclick="toggleHistGroup(this)">' +
+        '<span class="hg-date">' + g.label + dateHtml + "</span>" +
+        '<span class="hg-count">' + g.items.length + " 条</span>" +
+        '<svg class="hg-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' +
+      "</button>" +
+      '<div class="hist-group-body">' + bodyHtml + "</div>";
+    sec.appendChild(group);
   }
-  let path = "";
-  for (let i = 0; i < n; i++) path += (i ? " L" : "M") + px(i).toFixed(1) + " " + py(vals[i]).toFixed(1);
-  const dots = vals.map((v, i) => '<circle cx="' + px(i).toFixed(1) + '" cy="' + py(v).toFixed(1) + '" r="2.2" fill="var(--accent)"/>').join("");
-  line.innerHTML =
-    '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block">' +
-    '<line x1="' + PL + '" y1="' + py(0).toFixed(1) + '" x2="' + (W - PR) + '" y2="' + py(0).toFixed(1) + '" stroke="var(--border)" stroke-width="1.5"/>' +
-    grid + labels +
-    '<polyline points="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
-    dots + "</svg>";
+  box.appendChild(sec);
 }
 
-/** y 轴整数刻度步长：取 1/2/5×10^k（顶端 ≥ 数据峰值，刻度均为整数） */
-function niceTick(v) {
-  if (v <= 0) return 1;
-  const pow = Math.pow(10, Math.floor(Math.log10(v)));
-  const q = v / pow;
-  const s = q <= 1 ? 1 : (q <= 2 ? 2 : (q <= 5 ? 5 : 10));
-  return s * pow;
-}
-
-/** 日历热力图块：当月 7 列（一~日）网格；格色按当日成功/失败比例；右上角红点=失败次数 */
-function renderHistoryCalendar(d) {
-  const now = new Date();
-  const ym = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
-  const map = {};
-  (Array.isArray(d.calendar) ? d.calendar : []).forEach((r) => { if (r && r.date) map[r.date] = r; });
-  const firstDow = new Date(now.getFullYear(), now.getMonth(), 1).getDay(); // 0=周日
-  const colOf = (dow) => (dow === 0 ? 6 : dow - 1); // 列序：一(0)…日(6)
-  const leads = colOf(firstDow);
-  const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  let cells = "";
-  for (const c of "一二三四五六日") cells += '<span class="cal-wd">' + c + "</span>";
-  for (let i = 0; i < leads; i++) cells += '<span class="cal-cell cal-empty"></span>';
-  for (let dd = 1; dd <= totalDays; dd++) {
-    const date = ym + "-" + String(dd).padStart(2, "0");
-    const g = map[date] || null;
-    const s = g ? g.success : 0, f = g ? g.failed : 0;
-    let cls = "cal-cell ";
-    cls += (s > 0 && f === 0) ? "cal-ok" : (f > 0 && s === 0) ? "cal-fail" : (s > 0 && f > 0) ? "cal-both" : "cal-none";
-    const dot = f > 0 ? '<span class="cal-dot">' + f + "</span>" : "";
-    const title = date + " · 成功 " + s + " / 失败 " + f;
-    cells += '<span class="' + cls + '" title="' + title + '">' + dot + "<span>" + dd + "</span></span>";
-  }
-  const sec = document.createElement("div");
-  sec.className = "hist-block";
-  sec.innerHTML =
-    '<div class="hist-block-title">签到日历 · ' + now.getFullYear() + "年" + (now.getMonth() + 1) + "月</div>" +
-    '<div class="cal-grid">' + cells + "</div>" +
-    '<div class="cal-legend">' +
-      '<span><i style="background:var(--accent-soft);border:1px solid var(--accent)"></i>仅成功</span>' +
-      '<span><i style="background:rgba(239,68,68,.14);border:1px solid var(--err)"></i>仅失败</span>' +
-      '<span><i style="background:rgba(245,158,11,.18);border:1px solid #f59e0b"></i>成功+失败</span>' +
-      '<span><i style="background:rgba(127,127,127,.08)"></i>无记录</span>' +
-    "</div>";
-  $("histBody").appendChild(sec);
+function toggleHistGroup(btn) {
+  const g = btn.parentElement;
+  const closed = g.classList.toggle("closed");
+  if (btn) btn.setAttribute("aria-expanded", closed ? "false" : "true");
 }
 
 /** 导出 CSV：GET checkin/history_export（text/csv + Content-Disposition → 浏览器直接下载，不跳转页面） */
