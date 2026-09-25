@@ -1,18 +1,17 @@
 # FnOS-APP
 
-面向飞牛 fnOS 的第三方应用统一维护仓库。与 `fnos-apps` 并存：应用代码整体复制到本仓库，
-由**一份统一更新引擎** `scripts/update.sh` 维护所有应用的构建与热更清单。
-
-> 源仓库 `fnos-apps` 保持现状完全不动（只读参考源）；本仓库为后续统一维护的落点。
+面向飞牛 fnOS 的第三方应用统一维护仓库。本仓库为 115网盘助手（p115assistant）与签到工具（checkin）的
+统一维护落点（原 FnOS-APP 仓库已并入；旧版归档 `Projects/archive/fnos-apps-20260920-184738/`，
+只读参考不可修改），由**一份统一更新引擎** `scripts/update.sh` 维护所有应用的构建与热更清单。
 
 ## 应用一览
 
 | App | slug | 功能版本 | 类型 | 说明 |
 |---|---|---|---|---|
-| [115网盘助手](apps/p115assistant/) | `p115assistant` | 1.0.3 | micro_app（原生） | 115 网盘浏览/上传/STRM/签到/302取链 |
-| [自用签到](apps/checkin/) | `checkin` | 1.0.5 | micro_app（原生） | 多站点自动签到工具 |
+| [115网盘助手](apps/p115assistant/) | `p115assistant` | 1.2.7 | micro_app（原生） | 115 网盘浏览/上传/STRM/签到/302取链 |
+| [自用签到](apps/checkin/) | `checkin` | 1.8.6 | micro_app（原生） | 多站点自动签到工具 |
 
-功能版本单一事实源 = `apps/<slug>/VERSION`；FPK 安装包版本恒 `1.0.0`。
+功能版本单一事实源 = `apps/<slug>/VERSION`；FPK 安装包版本当前 `1.0.1`（发布模型=纯热更，不走 fpk 升级；若未来启用 fpk 升级通道按官方语义随发布递增）。
 
 ## 目录布局
 
@@ -38,8 +37,8 @@ FnOS-APP/
 
 ```bash
 ./scripts/update.sh list          # 列出应用
-./scripts/update.sh p115assistant # 构建单个应用 → dist/p115assistant_1.0.0_all.fpk
-./scripts/update.sh checkin       # 构建单个应用 → dist/checkin_1.0.0_all.fpk
+./scripts/update.sh p115assistant # 构建单个应用 → dist/p115assistant_<fpk_version>_all.fpk
+./scripts/update.sh checkin       # 构建单个应用 → dist/checkin_<fpk_version>_all.fpk
 ./scripts/update.sh all           # 构建全部
 ```
 
@@ -73,5 +72,5 @@ python3 scripts/gen_runtime_manifest.py --app p115assistant --check
 
 - [`docs/architecture.md`](docs/architecture.md)：仓库结构唯一权威文档。
 - [`docs/migration-baseline.md`](docs/migration-baseline.md)：从 fnos-apps 迁移的基线与结果。
-- [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md)：AI 协作规范与项目强制规则。
+- [`AGENTS.md`](AGENTS.md)：AI 协作规范与项目强制规则。
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)：贡献指南。

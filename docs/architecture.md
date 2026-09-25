@@ -3,6 +3,13 @@
 > 本文档是 FnOS-APP 仓库结构的**唯一权威文档**。实现与本文档不一致时，以本文档为准；
 > 若实现有合理理由偏离，必须改本文档并记录原因。
 > 建立日期：2026-09-20。
+>
+> **修订说明（2026-09-25，对齐官方文档与现状）**：本文初稿描述的「全新独立仓库 FnOS-APP 与
+> fnos-apps 并存、fnos-apps 只读参考源」为迁移期计划。**2026-09-20 起统一仓库落点即本仓库
+> （fnos-apps）**，原 FnOS-APP 内容已并入，旧版归档 `Projects/archive/fnos-apps-20260920-184738/`
+> （只读）。正文中「FnOS-APP」「并存」「只读参考源」表述按历史背景理解；结构/引擎/发布流程设计
+> 部分仍为当前有效规范。开发/打包须同时符合 `docs/fnnas-app-requirements.md`（官方要求归纳，
+> 冲突时以官方为准）。当前功能版本：p115assistant 1.2.x、checkin 1.8.x（单一事实源=apps/<slug>/VERSION）。
 
 ## 0. 背景与目标
 
@@ -54,8 +61,7 @@ FnOS-APP/
 │   └── add-app.md               # 新增应用操作指南
 ├── dist/                        # 构建产物（.fpk），不入 Git
 ├── README.md                    # 仓库总览 + 快速开始
-├── AGENTS.md                    # AI 协作规范
-├── CLAUDE.md                    # 项目强制规则（设备/备份/安全约定）
+├── AGENTS.md                    # AI 协作规范与项目强制规则
 └── CONTRIBUTING.md              # 贡献指南（指向 docs/add-app.md）
 ```
 
@@ -99,7 +105,7 @@ FnOS-APP/
 | `docs/migration-baseline.md` | 迁移基线快照 + 迁移后对比结果 |
 | `docs/add-app.md` | 新增应用操作指南 |
 | `README.md` | 仓库总览、目录布局、快速开始（构建/更新/新增应用/发布流程） |
-| `AGENTS.md` / `CLAUDE.md` | AI 协作规范与项目强制规则 |
+| `AGENTS.md` | AI 协作规范与项目强制规则 |
 | `CONTRIBUTING.md` | 贡献指南（指向 add-app.md） |
 
 ### 2.5 `dist/`
@@ -124,7 +130,7 @@ FnOS-APP/
 | `display_name` | 桌面显示名 | 人类可读中文名 |
 | `version` | **FPK 版本**（安装包维度） | 随 fpk 发布递增，**非强制 `1.0.0`**（fpk 升级只认「版本号高于已安装」）；功能热更走功能版本，不走 fpk 升级 |
 | `platform` | 目标平台 | `all` |
-| `distributor_url` | 分发渠道 | 本轮为新仓库占位 `https://github.com/LittlePigeno217/FnOS-APP` |
+| `distributor_url` | 分发渠道 | `https://github.com/LittlePigeno217/fnos-apps`（当前统一仓库远端） |
 | `maintainer_url` | 维护者主页 | `https://github.com/LittlePigeno217`（保留） |
 | `checksum` | app.tgz 校验 | 构建时由 build-fpk.sh 写入 |
 
@@ -177,8 +183,8 @@ scripts/apps/<slug>/
 # <slug> 构建合约（本地项目，无外部上游 release）
 FILE_PREFIX=<slug>                          # dist 产物文件名前缀（默认 = slug）
 RELEASE_TITLE="应用显示名"                   # 发布标题
-DEFAULT_PORT=0                              # 默认端口（0 = 不暴露端口，micro_app）
-HOMEPAGE_URL=https://github.com/LittlePigeno217/FnOS-APP
+DEFAULT_PORT=0                              # 默认端口（0 = 不暴露端口，micro_app——见官方要求 §1 说明）
+HOMEPAGE_URL=https://github.com/LittlePigeno217/fnos-apps
 CATEGORY=media                              # 应用分类（media/utility/tool…）
 POST_INSTALL_NOTE="安装后的操作提示"          # 安装完成引导文案
 # VERSION_ENV=<SLUG>_VERSION                # 可选：版本 env 变量名，默认 `<SLUG_UPPER>_VERSION`
@@ -194,14 +200,14 @@ platform        = all
 maintainer      = LittlePigeno
 maintainer_url  = https://github.com/LittlePigeno217
 distributor     = LittlePigeno
-distributor_url = https://github.com/LittlePigeno217/FnOS-APP
+distributor_url = https://github.com/LittlePigeno217/fnos-apps
 os_min_version  = 1.2.0401
 desktop_uidir   = ui
 desktop_applaunchname = <slug>.main
 service_port    = 0
 checkport       = false
 ctl_stop        = true
-micro_app       = true
+micro_app       = true    # 实测字段：官方文档未收录但装机验证有效（勿盲目移除）
 desc            = <应用描述>
 source          = thirdparty
 checksum        =

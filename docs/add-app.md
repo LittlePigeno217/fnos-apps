@@ -1,12 +1,12 @@
 # 新增应用操作指南
 
-本文档描述如何向 FnOS-APP 仓库新增一个 fnOS 应用，并接入统一更新引擎。
+本文档描述如何向本仓库（fnos-apps，115网盘助手/签到工具统一维护点，原 FnOS-APP 已并入）新增一个 fnOS 应用，并接入统一更新引擎。
 结构规范以 [`architecture.md`](architecture.md) 为准。
 
 ## 1. 前提
 
 - 具备应用的可运行 Node 后端（`fnos/app/server/`）与前端（`fnos/app/ui/`）。
-- 了解双版本体系：FPK 版本恒 `1.0.0`（安装包维度）；功能版本（`VERSION` 文件）走热更递增。
+- 了解双版本体系：FPK 版本（`fnos/manifest` `version`，当前 1.0.1，随 fpk 发布递增；当前发布模型=纯热更不走 fpk 升级）；功能版本（`VERSION` 文件）走热更递增。
 - 仓库为本地仓库，本轮**不配置 remote、不 push**；发布通道约定见 architecture.md §6.2。
 
 ## 2. 脚手架
@@ -23,7 +23,7 @@
 apps/<slug>/
 ├── VERSION                  # 功能版本单一事实源（初始 0.0.1）
 ├── fnos/
-│   ├── manifest             # appname/display_name/version=1.0.0/...
+│   ├── manifest             # appname/display_name/version=<fpk_version>/...
 │   ├── app/server/          # 后端运行时（入口 main.js）
 │   ├── app/ui/              # 前端运行时（打包进 www/）
 │   ├── ui/config + images/  # 桌面入口配置
@@ -58,9 +58,9 @@ scripts/apps/<slug>/
 | 字段 | 值 |
 |---|---|
 | `appname` | = slug |
-| `version` | `1.0.0`（FPK 版本恒 1.0.0，**不要改**） |
+| `version` | FPK 版本（取 manifest 实值，随 fpk 发布递增；当前发布模型=纯热更，维持 1.0.1 勿降级） |
 | `platform` | `all` |
-| `distributor_url` | `https://github.com/LittlePigeno217/FnOS-APP`（本轮无发布通道，占位） |
+| `distributor_url` | `https://github.com/LittlePigeno217/fnos-apps`（当前统一仓库远端） |
 | `desktop_applaunchname` | `<slug>.main`（须与后端微应用名一致） |
 | `service_port` | 按需（0 = 不暴露端口） |
 
@@ -73,14 +73,14 @@ scripts/apps/<slug>/
 ## 4. 构建与校验
 
 ```bash
-./scripts/update.sh <slug>        # 构建 → dist/<file_prefix>_1.0.0_all.fpk + 重生成清单
+./scripts/update.sh <slug>        # 构建 → dist/<file_prefix>_<fpk_version>_all.fpk + 重生成清单
 python3 scripts/gen_runtime_manifest.py --app <slug> --check   # 清单一致性
 ```
 
 构建前确认：
 
 - `apps/<slug>/VERSION` 存在且为 `x.y.z`（构建流程只读，不写）。
-- manifest `version` = `1.0.0`（否则引擎报错拒绝）。
+- manifest `version` = 取实值（`build-fpk.sh` 原样使用；引擎不强制 1.0.0，见 architecture.md §5.2）。
 - `fnos/app/server`、`fnos/app/ui`、`fnos/ui` 三个目录存在（公共构建函数要求）。
 
 ## 5. 功能热更发布（接入统一引擎后）
