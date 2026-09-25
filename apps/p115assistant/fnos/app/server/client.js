@@ -1128,12 +1128,30 @@ class U115Client {
     const end = parseInt(endText, 10);
     const fd = fs.openSync(localPath, "r");
     try {
+      // sign_check 为「闭区间字节偏移」（HTTP Range 风格，如 0-131071 表示
+      // 第 0～131071 字节共 131072 字节）。参考实现按 `end - start + 1` 读取：
+      // p115liteassistant client.py `handle.read(end - start + 1)`、上游
+      // p115client 以 `range="bytes="+sign_check` 请求（服务端闭区间返回）。
       const length = end - start + 1;
       const buf = Buffer.alloc(length);
-      fs.readSync(fd, buf, 0, length, start);
-      // SHA1 全链路统一小写（对齐 fileid/preid 的 hexdigest() 与参考实现 p115client）：
-      // 此前 toUpperCase() 与其余 SHA1 大小写不一致，遇 115 侧大小写敏感比对会误判。
-      const signValue = crypto.createHash("sha1").update(buf).digest("hex");
+      // fs.readSync 单次可能读不满 length（POSIX 允许短读），未读满部分若按零
+      // 参与 SHA1 会算错 sign_val（→ 115 二次认证 code=702）；循环读满，且只对
+      // 实际读入字节计算摘要（对齐参考实现的精确区间读）。
+      let total = 0;
+      while (total < length) {
+        const read = fs.readSync(fd, buf, total, length - total, start + total);
+        if (read <= 0) break;
+        total += read;
+      }
+      // sign_val 必须为大写 hex（115 侧大小写敏感比对）。对齐参考实现：
+      // p115liteassistant client.py `sha1(区段).hexdigest().upper()` 与上游
+      // p115client `sha1(content).hexdigest().upper()`。1.2.2 曾误统一为小写，
+      // 导致签名不匹配、115 二次认证返回 code=702（1.3.0 起真实错误可见）。
+      const signValue = crypto
+        .createHash("sha1")
+        .update(buf.subarray(0, total))
+        .digest("hex")
+        .toUpperCase();
       return {
         pick_code: String(initResult.pick_code || ""),
         sign_key: String(initResult.sign_key || ""),
