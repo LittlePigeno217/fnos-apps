@@ -175,10 +175,12 @@ function napiUsd(quota) {
   return "$" + (Number(quota || 0) / 500000).toFixed(2);
 }
 
-/** GET {base}/api/user/self → {quota, used_quota}；401 抛明确失效文案；WAF 拦截抛人机验证指引；其余解析失败 → null */
-async function fetchUserInfo(base, auth, useProxy) {
+/** GET {base}{userInfoPath} → {quota, used_quota}；401 抛明确失效文案；WAF 拦截抛人机验证指引；其余解析失败 → null
+ *  userInfoPath 默认 /api/user/self，可由账号高级项 user_info_path 覆盖（对齐 anyrouter-check-in）。 */
+async function fetchUserInfo(base, auth, useProxy, userInfoPath) {
   const s = new Session();
-  const r = await s.get(base + "/api/user/self", { headers: newApiHeaders(auth), timeout: 15000, useProxy });
+  const path = String(userInfoPath || "").trim() || "/api/user/self";
+  const r = await s.get(base + path, { headers: newApiHeaders(auth), timeout: 15000, useProxy });
   if (r.status === 401) throw new Error("登录态失效（HTTP 401）：Cookie 过期或 Token 无效，请重新获取（session 约 1 个月有效）");
   if (isWafChallenge(r.text)) {
     throw new Error(`平台 WAF 人机验证拦截了用户信息接口：Cookie 缺少 acw_sc__v2 等验证标识，请在浏览器访问 ${base} 通过验证后复制完整 Cookie`);
@@ -906,7 +908,6 @@ const NEWAPI = {
     { key: "base_url", label: "平台地址", type: "text", ph: "AnyRouter/AgentRouter 可留空；自建 NewAPI/OneAPI 必填" },
     { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（WAF 站点用这个；三选一）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
-    { key: "api_user_key", label: "API User 头名", type: "text", ph: "默认 new-api-user（自定义平台可改）" },
     { key: "access_token", label: "访问令牌", type: "password", ph: "Bearer 令牌（NewAPI/Sub2API 通用，优先；三选一）" },
     { key: "username", label: "账号 / 邮箱", type: "text", ph: "邮箱密码登录（无 WAF 平台可用；三选一）" },
     { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
@@ -914,6 +915,25 @@ const NEWAPI = {
     { key: "delta_ok", label: "余额增量判定", type: "select", options: [
       { value: "on", label: "开启（推荐：签到后余额增加才算成功）" },
       { value: "off", label: "关闭（按接口返回码判定）" },
+    ] },
+    // ── 服务商高级配置（group=advanced；对齐 anyrouter-check-in 自定义 Provider 配置）──
+    // 全部可留空：留空/清除 → 使用当前 NEWAPI 适配器默认路径 / 请求头，行为与 1.8.9 完全一致（零回归）。
+    { key: "domain", label: "服务商地址（覆盖）", type: "text", group: "advanced",
+      ph: "如 https://custom.example.com（留空=用上方平台地址）" },
+    { key: "login_path", label: "登录路径", type: "text", group: "advanced", ph: "默认 /api/user/login" },
+    { key: "sign_in_path", label: "签到路径", type: "text", group: "advanced", ph: "默认 /api/user/sign_in" },
+    { key: "user_info_path", label: "用户信息路径", type: "text", group: "advanced", ph: "默认 /api/user/self" },
+    { key: "api_user_key", label: "API User 头名", type: "text", group: "advanced", ph: "默认 new-api-user（自定义平台可改）" },
+    { key: "bypass_method", label: "WAF 绕过", type: "select", group: "advanced", options: [
+      { value: "", label: "无（默认，被拦时按响应识别）" },
+      { value: "waf_cookies", label: "waf_cookies（认证前校验 WAF Cookie 是否齐全）" },
+    ] },
+    { key: "waf_cookie_names", label: "WAF Cookie 名", type: "text", group: "advanced",
+      ph: "逗号分隔，默认 acw_tc,acw_sc__v2（仅 WAF 绕过=waf_cookies 时生效）" },
+    { key: "use_proxy", label: "代理", type: "select", group: "advanced", options: [
+      { value: "", label: "默认（跟随站点代理开关）" },
+      { value: "on", label: "开启（本账号强制走代理）" },
+      { value: "off", label: "关闭（本账号强制不走代理）" },
     ] },
   ],
   base: "", // NewAPI 无默认地址（base_url 必填，缺失时明确报错，避免请求假占位域名）
@@ -962,6 +982,9 @@ const NEWAPI = {
       base_url: "",
       username: "", password: "", cookie: "", api_user: "", api_user_key: "", access_token: "",
       delta_ok: "on",
+      // 服务商高级配置（留空=默认，对齐 anyrouter-check-in 自定义 Provider）
+      domain: "", login_path: "", sign_in_path: "", user_info_path: "",
+      bypass_method: "", waf_cookie_names: "",
     };
   },
   /** 键归一（兼容两类旧账号 + provider 驱动地址；不改动入参，返回克隆）：
@@ -1173,9 +1196,40 @@ const NEWAPI = {
     throw new Error((j.message || `签到失败（code=${j.code} ret=${j.ret}）`));
   },
 
-  /** base_url → 归一 base（NewAPI 无默认：缺失留空，由 _authHeaders 明确报错） */
+  /** base_url → 归一 base（NewAPI 无默认：缺失留空，由 _authHeaders 明确报错）。
+   *  高级项 domain 覆盖：填写 domain 时优先用它（对齐 anyrouter-check-in domain 语义）。 */
   _base(cfg) {
+    const dom = String((cfg && cfg.domain) || "").trim().replace(/\/+$/, "");
+    if (dom) return dom;
     return napiBase(cfg);
+  },
+  /** 高级项路径归一：留空/清除 → 用适配器默认（零回归）。对齐 anyrouter-check-in
+   *  login_path / sign_in_path / user_info_path 覆盖能力。 */
+  _paths(cfg) {
+    const pick = (v, d) => { const s = String(v == null ? "" : v).trim(); return s || d; };
+    return {
+      login: pick(cfg && cfg.login_path, this.loginPath),
+      signIn: pick(cfg && cfg.sign_in_path, this.signInPath),
+      userInfo: pick(cfg && cfg.user_info_path, this.userInfoPath),
+    };
+  },
+  /** WAF Cookie 名清单（bypass_method=waf_cookies 时用）：留空 → 默认 acw_tc / acw_sc__v2。 */
+  _wafCookieNames(cfg) {
+    const raw = String((cfg && cfg.waf_cookie_names) || "").trim();
+    if (raw) return raw.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
+    return ["acw_tc", "acw_sc__v2"];
+  },
+  /** bypass_method=waf_cookies：认证前校验 Cookie 是否含全部 WAF Cookie，缺失给清晰错误。
+   *  未开启（默认）→ 不校验，行为与 1.8.9 一致（被拦仍由 isWafChallenge 响应识别兜底）。 */
+  _assertWafCookies(cfg) {
+    if (String((cfg && cfg.bypass_method) || "").trim().toLowerCase() !== "waf_cookies") return;
+    const cookie = String((cfg && cfg.cookie) || "");
+    if (!cookie.trim()) return; // 无 Cookie（走令牌/账密）→ 该校验不适用
+    const names = this._wafCookieNames(cfg);
+    const missing = names.filter((n) => !new RegExp("(?:^|;\\s*)" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*=", "i").test(cookie));
+    if (missing.length) {
+      throw new Error(`WAF 绕过校验失败：Cookie 缺少 ${missing.join("、")}，请在浏览器通过验证后复制完整 Cookie（bypass_method=waf_cookies）`);
+    }
   },
   /** base_url → 纯 host（小写），用于平台判定 */
   _host(cfg) {
@@ -1194,7 +1248,7 @@ const NEWAPI = {
     }
     if (cfg.username && cfg.password) {
       const s = new Session();
-      let r = await s.postJson(base + this.loginPath, { username: cfg.username, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
+      let r = await s.postJson(base + this._paths(cfg).login, { username: cfg.username, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
       if (isWafChallenge(r.text)) {
         throw new Error(`平台有 WAF 人机验证，账号密码方式被拦截：请在浏览器访问 ${base} 后改用「Cookie + api_user」方式配置`);
       }
@@ -1237,8 +1291,10 @@ const NEWAPI = {
     throw new Error("请配置账号密码，或 Cookie + api_user");
   },
 
-  /** 会话构造认证（1.6.7）：NewAPI 不保持登录态——每次签到从配置凭据现场认证，不读取/复用已存 session */
+  /** 会话构造认证（1.6.7）：NewAPI 不保持登录态——每次签到从配置凭据现场认证，不读取/复用已存 session。
+   *  1.9.0：认证前先执行 bypass_method=waf_cookies 的 WAF Cookie 完整性校验（默认关闭，零回归）。 */
   async _resolveAuth(cfg) {
+    this._assertWafCookies(cfg);
     return this._authHeaders(cfg);
   },
 
@@ -1339,8 +1395,8 @@ const NEWAPI = {
     },
   },
 
-  async _getUserInfo(auth, useProxy) {
-    return fetchUserInfo(auth.base, auth, useProxy);
+  async _getUserInfo(auth, useProxy, cfg) {
+    return fetchUserInfo(auth.base, auth, useProxy, cfg && this._paths(cfg).userInfo);
   },
   _fmtUsd(quota) {
     return napiUsd(quota);
@@ -1370,7 +1426,7 @@ const NEWAPI = {
     // 1.6.4：统一走通用 NewAPI 流程（访问令牌 Bearer / 账密 / Cookie）；通用端点 404/不存在时自动回退 Sub2API（/api/v1）协议
     const auth = await this._resolveAuth(cfg);
     let before = null;
-    try { before = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
+    try { before = await this._getUserInfo(auth, cfg.use_proxy, cfg); } catch { /* 取不到不致命 */ }
 
     const doSign = (path) => {
       const s = new Session();
@@ -1379,7 +1435,7 @@ const NEWAPI = {
         timeout: 15000, useProxy: cfg.use_proxy,
       });
     };
-    let r = await doSign(auth.base + this.signInPath);
+    let r = await doSign(auth.base + this._paths(cfg).signIn);
     // OneAPI 平台没有 /api/user/sign_in → fallback /api/user/checkin
     if (r.status === 404 || /not found|接口不存在|invalid action/i.test(String(r.text || ""))) {
       r = await doSign(auth.base + this.fallbackSignInPath);
@@ -1425,7 +1481,7 @@ const NEWAPI = {
 
     // 签到后余额（对比奖励）
     let after = null;
-    try { after = await this._getUserInfo(auth, cfg.use_proxy); } catch { /* 取不到不致命 */ }
+    try { after = await this._getUserInfo(auth, cfg.use_proxy, cfg); } catch { /* 取不到不致命 */ }
     const balanceMsg = napiBalanceMsg(after);
     // 奖励优先取接口直接回写的 quota_awarded（NewApiCheckInRecord 字段），否则用签到前后余额差
     let rewardMsg = "";
@@ -1501,7 +1557,7 @@ const NEWAPI = {
     const cfg = this._normalize(rawCfg);
     const auth = await this._resolveAuth(cfg);
     try {
-      const info = await this._getUserInfo(auth, cfg.use_proxy);
+      const info = await this._getUserInfo(auth, cfg.use_proxy, cfg);
       if (!info) return { site: this.key, site_name: this.name, message: "连接成功，凭据有效（该站点未返回额度信息）" };
       const who = cfg.username ? maskEmail(cfg.username) : (auth.type === "token" ? "访问令牌" : "Cookie");
       return { site: this.key, site_name: this.name, message: `连接成功，${who} 有效，余额 ${this._fmtUsd(info.quota)}` };
@@ -1529,7 +1585,7 @@ const NEWAPI = {
     try {
       const cfg = this._normalize(rawCfg);
       const auth = await this._resolveAuth(cfg);
-      const info = await this._getUserInfo(auth, cfg.use_proxy);
+      const info = await this._getUserInfo(auth, cfg.use_proxy, cfg);
       if (!info) return null;
       return Number(info.quota) || 0; // 原始点数（500000 点 = $1）
     } catch { return null; } // Sub2API 无 self 端点等 → 跳过快照

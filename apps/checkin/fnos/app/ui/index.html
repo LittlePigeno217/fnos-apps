@@ -433,7 +433,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.8.9</span>
+      <span class="ver" id="appVersion">v1.9.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -675,6 +675,30 @@ function getSiteMeta(key) {
 function siteFields(key) {
   const m = getSiteMeta(key);
   return Array.isArray(m.fields) ? m.fields : [];
+}
+/** 拆分基础字段 / 高级字段（f.group==="advanced"）：高级项折叠进「服务商高级配置」区（1.9.0） */
+function siteFieldsSplit(key) {
+  const all = siteFields(key);
+  return {
+    basic: all.filter((f) => f.group !== "advanced"),
+    advanced: all.filter((f) => f.group === "advanced"),
+  };
+}
+/** 高级配置折叠区外壳：留空=默认，含「清除高级配置」按钮（把区内输入清空/选择回默认，保存时空值归默认，零残留） */
+function advancedSectionHtml(rowsHtml) {
+  if (!rowsHtml) return "";
+  return '<details class="adv-config" style="margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:6px 8px">' +
+    '<summary style="cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none">服务商高级配置（可选，留空=默认）</summary>' +
+    '<div style="margin-top:8px">' + rowsHtml +
+    '<button type="button" class="btn" style="width:100%;margin-top:4px;font-size:12px" onclick="clearAdvancedConfig(this)">清除高级配置（全部回默认）</button>' +
+    '</div></details>';
+}
+/** 清除高级配置：把所在折叠区内 input 清空、select 选回首项（首项即「默认」空值），保存时后端归一为默认 */
+function clearAdvancedConfig(btn) {
+  const box = btn && btn.closest(".adv-config");
+  if (!box) return;
+  box.querySelectorAll("input").forEach((i) => { i.value = ""; });
+  box.querySelectorAll("select").forEach((s) => { s.selectedIndex = 0; });
 }
 function siteShort(key) {
   const m = getSiteMeta(key);
@@ -1372,14 +1396,16 @@ async function submitAddPassword() {
 
 /** 手动 Cookie tab：渲染全部 adapter 字段（cookie/token 等），保存为新账号（合并进现有账号集） */
 function renderAddCookiePanel(key) {
-  const fields = siteFields(key);
-  const rows = fields.map((f) => `
+  const { basic, advanced } = siteFieldsSplit(key);
+  const rowHtml = (f) => `
     <div class="cred-row">
       <div class="cred-label">${esc(f.label)}</div>
       ${f.type === "select"
         ? `<select class="input mono" id="addck_${esc(f.key)}">${(f.options || []).map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")}</select>`
         : `<input class="input mono" id="addck_${esc(f.key)}" type="${f.type}" placeholder="${esc(f.ph || "")}" autocomplete="off">`}
-    </div>`).join("");
+    </div>`;
+  const rows = basic.map(rowHtml).join("");
+  const advRows = advancedSectionHtml(advanced.map(rowHtml).join(""));
   const isEnshan = key === "right_forum";
   $("addPanel").innerHTML =
     '<div class="add-panel-tip">' +
@@ -1387,6 +1413,7 @@ function renderAddCookiePanel(key) {
                 : "手动粘贴凭据 / Token 保存账号（扫码或账号密码不可用时的备用方式）。") +
     "</div>" +
     rows +
+    advRows +
     '<div class="cred-row"><div class="cred-label">备注（可选）</div>' +
       '<input class="input" id="addck_remark" placeholder="用于区分多账号"></div>' +
     '<button type="button" class="btn primary" id="addckBtn" style="width:100%;margin-top:6px" onclick="submitAddCookie()">保存账号</button>' +
@@ -1593,7 +1620,7 @@ function accountEditEl(key, acc) {
   const detail = acctDetail(key, acc.id) || {};
   const masks = detail.field_masks || {};
   const vals = detail.field_values || {};
-  const fields = siteFields(key).map((f) => {
+  const renderField = (f) => {
     if (f.type === "password") {
       const has = !!masks[f.key]; // 已配置判定：accounts field_masks 含该 key
       const badge = has ? '<span class="secret-tag">已配置（留空不更改）</span>' : "";
@@ -1620,7 +1647,10 @@ function accountEditEl(key, acc) {
         <div class="cred-label">${esc(f.label)}</div>
         <input class="input mono" type="${f.type}" data-f="${f.key}" placeholder="${esc(f.ph || "")}" value="${esc(val)}" autocomplete="off">
       </div>`;
-  }).join("");
+  };
+  const split = siteFieldsSplit(key);
+  const fields = split.basic.map(renderField).join("") +
+    advancedSectionHtml(split.advanced.map(renderField).join(""));
   div.innerHTML = fields +
     '<div class="cred-row">' +
       '<div class="cred-label">备注</div>' +

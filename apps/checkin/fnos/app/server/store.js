@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.8.9",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.9.0",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -181,7 +181,10 @@ class Store {
         signin_skip: (a.signin_skip === null || a.signin_skip === undefined) ? "" : String(a.signin_skip),
         skip_reason: (a.skip_reason === null || a.skip_reason === undefined) ? "" : String(a.skip_reason),
       };
-      // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）
+      // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）。
+      // 1.9.0：newapi 服务商高级项（domain/login_path/sign_in_path/user_info_path/api_user_key/
+      //   bypass_method/waf_cookie_names/use_proxy）随 adapter.fields 自动纳入白名单；空值统一落
+      //   为 ""（= 使用适配器默认，见 NEWAPI._paths/_base/_assertWafCookies），清除即回默认，零残留。
       for (const f of accountFieldKeys(slug)) {
         base[f] = String(a[f] || "");
       }

@@ -582,26 +582,34 @@ class Server {
   /* ── 站点级 use_proxy 注入（内存合并，不落盘）────────────────────
    * adapter 请求统一读 cfg.use_proxy（cfg 即账号对象）决定走代理；账号对象本身无
    * → anyrouter EPROTO）。调用 adapter 前以站点开关兜底注入：
-   *   - 账号无显式 use_proxy（字段不存在）→ 注入站点值（内存合并，不覆盖显式值）
-   *   - 账号已有显式 use_proxy → 不动（未来支持账号级覆盖）
-   * 注入字段在 store.save() 前统一还原（_restoreInjectedProxy），避免把运行时合并值
-   * 持久化进 config.json（零残留）。 */
+   *   - 账号无显式 use_proxy（字段不存在/空串）→ 注入站点值（内存合并布尔）
+   *   - 账号高级项 use_proxy="on"/"off"（1.9.0 三态）→ 强制走/不走代理，覆盖站点开关
+   * 注入/覆盖后 adapter 读到布尔值；store.save() 前统一还原为原始持久值
+   *   （_restoreInjectedProxy，空串/无字段账号删回原样），避免运行时布尔落盘（零残留）。 */
 
-  /** 站点级 use_proxy 注入账号对象：账号无显式值时生效，仅记录本次注入的账号 */
+  /** 站点级 use_proxy 注入账号对象（1.9.0 支持账号级三态覆盖 on/off/默认） */
   _applySiteProxy(site, acc) {
     if (!acc || !site) return;
-    if (acc.use_proxy === undefined) {
-      acc.use_proxy = !!site.use_proxy;
-      this._injectedProxy.add(acc);
-    }
+    const raw = acc.use_proxy;
+    // 账号级显式覆盖：on/true/1 → 强制走；off/false/0/no → 强制不走；其余（""/未设）→ 跟随站点
+    const explicit = (raw === true || raw === "on" || raw === 1 || raw === "1") ? true
+      : (raw === false || raw === "off" || raw === 0 || raw === "0" || raw === "no") ? false
+        : null;
+    if (!this._origProxy) this._origProxy = new Map();
+    this._origProxy.set(acc, Object.prototype.hasOwnProperty.call(acc, "use_proxy") ? acc.use_proxy : undefined);
+    acc.use_proxy = explicit == null ? !!site.use_proxy : explicit;
+    this._injectedProxy.add(acc);
   }
 
-  /** 还原本次注入的 use_proxy 字段（delete 到无字段状态；账号显式值不受影响） */
+  /** 还原注入/覆盖的 use_proxy：无原字段 → delete；有原持久值（""/on/off）→ 写回，保证零残留不落盘运行时布尔 */
   _restoreInjectedProxy() {
     for (const acc of this._injectedProxy) {
-      if (acc && "use_proxy" in acc) delete acc.use_proxy;
+      const orig = this._origProxy && this._origProxy.has(acc) ? this._origProxy.get(acc) : undefined;
+      if (orig === undefined) { if (acc && "use_proxy" in acc) delete acc.use_proxy; }
+      else if (acc) acc.use_proxy = orig;
     }
     this._injectedProxy.clear();
+    if (this._origProxy) this._origProxy.clear();
   }
 
   getHistory(limit) {
