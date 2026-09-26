@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "1.9.0",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "1.9.1",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -197,8 +197,12 @@ class Store {
   /** 收集某站点账号：兼容多账号数组与旧版顶层单账号凭据格式（原始克隆，保留 session/balance 等非表单字段）。 */
   _collectSiteAccounts(rawSite) {
     const site = rawSite || {};
-    if (Array.isArray(site.accounts)) {
-      return site.accounts.filter((a) => a && typeof a === "object").map((a) => ({ ...a }));
+    // 吞账号根因修复：仅当 accounts 为「非空数组」时以其为准；空数组（[]）不得遮蔽同时存在的
+    // 顶层旧版凭据字段——旧行为 `Array.isArray(site.accounts)` 对空数组直接 return []，会把
+    // 顶层 legacy 单账号静默丢弃（见回归用例「空accounts数组+顶层legacy」）。空/缺失一律回落顶层扫描。
+    if (Array.isArray(site.accounts) && site.accounts.length) {
+      const arr = site.accounts.filter((a) => a && typeof a === "object").map((a) => ({ ...a }));
+      if (arr.length) return arr;
     }
     // 旧版顶层格式（单账号）：扫描旧统一适配器全部字段（含 anyrouter 原生 email/cookies 别名）
     const legacy = {};
