@@ -329,16 +329,18 @@
                            padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
   .acct-hero .hero-delta.up { color: var(--ok); background: var(--ok-glow); }
   .acct-hero .hero-delta.down { color: var(--err); background: var(--err-bg); }
-  /* 1.9.4：状态徽标移入 hero 右侧（.hero-badge），挂在余额/积分/流量卡片旁；
-     操作按钮独占一行并均分填满卡片（.acct-actions.spread），窄卡换行后每行仍均分。 */
-  .acct-hero .hero-badge { flex: none; margin-left: 2px; align-self: center; }
+  /* 1.9.6：签到状态徽标独占一行横幅——拉满卡片宽度、文字水平居中（撤销 1.9.4 徽标入 hero 右侧）；
+     窄卡不溢出（badge 自身 nowrap，横幅居中截断由 badge 内部处理）。 */
+  .acct-status { display: flex; justify-content: center; width: 100%; }
   .acct-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
-  .acct-meta.solo { margin: 0; }   /* 无 hero 兜底：状态徽标独占一行，永不丢失 */
+  /* 1.9.6：操作按钮平铺——三按钮从左到右连续排布，保持自身宽度与统一间距（撤销 1.9.4 .spread 均分填满） */
   .acct-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-  /* 均分：四个操作等宽填满整行，文字水平居中；min-width 防过度收缩，换行后每行内仍靠 flex-grow 均分 */
-  .acct-actions.spread { width: 100%; }
-  .acct-actions.spread .btn { flex: 1 1 0; min-width: 60px; justify-content: center; }
   .acct-card .acct-actions { gap: 4px; }
+  /* 1.9.6：删除入口移至卡片右上角 X（小、次级色）；点击走现有删除确认交互（cardDeleteAccount 内 confirm） */
+  .acct-card-top .acct-del { flex: none; width: 20px; height: 20px; padding: 0; display: grid; place-items: center;
+                             border: none; background: transparent; color: var(--muted); font-size: 15px; line-height: 1;
+                             border-radius: 6px; cursor: pointer; transition: color .12s ease, background .12s ease; }
+  .acct-card-top .acct-del:hover { color: var(--err); background: var(--err-bg); }
   .acct-card .acct-actions .btn-mini { padding: 2px 7px; font-size: 11.5px; }
   .acct-card .row-badge { font-size: 11px; padding: 1px 7px; }
   /* 登录态徽标 */
@@ -441,7 +443,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.5</span>
+      <span class="ver" id="appVersion">v1.9.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1079,7 +1081,6 @@ function renderAcctCard(key, a, cap) {
   // 统一数值主视觉（所有站点，1.8.8 重新设计）：主值 hero-num 适度大小 + 标签行右端「今日收益」小徽标
   //   （hero_delta_display，>0 才有值；完整展示单位/千分位/标签，不截断）。图标按持有量语义选（流量/积分·余额·金币）。
   let balLine = "";
-  let heroHasBadge = false;
   if (d && d.hero_label) {
     const bl = esc(d.hero_label);
     const ico = heroIcon(d.hero_label);
@@ -1087,24 +1088,23 @@ function renderAcctCard(key, a, cap) {
     const delta = d.hero_delta_display
       ? '<span class="hero-delta up" title="当天签到收益">今日 ' + esc(d.hero_delta_display) + "</span>"
       : "";
-    // 1.9.4：签到状态徽标移入 hero 右侧（挂在余额卡片旁），不挤压主数值/今日收益（hero-main flex:1 min-width:0 吸收收缩）
+    // 1.9.6：hero 恢复纯数值+今日收益（撤销 1.9.4 徽标入 hero）；签到状态改由下方独占横幅承载
     balLine = '<div class="acct-hero' + (hasVal ? "" : " empty") + '">' + ico +
       '<span class="hero-main">' +
         '<span class="hero-lb-row"><span class="hero-lb">' + bl + "</span>" + delta + "</span>" +
         '<span class="hero-num">' + (hasVal ? esc(d.hero_display) : "—") + "</span>" +
-      "</span>" +
-      '<span class="hero-badge">' + dayBadge + "</span>" +
-    "</div>";
-    heroHasBadge = true;
+      "</span></div>";
   }
   // 账号卡「编辑」入口：打开该账号的纯账号配置页（无站点级功能）；改凭据保存即覆盖登录态。
   const editBtn = '<button class="btn btn-mini" title="编辑该账号配置（凭据/备注/启用）" onclick="openAccountEditor(\'' + key + "','" + esc(a.id || "") + '\')">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>' +
     "编辑</button>";
   // 单账号签到：仅为该账号触发（不影响全部签到）。停用账号禁用按钮。
-  const checkinBtn = '<button class="btn btn-mini" title="' + (enabled ? "单独为该账号签到" : "该账号已停用") + '"' +
+  const checkinBtn = '<button class="btn btn-mini primary" title="' + (enabled ? "单独为该账号签到" : "该账号已停用") + '"' +
     (enabled ? "" : " disabled") +
     ' onclick="cardCheckinAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">签到</button>';
+  // 1.9.6：删除入口移至卡片右上角 X（次级色，禁用态账号同样可触发）；点击走 cardDeleteAccount 现有删除确认交互
+  const delBtn = '<button type="button" class="acct-del" title="删除账号" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">✕</button>';
   return '<div class="acct-card"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
     '<div class="acct-card-top">' + siteIcon +
       '<div class="acct-card-title">' +
@@ -1112,15 +1112,15 @@ function renderAcctCard(key, a, cap) {
         subHtml +
       "</div>" +
       loginBadge +
+      delBtn +
     "</div>" +
     balLine +
-    // 1.9.4：无 hero（无 hero_label）兜底——状态徽标独占一行，保证状态永不丢失
-    (heroHasBadge ? "" : '<div class="acct-meta solo">' + dayBadge + "</div>") +
-    // 1.9.4：编辑/签到/测试/删除 独占一行并均分填满卡片（.spread）；窄卡换行后每行仍均分。功能/onclick/禁用态不变
-    '<div class="acct-actions spread">' +
+    // 1.9.6：签到状态徽标独占一行横幅——拉满卡片宽度、文字居中（always 渲染，dayBadge 恒有值：待签/已签/上次/失败/跳过）
+    '<div class="acct-status">' + dayBadge + "</div>" +
+    // 1.9.6：编辑/签到/测试 平铺（从左到右连续排布，保持按钮自身宽度）；删除已移至右上角 X
+    '<div class="acct-actions">' +
       editBtn + checkinBtn +
       '<button class="btn btn-mini" onclick="cardTestAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
-      '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
     "</div>" +
   "</div>";
 }
