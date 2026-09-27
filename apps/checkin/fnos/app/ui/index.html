@@ -452,7 +452,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.0.4</span>
+      <span class="ver" id="appVersion">v2.0.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1737,6 +1737,12 @@ function openAccountEditor(key, accountId) {
   const st = SITE_DATA[key] || {};
   const accsAll = Array.isArray(st.accounts) ? st.accounts : [];
   const hit = accsAll.find((a) => String(a.id) === String(accountId));
+  // 2.0.5：auth 显式认证方式只在 accounts 端点暴露（ACCT_DATA），status.sites（SITE_DATA）不含
+  // ——编辑弹窗需用它预选认证 tab；账号对象缺 auth 时从 ACCT_DATA 同账号补取（非敏感字段）。
+  if (hit && !hit.auth && ACCT_DATA && ACCT_DATA[key] && Array.isArray(ACCT_DATA[key].accounts)) {
+    const acctHit = ACCT_DATA[key].accounts.find((a) => String(a.id) === String(accountId));
+    if (acctHit && acctHit.auth) hit.auth = acctHit.auth;
+  }
   // 标题 = 站点名 · 账号标识（remark||label，退回站点名）
   const ident = hit ? (hit.remark || hit.label || ("账号 " + accountId)) : ("账号 " + accountId);
   $("modalTag").textContent = siteShort(key);
