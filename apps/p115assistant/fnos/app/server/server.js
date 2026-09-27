@@ -426,7 +426,7 @@ class Server {
     this._checkinCheckedDate = "";
     this._uploadWorker = new UploadWorker(
       (job) => this._runWorkerJob(job),
-      null
+      () => this._scheduleUploadStrmSync()
     );
     this._fileWatcher = new FileWatcher(this);
     this._riskState = {
@@ -2376,6 +2376,35 @@ class Server {
       this.recordLog(`上传完成，生成 STRM：${outName}`, "INFO", "STRM");
     } catch (err) {
       console.warn(`上传后生成 STRM 失败：${err.message}`);
+    }
+  }
+
+  // 整轮上传完成（上传队列自然清空）后，防抖触发一次全量 STRM 同步作为兜底。
+  // 逐文件 _maybeAutoStrmForFile 只覆盖「本轮新增/变更」的媒体，无法补齐：
+  //   - 账本已记为「未变更」而被上传扫描跳过（server.js 增量分支不生成 STRM）、
+  //     但本地 .strm 缺失（历史上传、或曾被失效清理删除）的媒体；
+  //   - 同名不同扩展冲突（a.mkv/a.mp4）、字幕侧车等逐文件路径不处理的情形。
+  // 全量同步按云端目录树重建，天然覆盖上述缺口并清理失效项——即「上传后生成 STRM」
+  // 设计中原定接线的兜底通道（此前 UploadWorker onIdle 传 null 导致从未触发）。
+  _scheduleUploadStrmSync() {
+    try {
+      const config = this.store.getConfig();
+      if (config.upload_generate_strm !== true) return; // 尊重用户开关，关闭时不自动同步
+      const mappings = config.strm_mappings;
+      if (!Array.isArray(mappings) || !mappings.some((m) => m && m.enabled !== false)) return;
+      // 防抖：一轮上传常提交多条映射，合并为一次全量同步，避免重复扫描云端目录树。
+      if (this._uploadStrmSyncTimer) clearTimeout(this._uploadStrmSyncTimer);
+      this._uploadStrmSyncTimer = setTimeout(() => {
+        this._uploadStrmSyncTimer = null;
+        if (this._strmBusy) return;      // 已有同步在跑：其结果已覆盖本轮，不重复发起
+        if (this._riskLimited()) return; // 风控冷却期不发起，等下一轮上传空闲再触发
+        this.strmSync({}).catch((err) => console.warn(`上传后自动 STRM 同步失败：${err.message}`));
+      }, 5000);
+      if (this._uploadStrmSyncTimer && typeof this._uploadStrmSyncTimer.unref === "function") {
+        this._uploadStrmSyncTimer.unref();
+      }
+    } catch (err) {
+      console.warn(`调度上传后 STRM 同步失败：${err.message}`);
     }
   }
 
