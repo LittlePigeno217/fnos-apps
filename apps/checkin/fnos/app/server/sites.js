@@ -118,8 +118,11 @@ const NEWAPI_LOGIN_CAPS = ["oauth_github", "oauth_linuxdo", "password", "passwor
 /** 认证对象（{type:"token",token}|{type:"cookie",headers}）→ 请求头 */
 function newApiHeaders(auth, extra) {
   const h = { Accept: "application/json, text/plain, */*", ...(extra || {}) };
-  if (auth.type === "token") h.Authorization = "Bearer " + auth.token;
-  else Object.assign(h, auth.headers);
+  if (auth.type === "token") {
+    h.Authorization = "Bearer " + auth.token;
+    // agentrouter 等平台即便带 Bearer 也要求 new-api-user 头（否则 401「未提供 New-Api-User」）
+    if (auth.apiUser) h[auth.apiUserKey || "new-api-user"] = auth.apiUser;
+  } else Object.assign(h, auth.headers);
   return h;
 }
 
@@ -886,7 +889,8 @@ const YPOJIE = {
  *   - provider 字段（anyrouter/agentrouter/custom；09-27 收敛掉 newapi 选项，旧值兼容不破坏，
  *     等价通用自定义）驱动 base_url 缺省推导与 WAF Cookie 默认名（对齐上游 ProviderConfig）；
  *   - email/cookies 作为 username/cookie 的别名（_normalize 归一，兼容两类旧账号）；
- *   - 余额增量判定（_deltaOk）默认开启（账号字段 delta_ok，对齐上游 BALANCE_HASH 思想）；
+ *   - 成功判定对齐上游 execute_check_in（返回码 ret/code/success）；余额增量仅展示奖励，
+ *     不作为成功门槛（旧 _deltaOk/delta_ok 字段保留兼容，不再参与成功判定）；
  *   - api_user_key 可配置（默认 new-api-user）；sign_in_path 支持 __auto__ 哨兵
  *     （= 上游 sign_in_path=None：无手动签到接口，查询用户信息自动签到）；
  *   - 账密登录被拒 + 配了 Cookie → 回退 Cookie 签到（原 B16a）。 */
@@ -913,9 +917,9 @@ const NEWAPI = {
     { key: "username", label: "账号 / 邮箱", type: "text", ph: "邮箱密码登录（无 WAF 平台可用；三选一）" },
     { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
     { key: "totp", label: "TOTP 密钥", type: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
-    { key: "delta_ok", label: "余额增量判定", type: "select", options: [
-      { value: "on", label: "开启（推荐：签到后余额增加才算成功）" },
-      { value: "off", label: "关闭（按接口返回码判定）" },
+    { key: "delta_ok", label: "余额增量判定（旧项）", type: "select", options: [
+      { value: "on", label: "开启（成功判定已对齐上游：按接口返回码 ret/code/success；本项保留仅为兼容）" },
+      { value: "off", label: "关闭（同上，成功判定不受影响）" },
     ] },
     // ── 服务商高级配置（group=advanced；对齐 anyrouter-check-in 自定义 Provider 配置）──
     // 全部可留空：留空/清除 → 使用当前 NEWAPI 适配器默认路径 / 请求头，行为与 1.8.9 完全一致（零回归）。
@@ -1206,13 +1210,21 @@ const NEWAPI = {
   },
   /** 高级项路径归一：留空/清除 → 用适配器默认（零回归）。对齐 anyrouter-check-in
    *  login_path / sign_in_path / user_info_path 覆盖能力。sign_in_path 填哨兵 __auto__
-   *  （上游 sign_in_path=None 语义）→ null：无手动签到接口，查询用户信息即触发服务端签到。 */
+   *  （上游 sign_in_path=None 语义）→ null：无手动签到接口，查询用户信息即触发服务端签到。
+   *  provider=agentrouter 且用户未显式设置 sign_in_path 时，默认按上游 agentrouter
+   *  ProviderConfig(sign_in_path=None) 走自动签到（agentrouter.org 无 /api/user/sign_in，实测 404）。 */
   _paths(cfg) {
     const pick = (v, d) => { const s = String(v == null ? "" : v).trim(); return s || d; };
     const signInRaw = String((cfg && cfg.sign_in_path) == null ? "" : cfg.sign_in_path).trim();
+    const provider = String((cfg && cfg.provider) || "").trim().toLowerCase();
+    let signIn;
+    if (signInRaw === "__auto__") signIn = null;            // 显式哨兵：自动签到
+    else if (signInRaw) signIn = signInRaw;                 // 显式路径：直接用
+    else if (provider === "agentrouter") signIn = null;     // agentrouter 默认自动签到（上游 None）
+    else signIn = this.signInPath;                          // 其余默认 /api/user/sign_in
     return {
       login: pick(cfg && cfg.login_path, this.loginPath),
-      signIn: signInRaw === "__auto__" ? null : (signInRaw || this.signInPath),
+      signIn,
       userInfo: pick(cfg && cfg.user_info_path, this.userInfoPath),
     };
   },
@@ -1252,7 +1264,13 @@ const NEWAPI = {
     if (!base) throw new Error("请先配置平台地址（base_url）");
     // 1.6.4：访问令牌优先（通用 Bearer 认证——NewAPI/OneAPI/Sub2API 统一；不再仅限 Sub2API 协议）
     if (cfg.access_token && String(cfg.access_token).trim()) {
-      return { type: "token", token: String(cfg.access_token).trim(), base };
+      const auth = { type: "token", token: String(cfg.access_token).trim(), base };
+      // 令牌方式也带上 api_user（new-api-user 头）：agentrouter 用 Bearer 时仍要求该头
+      if (cfg.api_user && String(cfg.api_user).trim()) {
+        auth.apiUserKey = (cfg.api_user_key && String(cfg.api_user_key).trim()) || "new-api-user";
+        auth.apiUser = String(cfg.api_user).trim();
+      }
+      return auth;
     }
     if (cfg.username && cfg.password) {
       const s = new Session();
@@ -1313,7 +1331,7 @@ const NEWAPI = {
       const cfg = NEWAPI._normalize(rawCfg);
       const auth = await NEWAPI._authHeaders(cfg);
       const session = auth.type === "token"
-        ? { type: "token", token: auth.token, base: auth.base }
+        ? { type: "token", token: auth.token, base: auth.base, apiUser: auth.apiUser, apiUserKey: auth.apiUserKey }
         : { type: "cookie", headers: auth.headers, base: auth.base };
       return {
         mode: "form",
@@ -1495,14 +1513,13 @@ const NEWAPI = {
     if (data && data.enabled === false) {
       return this._disabledResult(cfg, auth);
     }
-    if (data && data.checked_in === true && !cfg._deltaOk) {
-      // 通用 newapi：结构化「已签到」直接返回；anyrouter（_deltaOk）不走此捷径，
-      // 一律以签到前后余额实时对比判定（未增加 → 失败重试），避免把「响应说已签但余额没动」误判为成功。
+    if (data && data.checked_in === true) {
+      // 结构化「已签到」直接返回（对齐上游 already_checked：视为已签到成功，不判失败）
       return this._ok("今日已签到", msg || "今日已签到", "-", "-", cfg, auth);
     }
     // 签到响应自带结构化「今日已签」字段（Genius-Programmer 系 today_checked_in / Sub2 系 checked_in_today）
     // → 判定优先级第 1 条：明确成功字段直接判已签，不再回读 status
-    if (data && (data.today_checked_in === true || data.checked_in_today === true || data.checkedInToday === true) && !cfg._deltaOk) {
+    if (data && (data.today_checked_in === true || data.checked_in_today === true || data.checkedInToday === true)) {
       return this._ok("今日已签到", msg || "今日已签到", "-", "-", cfg, auth);
     }
 
@@ -1518,64 +1535,34 @@ const NEWAPI = {
       rewardMsg = `本次签到 +${this._fmtUsd(after.quota - before.quota)}`;
     }
 
-    // 余额增量判定（_deltaOk，合并站点默认开启）：成功判定 = 签到后余额较签到前实时增加。
-    // 对齐上游 anyrouter-check-in BALANCE_HASH 思想的等价实现——上游以「余额哈希变化」判定本次是否真正到账，
-    // 此处用本流程内 before/after 实时对比（更严格，无需持久化哈希）。after>before → 成功；
-    // 未增加但响应/回读明确「今日已签到」→ 判已签（不误报失败，比旧 anyrouter 一律抛错更贴合上游语义）；
-    // 未增加且无已签信号 / 余额取不到 → 抛错落今日失败集，由调度下一轮重试（不重发签到，避免把失败当已签）。
-    if (cfg._deltaOk) {
-      const beforeQ = before ? Number(before.quota) : null;
-      const afterQ = after ? Number(after.quota) : null;
-      const bad = beforeQ == null || !Number.isFinite(beforeQ) || afterQ == null || !Number.isFinite(afterQ);
-      if (!bad && afterQ > beforeQ) {
-        const detail = [rewardMsg, balanceMsg].filter(Boolean).join("；") || msg || "签到成功";
-        return this._ok("签到成功", detail, rewardMsg || "-", balanceMsg || "-", cfg, auth);
-      }
-      // 未增加：优先识别「今日已签到」信号（响应结构化字段 / 已签文案 / 状态端点回读）
-      const alreadyByResp = !!(data && (data.checked_in === true || data.today_checked_in === true ||
-        data.checked_in_today === true || data.checkedInToday === true));
-      let alreadySignal = alreadyByResp || isAlreadyCheckedIn(msg) ||
-        /已经签到|重复签到|already checked|already signed/i.test(msg);
-      if (!alreadySignal) {
-        const st = await this._checkinStatus(cfg, auth, new Session());
-        if (st && st.enabled === false) return this._disabledResult(cfg, auth);
-        if (st && st.checkedInToday) alreadySignal = true;
-      }
-      if (alreadySignal) {
-        const detail = [balanceMsg, "今日已签到"].filter(Boolean).join("；");
-        return this._ok("今日已签到", detail || "今日已签到", "-", balanceMsg || "-", cfg, auth);
-      }
-      if (bad) {
-        throw new Error("余额查询失败（签到前/后余额未取到）：本次判定不成功，将在下一轮重试");
-      }
-      throw new Error(`签到后余额未增加（${napiUsd(beforeQ)} → ${napiUsd(afterQ)}）：本次判定不成功，将在下一轮重试`);
-    }
-
+    // 成功判定对齐上游 anyrouter-check-in execute_check_in（checkin.py:292-315）：
+    // HTTP 200 且 (ret==1 | code==0 | success 为真) → 签到成功；否则命中「已签到」关键词 → 已签到。
+    // 余额（before/after）只用于展示本次奖励，不作为成功门槛。上游 BALANCE_HASH（checkin.py:66-72）
+    // 仅决定「是否发送通知」（checkin.py:577-601），从不参与成功判定——旧实现以 _deltaOk 要求
+    // 余额必须增长否则判失败，系对上游 BALANCE_HASH 语义的误读，本次按用户要求对齐修正。
     if (success) {
       const detail = [rewardMsg, balanceMsg].filter(Boolean).join("；") || msg || "签到成功";
       return this._ok("签到成功", detail, rewardMsg || "-", balanceMsg || "-", cfg, auth);
     }
 
-    // 1.8.4：签到响应无明确成功字段（成功但含糊 / 未带 success/ret/code）→ GET status 端点确认
-    // （主流 GET /api/user/checkin/status；404/405 回落 /api/user/checkin?month=… readback）。按
-    // checkedInToday/today_checked_in 确认已签；enabled=false → 今日无需签到。anyrouter（_deltaOk）
-    // 不触发：delta 判定已先行走完（成功/失败均已返回），到不了这里——status 确认绝不绕过 delta 判定。
-    if (!cfg._deltaOk) {
-      const st = await this._checkinStatus(cfg, auth, new Session());
-      if (st) {
-        if (st.enabled === false) {
-          return this._disabledResult(cfg, auth);
-        }
-        if (st.checkedInToday) {
-          return this._ok("今日已签到", "今日已签到", "-", "-", cfg, auth);
-        }
-      }
-      // status 不可得（端点/网络异常）→ 维持现有判定，不因缺 status 误报失败
-    }
-
-    if (isAlreadyCheckedIn(msg) || /已经签到|重复签到|already checked|already signed/i.test(msg)) {
+    // 已签到（上游 already_checked_keywords + 结构化已签字段）→ 今日已签到（不判失败、不重试）
+    const alreadyByResp = !!(data && (data.checked_in === true || data.today_checked_in === true ||
+      data.checked_in_today === true || data.checkedInToday === true));
+    if (alreadyByResp || isAlreadyCheckedIn(msg) ||
+        /已经签到|重复签到|already checked|already signed/i.test(msg)) {
       const detail = [balanceMsg || msg, rewardMsg].filter(Boolean).join("；") || "今日已签到";
       return this._ok("今日已签到", detail, "-", balanceMsg || "-", cfg, auth);
+    }
+
+    // 响应含糊（无 success/ret/code、也无已签信号）→ GET status 端点回读兜底确认（app 增强，上游无）：
+    // 主流 GET /api/user/checkin/status；404/405 回落 /api/user/checkin?month=… readback。
+    const st = await this._checkinStatus(cfg, auth, new Session());
+    if (st) {
+      if (st.enabled === false) return this._disabledResult(cfg, auth);
+      if (st.checkedInToday) {
+        const detail = [balanceMsg, "今日已签到"].filter(Boolean).join("；");
+        return this._ok("今日已签到", detail || "今日已签到", "-", balanceMsg || "-", cfg, auth);
+      }
     }
     throw new Error(msg || `签到失败（ret=${j.ret} code=${j.code}）`);
   },
