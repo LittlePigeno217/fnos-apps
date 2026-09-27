@@ -458,7 +458,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.0.8</span>
+      <span class="ver" id="appVersion">v2.0.9</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -766,9 +766,8 @@ function newapiGroupedFormHtml(fieldRow, advOpen) {
   const step = (n, title, sub, body) =>
     '<div class="np-grp"><div class="np-grp-h"><span class="np-step">' + n + '</span>' + title + '</div>' +
       (sub ? '<div class="np-grp-sub">' + sub + '</div>' : '') + body + '</div>';
-  const platformGroup = step(1, "选平台", "先选你要签到的站点；AnyRouter / AgentRouter 网址已内置，其它站点请填网址，或从下方「常用网站」直接选一个。",
+  const platformGroup = step(1, "选平台", "先选你要签到的站点；AnyRouter / AgentRouter 网址已内置，其它站点请填网址。",
     rowsWhere((f) => f.grp === "platform") +
-    newapiCommonSitesHtml() +
     advancedSectionHtml(rowsWhere((f) => f.grp === "platform-adv"), advOpen));
   const authGroup = step(2, "登录方式", "三选一即可：网页 Cookie 最省事，账号密码要没验证码的站点，系统访问令牌最稳。",
     '<div class="np-auth-tabs" data-np-authtabs>' +
@@ -806,40 +805,6 @@ function bindNewapiAuthGroups(root, initialMethod) {
 function newapiSelectedAuth(root) {
   const tabs = root && root.querySelector("[data-np-authtabs]");
   return (tabs && tabs.dataset.method) || "";
-}
-/** 2.0.8：常用公网站点快捷选择区 HTML（纯 UI，非适配器字段——不入 siteFields，保存时不采集）。
- *  用 class 定位（add / edit 共用），选项 value=站点域名（不写品牌名）；含一行动态认证提示。 */
-function newapiCommonSitesHtml() {
-  const opts = ['<option value="">常用公网站点（可选，选一项自动预填平台网址）</option>']
-    .concat(NEWAPI_COMMON_SITES.map((s) => '<option value="' + esc(s.host) + '">' + esc(s.host) + '</option>'))
-    .join("");
-  return '<div class="cred-row">' +
-      '<div class="cred-label">常用网站</div>' +
-      '<select class="input mono np-common-sites">' + opts + '</select>' +
-    '</div>' +
-    '<div class="np-grp-sub np-common-hint" hidden></div>';
-}
-/** 2.0.8：绑定常用站点快捷选择——选中 → 联动 provider + 预填平台网址/签到路径（仍可编辑）。
- *  root 为含表单的容器；provSel/baseInp 为 provider/base_url 元素（复用 provider 联动结果）。
- *  专属条目（anyrouter/agentrouter）切到对应 provider（base_url 由联动固定）；custom 条目预填 base_url
- *  与 sign_in_path（provider 先置 custom 触发解锁，再写值）。选完不影响后续手动编辑与自定义自由填。 */
-function bindNewapiCommonSites(root, provSel, baseInp) {
-  if (!root || !provSel) return;
-  const sel = root.querySelector(".np-common-sites");
-  if (!sel) return;
-  const hint = root.querySelector(".np-common-hint");
-  const signInp = root.querySelector('#addck_sign_in_path, [data-f="sign_in_path"]');
-  sel.addEventListener("change", () => {
-    const site = NEWAPI_COMMON_SITES.find((s) => s.host === sel.value);
-    if (!site) { if (hint) { hint.hidden = true; hint.textContent = ""; } return; }
-    provSel.value = site.provider;
-    provSel.dispatchEvent(new Event("change")); // 触发 bindNewapiProviderLink：按 provider 锁定/解锁 base_url
-    if (site.provider === "custom") {
-      if (baseInp) { baseInp.value = site.base_url || ""; }
-      if (signInp && site.sign_in_path) signInp.value = site.sign_in_path;
-    }
-    if (hint) { hint.hidden = false; hint.textContent = "「" + site.host + "」" + (site.hint || "") + "（已预填，可继续修改）"; }
-  });
 }
 function siteShort(key) {
   const m = getSiteMeta(key);
@@ -935,27 +900,6 @@ async function refreshSiteTitles() {
  * 对「备注为空 + base_url 可确定」的 newapi 系账号探测一次真实品牌名，成功即写备注。
  * 节流：成功写入即不再触发（备注已非空）；失败按会话内每账号计数，达上限不再重试。 */
 const NEWAPI_FIXED_BASE = { anyrouter: "https://anyrouter.top", agentrouter: "https://agentrouter.org" };
-/** 2.0.8：常用公网 NewAPI 站点快捷表——纯前端「快捷填表」数据（非持久字段，选中即预填）。
- *  条目仅以「站点域名」做标识，不写死品牌名、不建品牌映射表（账号标题仍由品牌探测写备注驱动，见 m262）。
- *  数据来源：上游 aceHubert/newapi-ai-check-in 的 PROVIDERS.json（公益站清单，均无阿里云盾验证码、
- *  签到端点 /api/user/checkin、用户信息 /api/user/self、请求头 new-api-user——与本适配器默认一致，
- *  故仅需预填 base_url + sign_in_path，其余走默认）。anyrouter.top / agentrouter.org 复用现有专属
- *  provider（含 WAF Cookie 默认名与固定地址），选中即切到对应 provider（不落 custom）。
- *  provider="custom" 的条目预填 base_url（可编辑）+ sign_in_path；hint 为认证方式提示（纯展示）。 */
-const NEWAPI_COMMON_SITES = [
-  // 专属 provider（保留各自 WAF / 固定地址处理）——用域名做标识，不写品牌名
-  { host: "anyrouter.top",   provider: "anyrouter",   hint: "有验证码（阿里云盾）：建议登录后贴完整网页 Cookie（含 acw_tc 等）" },
-  { host: "agentrouter.org", provider: "agentrouter", hint: "无验证码：网页 Cookie / 系统访问令牌 / 账号密码均可" },
-  // 通用公网站点（来源上游 PROVIDERS.json；provider=custom，预填平台网址与签到路径）
-  { host: "api.2020111.xyz",    provider: "custom", base_url: "https://api.2020111.xyz",    sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-  { host: "yyds.215.im",        provider: "custom", base_url: "https://yyds.215.im",        sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-  { host: "freeapi.dgbmc.top",  provider: "custom", base_url: "https://freeapi.dgbmc.top",  sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-  { host: "zuodachen.zdc.mom",  provider: "custom", base_url: "https://zuodachen.zdc.mom",  sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-  { host: "callxyq.xyz",        provider: "custom", base_url: "https://callxyq.xyz",        sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-  { host: "newapi.sorai.me",    provider: "custom", base_url: "https://newapi.sorai.me",    sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-  { host: "muyuan.do",          provider: "custom", base_url: "https://muyuan.do",          sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-  { host: "api.925214.xyz",     provider: "custom", base_url: "https://api.925214.xyz",     sign_in_path: "/api/user/checkin", hint: "无验证码：系统访问令牌最稳；或登录后贴网页 Cookie" },
-];
 const BRAND_PROBE = {};           // key:id → { tries, inflight, done }
 const BRAND_PROBE_MAX = 2;        // 会话内每账号最多失败尝试次数（成功即写备注不再触发）
 /** 账号卡渲染时调用（fire-and-forget，不阻塞渲染）：满足条件则触发一次品牌探测 */
@@ -1632,7 +1576,6 @@ function renderAddCookiePanel(key) {
   // 2.0.3：登录认证三态联动（添加页未选任何方式 → 显示选择提示）
   if (key === "newapi") {
     bindNewapiProviderLink($("addck_provider"), $("addck_base_url"));
-    bindNewapiCommonSites($("addPanel"), $("addck_provider"), $("addck_base_url"));
     bindNewapiAuthGroups($("addPanel"), "");
   }
 }
@@ -1910,7 +1853,6 @@ function accountEditEl(key, acc) {
   // 2.0.4：优先用账号已存的显式 auth 预选；无 auth（旧账号）→ 回退按凭据推断（与后端自动判定一致）
   if (key === "newapi") {
     bindNewapiProviderLink(div.querySelector('[data-f="provider"]'), div.querySelector('[data-f="base_url"]'));
-    bindNewapiCommonSites(div, div.querySelector('[data-f="provider"]'), div.querySelector('[data-f="base_url"]'));
     const stored = (acc.auth === "cookie" || acc.auth === "token" || acc.auth === "password") ? acc.auth : "";
     const initMethod = stored
       || (masks.access_token ? "token"
