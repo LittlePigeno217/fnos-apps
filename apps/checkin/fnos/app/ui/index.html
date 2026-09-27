@@ -329,19 +329,18 @@
                            padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
   .acct-hero .hero-delta.up { color: var(--ok); background: var(--ok-glow); }
   .acct-hero .hero-delta.down { color: var(--err); background: var(--err-bg); }
-  /* 1.9.6：签到状态徽标独占一行横幅——拉满卡片宽度、文字水平居中（撤销 1.9.4 徽标入 hero 右侧）；
-     窄卡不溢出（badge 自身 nowrap，横幅居中截断由 badge 内部处理）。 */
-  .acct-status { display: flex; justify-content: center; width: 100%; }
+  /* 1.9.7：签到状态徽标与编辑/签到/测试按钮合并为同一行——整体水平居中，按钮组在徽标右侧；
+     窄卡 flex-wrap 换行（按钮组换到徽标下方，各行内部仍居中）。徽标本身视觉不变（保持行内小徽标）。 */
+  .acct-status { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; width: 100%; }
   .acct-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
-  /* 1.9.6：操作按钮平铺——三按钮从左到右连续排布，保持自身宽度与统一间距（撤销 1.9.4 .spread 均分填满） */
+  /* .acct-actions 保留供表单底部操作行使用（非卡片） */
   .acct-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-  .acct-card .acct-actions { gap: 4px; }
   /* 1.9.6：删除入口移至卡片右上角 X（小、次级色）；点击走现有删除确认交互（cardDeleteAccount 内 confirm） */
   .acct-card-top .acct-del { flex: none; width: 20px; height: 20px; padding: 0; display: grid; place-items: center;
                              border: none; background: transparent; color: var(--muted); font-size: 15px; line-height: 1;
                              border-radius: 6px; cursor: pointer; transition: color .12s ease, background .12s ease; }
   .acct-card-top .acct-del:hover { color: var(--err); background: var(--err-bg); }
-  .acct-card .acct-actions .btn-mini { padding: 2px 7px; font-size: 11.5px; }
+  .acct-card .acct-status .btn-mini { padding: 2px 7px; font-size: 11.5px; }
   .acct-card .row-badge { font-size: 11px; padding: 1px 7px; }
   /* 登录态徽标 */
   .login-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; white-space: nowrap;
@@ -443,7 +442,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.6</span>
+      <span class="ver" id="appVersion">v1.9.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1115,10 +1114,8 @@ function renderAcctCard(key, a, cap) {
       delBtn +
     "</div>" +
     balLine +
-    // 1.9.6：签到状态徽标独占一行横幅——拉满卡片宽度、文字居中（always 渲染，dayBadge 恒有值：待签/已签/上次/失败/跳过）
-    '<div class="acct-status">' + dayBadge + "</div>" +
-    // 1.9.6：编辑/签到/测试 平铺（从左到右连续排布，保持按钮自身宽度）；删除已移至右上角 X
-    '<div class="acct-actions">' +
+    // 1.9.7：状态徽标与操作按钮合并同一行——状态徽标在左、编辑/签到/测试在右，整行居中（always 渲染，dayBadge 恒有值：待签/已签/上次/失败/跳过）；删除已移至右上角 X
+    '<div class="acct-status">' + dayBadge +
       editBtn + checkinBtn +
       '<button class="btn btn-mini" onclick="cardTestAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
     "</div>" +
