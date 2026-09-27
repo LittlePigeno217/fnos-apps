@@ -905,7 +905,9 @@ const NEWAPI = {
   login_caps: ["cookie"],
   desc: "NewAPI / OneAPI / Sub2API / AnyRouter / AgentRouter 通用 · provider 选站点，Cookie / 访问令牌 / 邮箱密码三选一",
   fields: [
-    { key: "provider", label: "提供商", type: "select", options: [
+    // 2.0.3：字段按「平台 / 登录认证 / 签到行为 / 平台高级」分组渲染（前端据 grp/auth 联动，仅 UI；
+    // 字段键、保存语义、API 完全不变）。grp: platform|auth|signin|platform-adv；auth: cookie|token|password。
+    { key: "provider", label: "提供商", type: "select", grp: "platform", options: [
       // 认证推荐对齐上游 dctx-team/Regular-inspection：anyrouter.top 有阿里云盾 WAF
       //（浏览器抓 acw_tc/cdn_sec_tc/acw_sc__v2 通过校验），后端无浏览器 → 建议手动 Cookie；
       // agentrouter.org 上游明确跳过 WAF（无人机验证），邮箱密码 / Cookie 均可。
@@ -913,36 +915,36 @@ const NEWAPI = {
       { value: "agentrouter", label: "AgentRouter（agentrouter.org · 无 WAF，邮箱密码/Cookie 均可）" },
       { value: "custom", label: "自定义 / 通用 NewAPI·OneAPI（填平台地址）" },
     ] },
-    { key: "base_url", label: "平台地址", type: "text", ph: "AnyRouter/AgentRouter 可留空；自定义 / 通用 NewAPI·OneAPI 必填" },
-    { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（AnyRouter 建议用这个，需含 acw_tc 等 WAF 校验；三选一）" },
-    { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
-    { key: "access_token", label: "访问令牌", type: "password", ph: "Bearer 令牌（NewAPI/Sub2API 通用，优先；三选一）" },
-    { key: "username", label: "账号 / 邮箱", type: "text", ph: "邮箱密码登录（AgentRouter 无 WAF 可直接用；AnyRouter 受 WAF 限制建议改 Cookie；三选一）" },
-    { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
-    { key: "totp", label: "TOTP 密钥", type: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
-    { key: "delta_ok", label: "余额增量判定（旧项）", type: "select", options: [
+    { key: "base_url", label: "平台地址", type: "text", grp: "platform", ph: "AnyRouter/AgentRouter 可留空；自定义 / 通用 NewAPI·OneAPI 必填" },
+    { key: "cookie", label: "Cookie", type: "password", grp: "auth", auth: "cookie", ph: "浏览器会话 Cookie（AnyRouter 建议用这个，需含 acw_tc 等 WAF 校验）" },
+    { key: "api_user", label: "API User", type: "text", grp: "auth", auth: "cookie", ph: "new-api-user 值（Cookie 方式可选）" },
+    { key: "access_token", label: "访问令牌", type: "password", grp: "auth", auth: "token", ph: "Bearer 令牌（NewAPI/Sub2API 通用）" },
+    { key: "username", label: "账号 / 邮箱", type: "text", grp: "auth", auth: "password", ph: "邮箱密码登录（AgentRouter 无 WAF 可直接用；AnyRouter 受 WAF 限制建议改 Cookie）" },
+    { key: "password", label: "密码", type: "password", grp: "auth", auth: "password", ph: "输入新密码（留空不改）" },
+    { key: "totp", label: "TOTP 密钥", type: "password", grp: "auth", auth: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
+    { key: "sign_in_path", label: "签到路径", type: "text", grp: "signin", ph: "默认 /api/user/sign_in；填 __auto__ = 无签到接口（查询用户信息自动签到）" },
+    { key: "delta_ok", label: "余额增量判定（旧项）", type: "select", grp: "signin", options: [
       { value: "on", label: "开启（成功判定已对齐上游：按接口返回码 ret/code/success；本项保留仅为兼容）" },
       { value: "off", label: "关闭（同上，成功判定不受影响）" },
     ] },
-    // ── 服务商高级配置（group=advanced；对齐 anyrouter-check-in 自定义 Provider 配置）──
-    // 全部可留空：留空/清除 → 使用当前 NEWAPI 适配器默认路径 / 请求头，行为与 1.8.9 完全一致（零回归）。
-    { key: "domain", label: "服务商地址（覆盖）", type: "text", group: "advanced",
-      ph: "如 https://custom.example.com（留空=用上方平台地址）" },
-    { key: "login_path", label: "登录路径", type: "text", group: "advanced", ph: "默认 /api/user/login" },
-    { key: "sign_in_path", label: "签到路径", type: "text", group: "advanced", ph: "默认 /api/user/sign_in；填 __auto__ = 无签到接口（查询用户信息自动签到）" },
-    { key: "user_info_path", label: "用户信息路径", type: "text", group: "advanced", ph: "默认 /api/user/self" },
-    { key: "api_user_key", label: "API User 头名", type: "text", group: "advanced", ph: "默认 new-api-user（自定义平台可改）" },
-    { key: "bypass_method", label: "WAF 绕过", type: "select", group: "advanced", options: [
-      { value: "", label: "无（默认，被拦时按响应识别）" },
-      { value: "waf_cookies", label: "waf_cookies（认证前校验 WAF Cookie 是否齐全）" },
-    ] },
-    { key: "waf_cookie_names", label: "WAF Cookie 名", type: "text", group: "advanced",
-      ph: "逗号分隔（仅 WAF 绕过=waf_cookies 生效）；留空按 provider：AnyRouter=acw_tc,cdn_sec_tc,acw_sc__v2，AgentRouter=无 WAF" },
-    { key: "use_proxy", label: "代理", type: "select", group: "advanced", options: [
+    { key: "use_proxy", label: "代理", type: "select", grp: "signin", options: [
       { value: "", label: "默认（跟随站点代理开关）" },
       { value: "on", label: "开启（本账号强制走代理）" },
       { value: "off", label: "关闭（本账号强制不走代理）" },
     ] },
+    // ── 平台高级配置（grp=platform-adv，仍走折叠+清除区；对齐 anyrouter-check-in 自定义 Provider 配置）──
+    // 全部可留空：留空/清除 → 使用当前 NEWAPI 适配器默认路径 / 请求头，行为与 1.8.9 完全一致（零回归）。
+    { key: "domain", label: "服务商地址（覆盖）", type: "text", grp: "platform-adv", group: "advanced",
+      ph: "如 https://custom.example.com（留空=用上方平台地址）" },
+    { key: "login_path", label: "登录路径", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 /api/user/login" },
+    { key: "user_info_path", label: "用户信息路径", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 /api/user/self" },
+    { key: "api_user_key", label: "API User 头名", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 new-api-user（自定义平台可改）" },
+    { key: "bypass_method", label: "WAF 绕过", type: "select", grp: "platform-adv", group: "advanced", options: [
+      { value: "", label: "无（默认，被拦时按响应识别）" },
+      { value: "waf_cookies", label: "waf_cookies（认证前校验 WAF Cookie 是否齐全）" },
+    ] },
+    { key: "waf_cookie_names", label: "WAF Cookie 名", type: "text", grp: "platform-adv", group: "advanced",
+      ph: "逗号分隔（仅 WAF 绕过=waf_cookies 生效）；留空按 provider：AnyRouter=acw_tc,cdn_sec_tc,acw_sc__v2，AgentRouter=无 WAF" },
   ],
   base: "", // NewAPI 无默认地址（base_url 必填，缺失时明确报错，避免请求假占位域名）
   loginPath: "/api/user/login",
@@ -1300,11 +1302,25 @@ const NEWAPI = {
       }
       if (!j || !j.success || !(j.data || {}).access_token) {
         // B16a：账密被拒标记（ANYROUTER 委托路径据此回退 Cookie 签到；newapi 站点感知不到该标志，行为不变）
-        const err = new Error((j && (j.message || j.msg)) || `登录失败（HTTP ${r.status}）`);
+        // 2.0.3：账密登录被拒响应命中 Turnstile 类人机验证标记 → 明确引导改用令牌/Cookie（后端无浏览器产不出 token），不再复用误导性登录失败原文。
+        const rawMsg = (j && (j.message || j.msg)) || `登录失败（HTTP ${r.status}）`;
+        const err = new Error(isTurnstileRequired(rawMsg)
+          ? "该平台账号密码登录需人机验证（Turnstile），后端无法自动完成——请改用「访问令牌」或「Cookie」认证方式"
+          : rawMsg);
         err.loginRejected = true;
         throw err;
       }
-      return { type: "token", token: j.data.access_token, base };
+      // 2.0.3 根因修复：账密登录拿到 Bearer token 后必须补 new-api-user 头，否则 agentrouter 等平台
+      // 对 /api/user/self「未提供 New-Api-User」返回 401（2.0.1 实测：Bearer 单独→401，Bearer+new-api-user→200）。
+      // new-api-user 值取登录响应的用户 id（NewAPI 约定 data.id）；用户显式配了 api_user 则以其为准。
+      const pwAuth = { type: "token", token: j.data.access_token, base };
+      const uid = (j.data.id != null && j.data.id !== "") ? String(j.data.id) : "";
+      const pwApiUser = (cfg.api_user && String(cfg.api_user).trim()) || uid;
+      if (pwApiUser) {
+        pwAuth.apiUserKey = (cfg.api_user_key && String(cfg.api_user_key).trim()) || "new-api-user";
+        pwAuth.apiUser = pwApiUser;
+      }
+      return pwAuth;
     }
     if (cfg.cookie && String(cfg.cookie).trim()) {
       return cookieAuth(cfg, base);
@@ -1464,9 +1480,19 @@ const NEWAPI = {
     // 成功信号 = user_info 查询成功（站点侧已记账）；前后余额增量 >0 → 本次奖励，否则视为今日已签到。
     const paths = this._paths(cfg);
     if (!paths.signIn) {
-      let after = null;
-      try { after = await this._getUserInfo(auth, cfg.use_proxy, cfg); } catch { /* 取不到不致命 */ }
-      if (!after) throw new Error("自动签到模式：用户信息查询失败，登录态可能已失效（请检查凭据/Cookie）");
+      let after = null, infoErr = null;
+      try { after = await this._getUserInfo(auth, cfg.use_proxy, cfg); } catch (e) { infoErr = e; }
+      if (!after) {
+        // 2.0.3：不再一律甩「登录态可能已失效」。命中 Turnstile → 明确引导改令牌/Cookie；
+        // 其余情形回传底层真实原因（401/WAF 等），避免误导账密用户以为凭据过期。
+        const em = (infoErr && infoErr.message) ? String(infoErr.message) : "";
+        if (isTurnstileRequired(em)) {
+          throw new Error("该平台自动签到需人机验证（Turnstile），后端无法自动完成——请改用「访问令牌」或「Cookie」认证方式");
+        }
+        throw new Error(em
+          ? `自动签到失败：${em}`
+          : "自动签到失败：用户信息查询无有效数据，请检查平台地址与认证方式（Cookie / 访问令牌 / 邮箱密码）");
+      }
       const beforeQ = before ? Number(before.quota) : null;
       const afterQ = Number(after.quota);
       const delta = (Number.isFinite(beforeQ) && Number.isFinite(afterQ)) ? (afterQ - beforeQ) : null;

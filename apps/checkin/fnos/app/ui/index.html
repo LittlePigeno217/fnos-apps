@@ -303,6 +303,16 @@
               border-radius: 10px; font-size: 9.5px; line-height: 1.4; color: #9aa7b8;
               background: rgba(128, 138, 158, .12); white-space: nowrap; vertical-align: middle; }
   .auth-tag.warn { color: #e5484d; background: rgba(229, 72, 77, .10); }
+  /* 2.0.3：newapi 表单分组（登录认证 / 签到行为 / 平台）—— 仅 UI 归类，字段键/保存不变 */
+  .np-grp { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 4px; margin-bottom: 10px; }
+  .np-grp-h { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; letter-spacing: .02em; }
+  .np-auth-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .np-auth-tab { flex: 1; padding: 6px 4px; font-size: 12px; border: 1px solid var(--border); border-radius: 8px;
+                 background: var(--bg); color: var(--ink); cursor: pointer; transition: all .12s ease; }
+  .np-auth-tab:hover { background: var(--hover); }
+  .np-auth-tab.active { border-color: var(--accent, #2563eb); color: var(--accent, #2563eb); background: rgba(37,99,235,.08); font-weight: 600; }
+  .np-auth-hint { font-size: 12px; color: var(--muted); padding: 8px 2px; }
+  .np-auth-panel[hidden] { display: none; }
   .acct-card-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .acct-card-title { min-width: 0; flex: 1; }
   .acct-card-title .t { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -442,7 +452,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.0.2</span>
+      <span class="ver" id="appVersion">v2.0.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -733,8 +743,53 @@ function advancedSectionHtml(rowsHtml) {
 function clearAdvancedConfig(btn) {
   const box = btn && btn.closest(".adv-config");
   if (!box) return;
-  box.querySelectorAll("input").forEach((i) => { i.value = ""; });
+  box.querySelectorAll("input").forEach((i) => { if (!i.readOnly) i.value = ""; });
   box.querySelectorAll("select").forEach((s) => { s.selectedIndex = 0; });
+}
+/** 2.0.3：newapi 表单按「平台 / 登录认证 / 签到行为」分组渲染（仅 UI；字段键/保存语义不变）。
+ *  分组依据后端字段 grp/auth 元数据；fieldRow(f)=>html 由调用方提供（add: id=addck_ / edit: data-f=）。
+ *  登录认证组三种方式（cookie/token/password）单选联动，未选显示提示；平台高级仍走折叠+清除区。 */
+function newapiGroupedFormHtml(fieldRow) {
+  const fields = siteFields("newapi");
+  const rowsWhere = (pred) => fields.filter(pred).map(fieldRow).join("");
+  const auth = (m) => rowsWhere((f) => f.grp === "auth" && f.auth === m);
+  const platformGroup =
+    '<div class="np-grp"><div class="np-grp-h">平台</div>' +
+      rowsWhere((f) => f.grp === "platform") +
+      advancedSectionHtml(rowsWhere((f) => f.grp === "platform-adv")) +
+    '</div>';
+  const authGroup =
+    '<div class="np-grp"><div class="np-grp-h">登录认证</div>' +
+      '<div class="np-auth-tabs" data-np-authtabs>' +
+        '<button type="button" class="np-auth-tab" data-m="cookie">Cookie</button>' +
+        '<button type="button" class="np-auth-tab" data-m="token">访问令牌</button>' +
+        '<button type="button" class="np-auth-tab" data-m="password">邮箱密码</button>' +
+      '</div>' +
+      '<div class="np-auth-hint" data-np-authhint>请选择上方一种认证方式后填写对应凭据</div>' +
+      '<div class="np-auth-panel" data-authgrp="cookie" hidden>' + auth("cookie") + '</div>' +
+      '<div class="np-auth-panel" data-authgrp="token" hidden>' + auth("token") + '</div>' +
+      '<div class="np-auth-panel" data-authgrp="password" hidden>' + auth("password") + '</div>' +
+    '</div>';
+  const signinGroup =
+    '<div class="np-grp"><div class="np-grp-h">签到行为</div>' + rowsWhere((f) => f.grp === "signin") + '</div>';
+  return platformGroup + authGroup + signinGroup;
+}
+/** 登录认证组三态联动：选中某方式 → 仅显示该组凭据字段、高亮该 tab、隐藏提示；未选 → 全隐藏并提示。
+ *  隐藏用 hidden 属性（输入仍在 DOM，保存时照常采集 → 保存语义零变化）。root 为含表单的容器元素。 */
+function bindNewapiAuthGroups(root, initialMethod) {
+  if (!root) return;
+  const tabs = root.querySelector("[data-np-authtabs]");
+  if (!tabs) return;
+  const hint = root.querySelector("[data-np-authhint]");
+  const panels = Array.prototype.slice.call(root.querySelectorAll("[data-authgrp]"));
+  const btns = Array.prototype.slice.call(tabs.querySelectorAll(".np-auth-tab"));
+  const show = (m) => {
+    panels.forEach((p) => { p.hidden = p.getAttribute("data-authgrp") !== m; });
+    btns.forEach((b) => b.classList.toggle("active", b.getAttribute("data-m") === m));
+    if (hint) hint.hidden = !!m;
+  };
+  btns.forEach((b) => b.addEventListener("click", () => show(b.getAttribute("data-m"))));
+  show(initialMethod || "");
 }
 function siteShort(key) {
   const m = getSiteMeta(key);
@@ -1490,19 +1545,24 @@ function renderAddCookiePanel(key) {
   const rows = basic.map(rowHtml).join("");
   const advRows = advancedSectionHtml(advanced.map(rowHtml).join(""));
   const isEnshan = key === "right_forum";
+  // 2.0.3：newapi 走分组表单（平台 / 登录认证三态联动 / 签到行为）；其余站点保持原有基础+高级渲染。
+  const bodyHtml = key === "newapi" ? newapiGroupedFormHtml(rowHtml) : (rows + advRows);
   $("addPanel").innerHTML =
     '<div class="add-panel-tip">' +
       (isEnshan ? "该站点无登录接口，请在浏览器登录后复制 Cookie 粘贴到下方。"
                 : "手动粘贴凭据 / Token 保存账号（扫码或账号密码不可用时的备用方式）。") +
     "</div>" +
-    rows +
-    advRows +
+    bodyHtml +
     '<div class="cred-row"><div class="cred-label">备注（可选）</div>' +
       '<input class="input" id="addck_remark" placeholder="用于区分多账号"></div>' +
     '<button type="button" class="btn primary" id="addckBtn" style="width:100%;margin-top:6px" onclick="submitAddCookie()">保存账号</button>' +
     '<div id="addckState" class="muted" style="font-size:12.5px;min-height:18px;margin-top:8px"></div>';
   // 1.9.5：newapi provider 联动（添加页 id 定位）——首项默认 anyrouter → 平台地址固定+只读
-  if (key === "newapi") bindNewapiProviderLink($("addck_provider"), $("addck_base_url"));
+  // 2.0.3：登录认证三态联动（添加页未选任何方式 → 显示选择提示）
+  if (key === "newapi") {
+    bindNewapiProviderLink($("addck_provider"), $("addck_base_url"));
+    bindNewapiAuthGroups($("addPanel"), "");
+  }
 }
 
 /** 保存手动配置账号：合并进现有账号集（保留其它账号）后 save_config */
@@ -1743,8 +1803,10 @@ function accountEditEl(key, acc) {
       </div>`;
   };
   const split = siteFieldsSplit(key);
-  const fields = split.basic.map(renderField).join("") +
-    advancedSectionHtml(split.advanced.map(renderField).join(""));
+  // 2.0.3：newapi 走分组表单；其余站点保持原有基础+高级渲染。
+  const fields = key === "newapi"
+    ? newapiGroupedFormHtml(renderField)
+    : (split.basic.map(renderField).join("") + advancedSectionHtml(split.advanced.map(renderField).join("")));
   div.innerHTML = fields +
     '<div class="cred-row">' +
       '<div class="cred-label">备注</div>' +
@@ -1755,7 +1817,14 @@ function accountEditEl(key, acc) {
       '<label class="switch"><input type="checkbox" data-f="enabled" ' + (acc.enabled === false ? "" : "checked") + '><span class="track"></span></label>' +
     '</div>';
   // 1.9.5：newapi provider 联动（编辑页 data-f 定位）——anyrouter/agentrouter 平台地址固定+只读
-  if (key === "newapi") bindNewapiProviderLink(div.querySelector('[data-f="provider"]'), div.querySelector('[data-f="base_url"]'));
+  // 2.0.3：登录认证三态联动——按已配置凭据推断当前方式（令牌 > Cookie > 邮箱密码），无凭据则不预选
+  if (key === "newapi") {
+    bindNewapiProviderLink(div.querySelector('[data-f="provider"]'), div.querySelector('[data-f="base_url"]'));
+    const initMethod = masks.access_token ? "token"
+      : masks.cookie ? "cookie"
+      : ((vals.username || acc.username || masks.password) ? "password" : "");
+    bindNewapiAuthGroups(div, initMethod);
+  }
   return div;
 }
 
