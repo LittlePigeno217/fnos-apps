@@ -70,6 +70,50 @@ async function fetchSiteTitleCached(url) {
   titleCache.set(url, { title, ts: Date.now() });
   return title;
 }
+/* ── 品牌名探测清洗（1.9.5：动态探测平台品牌名 → 写账号备注）──────
+ * 用户明确拒绝「域名→品牌名」硬编码映射：品牌名一律从平台页面动态探测取得。
+ * 站点 <title> 常带「- 登录 / | NewAPI / · 控制台」等框架通用噪声词，
+ * 这里只做「通用后缀/前缀噪声词清洗」（不含任何域名映射）：
+ *   按分隔符切段 → 去纯噪声段 → 取首个非噪声段（品牌主干）→ 截断 24 字。 */
+const BRAND_NOISE = new Set([
+  "登录", "登陆", "注册", "控制台", "仪表盘", "仪表板", "首页", "官网", "主页",
+  "后台", "管理", "管理后台", "面板", "令牌", "个人中心", "用户中心",
+  "sign in", "signin", "sign up", "signup", "log in", "login", "logout",
+  "register", "dashboard", "console", "home", "panel", "admin",
+  "newapi", "new api", "oneapi", "one api", "sub2api", "api",
+]);
+function cleanBrandName(raw) {
+  const s = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  // 分隔符切段：竖线 / 半全角连字号 / 破折号 / 点 / 冒号 / 斜杠
+  const parts = s.split(/\s*[|\-–—·•:：/]\s*/).map((p) => p.trim()).filter(Boolean);
+  const isNoise = (p) => BRAND_NOISE.has(p.toLowerCase());
+  const kept = parts.filter((p) => !isNoise(p));
+  let brand = kept.length ? kept[0] : "";
+  if (!brand) return ""; // 全为噪声（纯框架名如 "New API"）→ 视为无品牌，不写备注
+  if (brand.length > 24) brand = brand.slice(0, 24); // 过长截断
+  return brand;
+}
+/** SSRF 最小面：仅允许公网 http(s) 主机，拒绝环回/内网/链路本地/元数据/无点短名。 */
+function isPublicHost(host) {
+  if (!host) return false;
+  const h = String(host).toLowerCase().replace(/^\[|\]$/g, ""); // 去 IPv6 方括号
+  if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".localhost")) return false;
+  if (h === "::1" || h.startsWith("fe80") || h.startsWith("fc") || h.startsWith("fd")) return false; // IPv6 环回/链路本地/唯一本地
+  const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(h);
+  if (!isIPv4 && !h.includes(".")) return false; // 无点短名（内网主机名）
+  if (isIPv4) {
+    const o = h.split(".").map((n) => parseInt(n, 10));
+    if (o.some((n) => !(n >= 0 && n <= 255))) return false;
+    if (o[0] === 127 || o[0] === 10 || o[0] === 0) return false;            // 环回 / A 类私网 / 本网
+    if (o[0] === 169 && o[1] === 254) return false;                          // 链路本地（含 169.254.169.254 元数据）
+    if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return false;              // B 类私网
+    if (o[0] === 192 && o[1] === 168) return false;                          // C 类私网
+    if (o[0] === 100 && o[1] >= 64 && o[1] <= 127) return false;             // CGNAT
+  }
+  return true;
+}
+
 function fail(message) {
   return { success: false, message: String(message || "未知错误"), data: {} };
 }
@@ -102,6 +146,22 @@ class Server {
     const titles = {};
     await Promise.all([...urls].map(async (u) => { titles[u] = await fetchSiteTitleCached(u); }));
     return ok({ titles });
+  }
+
+  /** 平台品牌名探测（1.9.5，只读）：入参单 URL → 复用站点标题抓取（品牌 span / <title>）
+   *  → 通用后缀词清洗 → 返回品牌名。安全边界：仅 https?:// + 拒绝内网/环回/元数据主机；
+   *  只提取标题文本，不输出正文/HTML；超时/非 2xx/无品牌一律返回空 brand（平 JSON）。
+   *  注：底层 fetch 跟随跳转（redirect:follow，与 site_titles 同源），公网→内网跳转为已知残留面，
+   *  单用户自托管场景可接受；如需收紧可改 redirect:manual（见 DELEGATE-REPORT 取舍）。 */
+  async fetchBrand(rawUrl) {
+    const url = String(rawUrl || "").trim();
+    if (!/^https?:\/\//i.test(url)) return ok({ brand: "" });
+    let host = "";
+    try { host = new URL(url).hostname.toLowerCase(); } catch (e) { return ok({ brand: "" }); }
+    if (!isPublicHost(host)) return ok({ brand: "" });
+    let title = null;
+    try { title = await fetchSiteTitleCached(url.replace(/\/+$/, "")); } catch (e) { title = null; }
+    return ok({ brand: cleanBrandName(title) });
   }
 
   getConfig() {

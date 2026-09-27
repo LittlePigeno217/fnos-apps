@@ -1,6 +1,6 @@
 {
-  "version": "1.9.4",
-  "generated_at": "2026-09-27T10:04:34Z",
+  "version": "1.9.5",
+  "generated_at": "2026-09-27T10:18:18Z",
   "files": {
     "server/hotfix.js": {
       "sha256": "fa801ced81106476dfe02a528f0d54c93fbd7188fdc77632d1466c7cf7018f69",
@@ -11,8 +11,8 @@
       "size": 13083
     },
     "server/main.js": {
-      "sha256": "8faf719fc985d6fa05b6618cf5b6b24cefb275f014fbe2af62622aecc79d9e3b",
-      "size": 26501
+      "sha256": "858ae20d39f5290a331f2e5a04e7747c0809ff04daa17c6c8be1f1971c6049d9",
+      "size": 26687
     },
     "server/notify.js": {
       "sha256": "fbbf8bee81cc15627a0f677f26983887089dd6538c43303e4873cb9b3a8ac2ac",
@@ -23,28 +23,28 @@
       "size": 56694
     },
     "server/router.js": {
-      "sha256": "2147aecf0225c5e6c79cab5ac64cc68d255e2695f208cf69bc4ae18ecaea805a",
-      "size": 2942
+      "sha256": "415ce3174b46dea949ab6afc97728d24efbd99020c95aa2cad4865493bfd7430",
+      "size": 3123
     },
     "server/server.js": {
-      "sha256": "300c50c1b0a932b2ab09609e530e01e1705f0e3ac799677dc13814e230046eae",
-      "size": 75077
+      "sha256": "313bd94e211bb27b16f232cf0f505eaf6a857491afa9cf884531ab955788a1a3",
+      "size": 79058
     },
     "server/sites.js": {
       "sha256": "1874641f6c6bc5e4d86b1fa9547692e255380710f7604a797e482d17b4f99ad8",
       "size": 104413
     },
     "server/store.js": {
-      "sha256": "f2843b7376fb59ec827f9f613562b7dcb1a9bdc2519f26b46b66c90f10c115c7",
+      "sha256": "9695258ecbc7cce3f92922070fe23190f17dd6750150fccaf05cfe15fffa57cb",
       "size": 30735
     },
     "server/update.js": {
-      "sha256": "9cb17a8cd5649d60b24ceba3191cfd92ba364126df802fe9a0df9dc83f36763d",
+      "sha256": "8ec38f59b5eeb41ace91dc08300e8ea73af4d178bdf10c8c84e337ddffa580ad",
       "size": 19825
     },
     "www/index.html": {
-      "sha256": "8e419400f196ac533185d060cf58c548e683cb435bd9ab5758b2599f6712dba6",
-      "size": 128242
+      "sha256": "fcd620ab1802c21c3d5a6429a4c8cf6695a0042183720ae6a465c61fb849135e",
+      "size": 133241
     }
   }
 }

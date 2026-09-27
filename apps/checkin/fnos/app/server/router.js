@@ -26,6 +26,8 @@ const ROUTES = new Map([
   ["checkin/history_export", { GET: "historyExport" }],
   // 1.6.2：站点标题（账号卡标题链接：base_url → <title>，读端点开放）
   ["checkin/site_titles", { GET: "siteTitles" }],
+  // 1.9.5：平台品牌名探测（读端点开放：?url=<平台首页> → 清洗后品牌名，供前端写入账号备注）
+  ["checkin/fetch_brand", { GET: "fetchBrand" }],
 
   // ── 阶段2：账号运维（命名空间，无旧别名）────────────
   ["checkin/accounts", { GET: "accountsList" }],

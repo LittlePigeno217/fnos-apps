@@ -268,6 +268,8 @@ const ACTION_HANDLERS = {
   runAccount: (body) => api.runAccount(body.site, body.account_id),
   points: () => api.points(),
   siteTitles: () => api.siteTitles(),
+  // 1.9.5：品牌名探测（读端点，?url= 单 URL → 清洗后品牌名）
+  fetchBrand: (body, ctx) => api.fetchBrand(new URL(ctx.req.url, "http://x").searchParams.get("url")),
   // 1.5.4：签到历史可视化——统计聚合（读端点，开放）与 CSV 导出（原始 text/csv 响应）
   historyStats: () => api.historyStats(),
   historyExport: (body, ctx) => {

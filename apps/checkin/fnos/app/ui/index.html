@@ -216,6 +216,7 @@
            background: var(--card); color: var(--ink); font-size: 13px;
            transition: border-color .12s ease; }
   .input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
+  .input.input-locked { background: rgba(127,127,127,.12); color: var(--muted); cursor: not-allowed; } /* 1.9.5：provider 固定平台地址（只读） */
   .input.mono, .mono { font-family: var(--font-mono); font-size: 12.5px; }
 
   /* ---------- 设置分组与开关 ---------- */
@@ -440,7 +441,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.4</span>
+      <span class="ver" id="appVersion">v1.9.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -683,6 +684,33 @@ function siteFields(key) {
   const m = getSiteMeta(key);
   return Array.isArray(m.fields) ? m.fields : [];
 }
+/** 1.9.5：newapi 表单 provider 联动——anyrouter/agentrouter → 平台地址固定域名 + 只读；
+ *  newapi/custom → 可编辑（custom 必填、newapi 可空）。provSel/baseInp 为对应 <select>/<input>
+ *  元素（编辑页 data-f / 添加页 id，由调用方定位后传入）。只操作 base_url，绝不触碰高级项 domain
+ *  覆盖能力：已有自定义 domain 编辑时不被清空，选 anyrouter/agentrouter 仅令 base_url 显示固定值。 */
+function bindNewapiProviderLink(provSel, baseInp) {
+  if (!provSel || !baseInp) return;
+  const apply = () => {
+    const fixed = NEWAPI_FIXED_BASE[provSel.value];
+    if (fixed) {
+      if (baseInp.dataset.prevBase == null) baseInp.dataset.prevBase = baseInp.value; // 记住用户此前自填值
+      baseInp.value = fixed;
+      baseInp.readOnly = true;
+      baseInp.classList.add("input-locked");
+      baseInp.title = "该提供商平台地址固定，无需修改";
+    } else {
+      if (baseInp.readOnly && baseInp.dataset.prevBase != null) {
+        baseInp.value = baseInp.dataset.prevBase; // 从固定→可编辑：恢复自填值，避免残留固定域名
+      }
+      delete baseInp.dataset.prevBase;
+      baseInp.readOnly = false;
+      baseInp.classList.remove("input-locked");
+      baseInp.title = "";
+    }
+  };
+  provSel.addEventListener("change", apply);
+  apply(); // 初始态（编辑=账号现值 / 添加=首项 anyrouter）
+}
 /** 拆分基础字段 / 高级字段（f.group==="advanced"）：高级项折叠进「服务商高级配置」区（1.9.0） */
 function siteFieldsSplit(key) {
   const all = siteFields(key);
@@ -793,6 +821,50 @@ async function refreshSiteTitles() {
   if (r && r.success && r.data && r.data.titles) {
     window.SITE_TITLES = r.data.titles;
     renderSiteCards(SITE_DATA);
+  }
+}
+
+/* ── 1.9.5：newapi 账号标题 = 动态探测平台品牌名 → 自动写入账号备注 ──────
+ * 标题渲染零改动（1.9.2 起 acctName = remark || label || 账号N，备注名优先）：
+ * 对「备注为空 + base_url 可确定」的 newapi 系账号探测一次真实品牌名，成功即写备注。
+ * 节流：成功写入即不再触发（备注已非空）；失败按会话内每账号计数，达上限不再重试。 */
+const NEWAPI_FIXED_BASE = { anyrouter: "https://anyrouter.top", agentrouter: "https://agentrouter.org" };
+const BRAND_PROBE = {};           // key:id → { tries, inflight, done }
+const BRAND_PROBE_MAX = 2;        // 会话内每账号最多失败尝试次数（成功即写备注不再触发）
+/** 账号卡渲染时调用（fire-and-forget，不阻塞渲染）：满足条件则触发一次品牌探测 */
+function maybeProbeBrand(key, a, baseUrl) {
+  if (key !== "newapi" || !a) return;
+  if (a.remark) return;                                   // 已有备注（探测已写 / 用户手填）→ 不覆盖
+  if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) return; // base_url 不可确定 → 不探测
+  const pk = key + ":" + (a.id || "");
+  const s = BRAND_PROBE[pk] || (BRAND_PROBE[pk] = { tries: 0, inflight: false, done: false });
+  if (s.done || s.inflight || s.tries >= BRAND_PROBE_MAX) return;
+  s.inflight = true;
+  probeBrandNow(key, a, baseUrl, s);
+}
+async function probeBrandNow(key, a, baseUrl, s) {
+  try {
+    const r = await call("checkin/fetch_brand?url=" + encodeURIComponent(baseUrl), "GET", null, 12000);
+    const brand = (r && r.success && r.data && r.data.brand) ? String(r.data.brand).trim() : "";
+    if (!brand) { s.tries += 1; return; }                 // 无品牌/超时/非平台页 → 计数，达上限不刷屏
+    const st = SITE_DATA[key] || {};
+    const accsAll = Array.isArray(st.accounts) ? st.accounts : [];
+    if (!accsAll.some((x) => String(x.id) === String(a.id))) { s.tries += 1; return; }
+    // 写备注落点：沿用现有账号保存通道（save_config）——目标账号 {id,remark}，其余仅 {id}（后端保留原字段）
+    const accounts = accsAll.map((x) => (String(x.id) === String(a.id) ? { id: x.id, remark: brand } : { id: x.id }));
+    const body = { sites: { [key]: { enabled: st.enabled === true, use_proxy: st.use_proxy === true, accounts } } };
+    const sr = await call("save_config", "POST", body);
+    if (sr && sr.success) {
+      a.remark = brand;        // 本地即时生效（标题渲染备注名优先，重渲染不再触发本账号探测）
+      s.done = true;
+      renderAccountList();
+    } else {
+      s.tries += 1;
+    }
+  } catch (e) {
+    s.tries += 1;
+  } finally {
+    s.inflight = false;
   }
 }
 
@@ -941,6 +1013,8 @@ function renderAcctCard(key, a, cap) {
     return (m ? m[1] : String(u || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).trim();
   };
   const host = hostOf(baseUrl);
+  // 1.9.5：newapi 账号「备注为空 + base_url 可确定」→ 触发一次品牌探测 → 成功写备注（标题随之显示品牌名）
+  maybeProbeBrand(key, a, baseUrl);
   // 副标题（仅有用时渲染，压缩高度）：备注账号 → 真实账号标识；NewAPI 无备注 → 平台地址（可点击跳转平台）
   let subLabel = "";
   if (a.remark) {
@@ -1430,6 +1504,8 @@ function renderAddCookiePanel(key) {
       '<input class="input" id="addck_remark" placeholder="用于区分多账号"></div>' +
     '<button type="button" class="btn primary" id="addckBtn" style="width:100%;margin-top:6px" onclick="submitAddCookie()">保存账号</button>' +
     '<div id="addckState" class="muted" style="font-size:12.5px;min-height:18px;margin-top:8px"></div>';
+  // 1.9.5：newapi provider 联动（添加页 id 定位）——首项默认 anyrouter → 平台地址固定+只读
+  if (key === "newapi") bindNewapiProviderLink($("addck_provider"), $("addck_base_url"));
 }
 
 /** 保存手动配置账号：合并进现有账号集（保留其它账号）后 save_config */
@@ -1672,6 +1748,8 @@ function accountEditEl(key, acc) {
       '<span class="muted" style="font-size:11px">启用</span>' +
       '<label class="switch"><input type="checkbox" data-f="enabled" ' + (acc.enabled === false ? "" : "checked") + '><span class="track"></span></label>' +
     '</div>';
+  // 1.9.5：newapi provider 联动（编辑页 data-f 定位）——anyrouter/agentrouter 平台地址固定+只读
+  if (key === "newapi") bindNewapiProviderLink(div.querySelector('[data-f="provider"]'), div.querySelector('[data-f="base_url"]'));
   return div;
 }
 
