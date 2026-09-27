@@ -328,11 +328,15 @@
                            padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
   .acct-hero .hero-delta.up { color: var(--ok); background: var(--ok-glow); }
   .acct-hero .hero-delta.down { color: var(--err); background: var(--err-bg); }
-  /* 1.9.2：状态 + 操作合并为一行（.acct-bar），压缩卡片高度；窄卡 flex-wrap 自动换行 */
-  .acct-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  /* 1.9.4：状态徽标移入 hero 右侧（.hero-badge），挂在余额/积分/流量卡片旁；
+     操作按钮独占一行并均分填满卡片（.acct-actions.spread），窄卡换行后每行仍均分。 */
+  .acct-hero .hero-badge { flex: none; margin-left: 2px; align-self: center; }
   .acct-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
-  .acct-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
-  .acct-bar .acct-actions { margin-left: auto; margin-top: 0; }
+  .acct-meta.solo { margin: 0; }   /* 无 hero 兜底：状态徽标独占一行，永不丢失 */
+  .acct-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  /* 均分：四个操作等宽填满整行，文字水平居中；min-width 防过度收缩，换行后每行内仍靠 flex-grow 均分 */
+  .acct-actions.spread { width: 100%; }
+  .acct-actions.spread .btn { flex: 1 1 0; min-width: 60px; justify-content: center; }
   .acct-card .acct-actions { gap: 4px; }
   .acct-card .acct-actions .btn-mini { padding: 2px 7px; font-size: 11.5px; }
   .acct-card .row-badge { font-size: 11px; padding: 1px 7px; }
@@ -436,7 +440,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.3</span>
+      <span class="ver" id="appVersion">v1.9.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1001,6 +1005,7 @@ function renderAcctCard(key, a, cap) {
   // 统一数值主视觉（所有站点，1.8.8 重新设计）：主值 hero-num 适度大小 + 标签行右端「今日收益」小徽标
   //   （hero_delta_display，>0 才有值；完整展示单位/千分位/标签，不截断）。图标按持有量语义选（流量/积分·余额·金币）。
   let balLine = "";
+  let heroHasBadge = false;
   if (d && d.hero_label) {
     const bl = esc(d.hero_label);
     const ico = heroIcon(d.hero_label);
@@ -1008,11 +1013,15 @@ function renderAcctCard(key, a, cap) {
     const delta = d.hero_delta_display
       ? '<span class="hero-delta up" title="当天签到收益">今日 ' + esc(d.hero_delta_display) + "</span>"
       : "";
+    // 1.9.4：签到状态徽标移入 hero 右侧（挂在余额卡片旁），不挤压主数值/今日收益（hero-main flex:1 min-width:0 吸收收缩）
     balLine = '<div class="acct-hero' + (hasVal ? "" : " empty") + '">' + ico +
       '<span class="hero-main">' +
         '<span class="hero-lb-row"><span class="hero-lb">' + bl + "</span>" + delta + "</span>" +
         '<span class="hero-num">' + (hasVal ? esc(d.hero_display) : "—") + "</span>" +
-      "</span></div>";
+      "</span>" +
+      '<span class="hero-badge">' + dayBadge + "</span>" +
+    "</div>";
+    heroHasBadge = true;
   }
   // 账号卡「编辑」入口：打开该账号的纯账号配置页（无站点级功能）；改凭据保存即覆盖登录态。
   const editBtn = '<button class="btn btn-mini" title="编辑该账号配置（凭据/备注/启用）" onclick="openAccountEditor(\'' + key + "','" + esc(a.id || "") + '\')">' +
@@ -1031,14 +1040,13 @@ function renderAcctCard(key, a, cap) {
       loginBadge +
     "</div>" +
     balLine +
-    // 1.9.2：状态徽标 + 操作按钮合并为一行（.acct-bar），窄卡 flex-wrap 自动换行，压缩高度
-    '<div class="acct-bar">' +
-      '<div class="acct-meta">' + dayBadge + "</div>" +
-      '<div class="acct-actions">' +
-        editBtn + checkinBtn +
-        '<button class="btn btn-mini" onclick="cardTestAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
-        '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
-      "</div>" +
+    // 1.9.4：无 hero（无 hero_label）兜底——状态徽标独占一行，保证状态永不丢失
+    (heroHasBadge ? "" : '<div class="acct-meta solo">' + dayBadge + "</div>") +
+    // 1.9.4：编辑/签到/测试/删除 独占一行并均分填满卡片（.spread）；窄卡换行后每行仍均分。功能/onclick/禁用态不变
+    '<div class="acct-actions spread">' +
+      editBtn + checkinBtn +
+      '<button class="btn btn-mini" onclick="cardTestAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
+      '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
     "</div>" +
   "</div>";
 }
