@@ -442,7 +442,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.9</span>
+      <span class="ver" id="appVersion">v2.0.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -460,13 +460,13 @@
       <section id="tab-sites">
         <!-- 工具条 -->
         <div class="toolbar">
-          <button class="btn primary" id="runAllBtn" onclick="runAll()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
-            立即签到全部
-          </button>
           <button class="btn" onclick="openAddAccount('')" title="选择已有站点添加账号">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
             添加账号
+          </button>
+          <button class="btn primary" id="runAllBtn" onclick="runAll()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
+            立即签到全部
           </button>
           <button class="btn" onclick="openHistoryPanel()" title="签到历史（按日期分组查看 / 导出 CSV）">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-9M12 20V4M18 20v-6"/><path d="M3 20h18"/></svg>
