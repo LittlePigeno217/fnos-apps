@@ -452,7 +452,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.0.5</span>
+      <span class="ver" id="appVersion">v2.0.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -730,11 +730,14 @@ function siteFieldsSplit(key) {
     advanced: all.filter((f) => f.group === "advanced"),
   };
 }
-/** 高级配置折叠区外壳：留空=默认，含「清除高级配置」按钮（把区内输入清空/选择回默认，保存时空值归默认，零残留） */
-function advancedSectionHtml(rowsHtml) {
+/** 高级配置折叠区外壳：留空=默认，含「清除高级配置」按钮（把区内输入清空/选择回默认，保存时空值归默认，零残留）。
+ *  open=true（编辑页且该账号已存高级配置）→ 默认展开并提示「已配置」，避免已保存的高级项被折叠隐藏
+ *  而被误认为「编辑未加载配置」（2.0.6）。添加页/无高级值 → 折叠（open 缺省 false）。 */
+function advancedSectionHtml(rowsHtml, open) {
   if (!rowsHtml) return "";
-  return '<details class="adv-config" style="margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:6px 8px">' +
-    '<summary style="cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none">服务商高级配置（可选，留空=默认）</summary>' +
+  const summary = open ? "服务商高级配置（已配置，展开可见）" : "服务商高级配置（可选，留空=默认）";
+  return '<details class="adv-config"' + (open ? " open" : "") + ' style="margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:6px 8px">' +
+    '<summary style="cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none">' + summary + '</summary>' +
     '<div style="margin-top:8px">' + rowsHtml +
     '<button type="button" class="btn" style="width:100%;margin-top:4px;font-size:12px" onclick="clearAdvancedConfig(this)">清除高级配置（全部回默认）</button>' +
     '</div></details>';
@@ -749,14 +752,14 @@ function clearAdvancedConfig(btn) {
 /** 2.0.3：newapi 表单按「平台 / 登录认证 / 签到行为」分组渲染（仅 UI；字段键/保存语义不变）。
  *  分组依据后端字段 grp/auth 元数据；fieldRow(f)=>html 由调用方提供（add: id=addck_ / edit: data-f=）。
  *  登录认证组三种方式（cookie/token/password）单选联动，未选显示提示；平台高级仍走折叠+清除区。 */
-function newapiGroupedFormHtml(fieldRow) {
+function newapiGroupedFormHtml(fieldRow, advOpen) {
   const fields = siteFields("newapi");
   const rowsWhere = (pred) => fields.filter(pred).map(fieldRow).join("");
   const auth = (m) => rowsWhere((f) => f.grp === "auth" && f.auth === m);
   const platformGroup =
     '<div class="np-grp"><div class="np-grp-h">平台</div>' +
       rowsWhere((f) => f.grp === "platform") +
-      advancedSectionHtml(rowsWhere((f) => f.grp === "platform-adv")) +
+      advancedSectionHtml(rowsWhere((f) => f.grp === "platform-adv"), advOpen) +
     '</div>';
   const authGroup =
     '<div class="np-grp"><div class="np-grp-h">登录认证</div>' +
@@ -1821,10 +1824,15 @@ function accountEditEl(key, acc) {
       </div>`;
   };
   const split = siteFieldsSplit(key);
+  // 2.0.6：编辑页若该账号已存任一高级配置（group=advanced：domain/login_path/user_info_path/
+  // api_user_key/bypass_method/waf_cookie_names），默认展开高级折叠区——已保存的高级项不再被折叠
+  // 隐藏，确保「编辑=完全同步加载该账号已存配置」可见（非敏感文本取 field_values，敏感取 field_masks）。
+  const advOpen = siteFields(key).some((f) => f.group === "advanced" && (
+    (vals[f.key] != null && vals[f.key] !== "") || !!masks[f.key]));
   // 2.0.3：newapi 走分组表单；其余站点保持原有基础+高级渲染。
   const fields = key === "newapi"
-    ? newapiGroupedFormHtml(renderField)
-    : (split.basic.map(renderField).join("") + advancedSectionHtml(split.advanced.map(renderField).join("")));
+    ? newapiGroupedFormHtml(renderField, advOpen)
+    : (split.basic.map(renderField).join("") + advancedSectionHtml(split.advanced.map(renderField).join(""), advOpen));
   div.innerHTML = fields +
     '<div class="cred-row">' +
       '<div class="cred-label">备注</div>' +
