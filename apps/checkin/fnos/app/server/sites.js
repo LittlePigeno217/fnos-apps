@@ -883,10 +883,12 @@ const YPOJIE = {
 /* ── AnyRouter 合并进 NewAPI 单站点（09-26 任务书）────────────
  * 「通用 NewAPI」与「其他 NewAPI（anyrouter）」合并为唯一站点 key=newapi，
  * 显示名「NewAPI / AnyRouter」。原 ANYROUTER 独立适配器删除，其能力全部并入 NEWAPI：
- *   - provider 字段（anyrouter/agentrouter/newapi/custom）驱动 base_url 缺省推导；
+ *   - provider 字段（anyrouter/agentrouter/custom；09-27 收敛掉 newapi 选项，旧值兼容不破坏，
+ *     等价通用自定义）驱动 base_url 缺省推导与 WAF Cookie 默认名（对齐上游 ProviderConfig）；
  *   - email/cookies 作为 username/cookie 的别名（_normalize 归一，兼容两类旧账号）；
  *   - 余额增量判定（_deltaOk）默认开启（账号字段 delta_ok，对齐上游 BALANCE_HASH 思想）；
- *   - api_user_key 可配置（默认 new-api-user）；
+ *   - api_user_key 可配置（默认 new-api-user）；sign_in_path 支持 __auto__ 哨兵
+ *     （= 上游 sign_in_path=None：无手动签到接口，查询用户信息自动签到）；
  *   - 账密登录被拒 + 配了 Cookie → 回退 Cookie 签到（原 B16a）。 */
 
 /* ── NewAPI / AnyRouter（合并单站点）────────────────────────── */
@@ -902,10 +904,9 @@ const NEWAPI = {
     { key: "provider", label: "提供商", type: "select", options: [
       { value: "anyrouter", label: "AnyRouter（anyrouter.top）" },
       { value: "agentrouter", label: "AgentRouter（agentrouter.org）" },
-      { value: "newapi", label: "通用 NewAPI / OneAPI（填平台地址）" },
-      { value: "custom", label: "自定义平台（填平台地址）" },
+      { value: "custom", label: "自定义 / 通用 NewAPI·OneAPI（填平台地址）" },
     ] },
-    { key: "base_url", label: "平台地址", type: "text", ph: "AnyRouter/AgentRouter 可留空；自建 NewAPI/OneAPI 必填" },
+    { key: "base_url", label: "平台地址", type: "text", ph: "AnyRouter/AgentRouter 可留空；自定义 / 通用 NewAPI·OneAPI 必填" },
     { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（WAF 站点用这个；三选一）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
     { key: "access_token", label: "访问令牌", type: "password", ph: "Bearer 令牌（NewAPI/Sub2API 通用，优先；三选一）" },
@@ -921,7 +922,7 @@ const NEWAPI = {
     { key: "domain", label: "服务商地址（覆盖）", type: "text", group: "advanced",
       ph: "如 https://custom.example.com（留空=用上方平台地址）" },
     { key: "login_path", label: "登录路径", type: "text", group: "advanced", ph: "默认 /api/user/login" },
-    { key: "sign_in_path", label: "签到路径", type: "text", group: "advanced", ph: "默认 /api/user/sign_in" },
+    { key: "sign_in_path", label: "签到路径", type: "text", group: "advanced", ph: "默认 /api/user/sign_in；填 __auto__ = 无签到接口（查询用户信息自动签到）" },
     { key: "user_info_path", label: "用户信息路径", type: "text", group: "advanced", ph: "默认 /api/user/self" },
     { key: "api_user_key", label: "API User 头名", type: "text", group: "advanced", ph: "默认 new-api-user（自定义平台可改）" },
     { key: "bypass_method", label: "WAF 绕过", type: "select", group: "advanced", options: [
@@ -1204,19 +1205,26 @@ const NEWAPI = {
     return napiBase(cfg);
   },
   /** 高级项路径归一：留空/清除 → 用适配器默认（零回归）。对齐 anyrouter-check-in
-   *  login_path / sign_in_path / user_info_path 覆盖能力。 */
+   *  login_path / sign_in_path / user_info_path 覆盖能力。sign_in_path 填哨兵 __auto__
+   *  （上游 sign_in_path=None 语义）→ null：无手动签到接口，查询用户信息即触发服务端签到。 */
   _paths(cfg) {
     const pick = (v, d) => { const s = String(v == null ? "" : v).trim(); return s || d; };
+    const signInRaw = String((cfg && cfg.sign_in_path) == null ? "" : cfg.sign_in_path).trim();
     return {
       login: pick(cfg && cfg.login_path, this.loginPath),
-      signIn: pick(cfg && cfg.sign_in_path, this.signInPath),
+      signIn: signInRaw === "__auto__" ? null : (signInRaw || this.signInPath),
       userInfo: pick(cfg && cfg.user_info_path, this.userInfoPath),
     };
   },
-  /** WAF Cookie 名清单（bypass_method=waf_cookies 时用）：留空 → 默认 acw_tc / acw_sc__v2。 */
+  /** WAF Cookie 名清单（bypass_method=waf_cookies 时用）：留空 → 按 provider 取上游内置 ProviderConfig
+   *  默认值——anyrouter [acw_tc,cdn_sec_tc,acw_sc__v2]、agentrouter [acw_tc]；其余（自定义/通用 NewAPI·
+   *  OneAPI）维持通用默认 acw_tc/acw_sc__v2（零回归）。 */
   _wafCookieNames(cfg) {
     const raw = String((cfg && cfg.waf_cookie_names) || "").trim();
     if (raw) return raw.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
+    const provider = String((cfg && cfg.provider) || "").trim().toLowerCase();
+    if (provider === "anyrouter") return ["acw_tc", "cdn_sec_tc", "acw_sc__v2"];
+    if (provider === "agentrouter") return ["acw_tc"];
     return ["acw_tc", "acw_sc__v2"];
   },
   /** bypass_method=waf_cookies：认证前校验 Cookie 是否含全部 WAF Cookie，缺失给清晰错误。
@@ -1428,6 +1436,25 @@ const NEWAPI = {
     let before = null;
     try { before = await this._getUserInfo(auth, cfg.use_proxy, cfg); } catch { /* 取不到不致命 */ }
 
+    // 上游 sign_in_path=None 语义（对齐 anyrouter-check-in agentrouter 官方模式）：sign_in_path 填
+    // 哨兵 __auto__ → 无手动签到接口，查询用户信息即触发服务端自动签到（上面的 before 即签到前状态）。
+    // 成功信号 = user_info 查询成功（站点侧已记账）；前后余额增量 >0 → 本次奖励，否则视为今日已签到。
+    const paths = this._paths(cfg);
+    if (!paths.signIn) {
+      let after = null;
+      try { after = await this._getUserInfo(auth, cfg.use_proxy, cfg); } catch { /* 取不到不致命 */ }
+      if (!after) throw new Error("自动签到模式：用户信息查询失败，登录态可能已失效（请检查凭据/Cookie）");
+      const beforeQ = before ? Number(before.quota) : null;
+      const afterQ = Number(after.quota);
+      const delta = (Number.isFinite(beforeQ) && Number.isFinite(afterQ)) ? (afterQ - beforeQ) : null;
+      const gained = delta != null && delta > 0;
+      const rewardMsg = gained ? `本次签到 +${this._fmtUsd(delta)}` : "";
+      const msg = gained
+        ? "自动签到成功（查询用户信息触发签到）"
+        : (napiBalanceMsg(after) || "今日已签到（查询用户信息自动签到，无新增奖励）");
+      return this._ok(gained ? "签到成功" : "今日已签到", msg, rewardMsg || "-", napiBalanceMsg(after) || "-", cfg, auth);
+    }
+
     const doSign = (path) => {
       const s = new Session();
       return s.postRaw(path, null, {
@@ -1435,7 +1462,7 @@ const NEWAPI = {
         timeout: 15000, useProxy: cfg.use_proxy,
       });
     };
-    let r = await doSign(auth.base + this._paths(cfg).signIn);
+    let r = await doSign(auth.base + paths.signIn);
     // OneAPI 平台没有 /api/user/sign_in → fallback /api/user/checkin
     if (r.status === 404 || /not found|接口不存在|invalid action/i.test(String(r.text || ""))) {
       r = await doSign(auth.base + this.fallbackSignInPath);
