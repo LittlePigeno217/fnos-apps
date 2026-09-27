@@ -906,15 +906,18 @@ const NEWAPI = {
   desc: "NewAPI / OneAPI / Sub2API / AnyRouter / AgentRouter 通用 · provider 选站点，Cookie / 访问令牌 / 邮箱密码三选一",
   fields: [
     { key: "provider", label: "提供商", type: "select", options: [
-      { value: "anyrouter", label: "AnyRouter（anyrouter.top）" },
-      { value: "agentrouter", label: "AgentRouter（agentrouter.org）" },
+      // 认证推荐对齐上游 dctx-team/Regular-inspection：anyrouter.top 有阿里云盾 WAF
+      //（浏览器抓 acw_tc/cdn_sec_tc/acw_sc__v2 通过校验），后端无浏览器 → 建议手动 Cookie；
+      // agentrouter.org 上游明确跳过 WAF（无人机验证），邮箱密码 / Cookie 均可。
+      { value: "anyrouter", label: "AnyRouter（anyrouter.top · 有 WAF，建议 Cookie）" },
+      { value: "agentrouter", label: "AgentRouter（agentrouter.org · 无 WAF，邮箱密码/Cookie 均可）" },
       { value: "custom", label: "自定义 / 通用 NewAPI·OneAPI（填平台地址）" },
     ] },
     { key: "base_url", label: "平台地址", type: "text", ph: "AnyRouter/AgentRouter 可留空；自定义 / 通用 NewAPI·OneAPI 必填" },
-    { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（WAF 站点用这个；三选一）" },
+    { key: "cookie", label: "Cookie", type: "password", ph: "浏览器会话 Cookie（AnyRouter 建议用这个，需含 acw_tc 等 WAF 校验；三选一）" },
     { key: "api_user", label: "API User", type: "text", ph: "new-api-user 值（Cookie 方式可选）" },
     { key: "access_token", label: "访问令牌", type: "password", ph: "Bearer 令牌（NewAPI/Sub2API 通用，优先；三选一）" },
-    { key: "username", label: "账号 / 邮箱", type: "text", ph: "邮箱密码登录（无 WAF 平台可用；三选一）" },
+    { key: "username", label: "账号 / 邮箱", type: "text", ph: "邮箱密码登录（AgentRouter 无 WAF 可直接用；AnyRouter 受 WAF 限制建议改 Cookie；三选一）" },
     { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
     { key: "totp", label: "TOTP 密钥", type: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
     { key: "delta_ok", label: "余额增量判定（旧项）", type: "select", options: [
@@ -934,7 +937,7 @@ const NEWAPI = {
       { value: "waf_cookies", label: "waf_cookies（认证前校验 WAF Cookie 是否齐全）" },
     ] },
     { key: "waf_cookie_names", label: "WAF Cookie 名", type: "text", group: "advanced",
-      ph: "逗号分隔，默认 acw_tc,acw_sc__v2（仅 WAF 绕过=waf_cookies 时生效）" },
+      ph: "逗号分隔（仅 WAF 绕过=waf_cookies 生效）；留空按 provider：AnyRouter=acw_tc,cdn_sec_tc,acw_sc__v2，AgentRouter=无 WAF" },
     { key: "use_proxy", label: "代理", type: "select", group: "advanced", options: [
       { value: "", label: "默认（跟随站点代理开关）" },
       { value: "on", label: "开启（本账号强制走代理）" },
@@ -1229,14 +1232,16 @@ const NEWAPI = {
     };
   },
   /** WAF Cookie 名清单（bypass_method=waf_cookies 时用）：留空 → 按 provider 取上游内置 ProviderConfig
-   *  默认值——anyrouter [acw_tc,cdn_sec_tc,acw_sc__v2]、agentrouter [acw_tc]；其余（自定义/通用 NewAPI·
-   *  OneAPI）维持通用默认 acw_tc/acw_sc__v2（零回归）。 */
+   *  默认值——anyrouter [acw_tc,cdn_sec_tc,acw_sc__v2]（对齐上游 WAF_COOKIE_NAMES，阿里云盾）；
+   *  agentrouter 上游明确跳过 WAF（checkin.py:340 `if provider != agentrouter: get_waf_cookies`，
+   *  agentrouter.org 无人机验证）→ 返回 []（waf_cookies 预检对其为空校验=不校验，零阻断）；
+   *  其余（自定义/通用 NewAPI·OneAPI）维持通用默认 acw_tc/acw_sc__v2（零回归）。 */
   _wafCookieNames(cfg) {
     const raw = String((cfg && cfg.waf_cookie_names) || "").trim();
     if (raw) return raw.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
     const provider = String((cfg && cfg.provider) || "").trim().toLowerCase();
     if (provider === "anyrouter") return ["acw_tc", "cdn_sec_tc", "acw_sc__v2"];
-    if (provider === "agentrouter") return ["acw_tc"];
+    if (provider === "agentrouter") return []; // 上游对 agentrouter 跳过 WAF，无需 WAF Cookie
     return ["acw_tc", "acw_sc__v2"];
   },
   /** bypass_method=waf_cookies：认证前校验 Cookie 是否含全部 WAF Cookie，缺失给清晰错误。
