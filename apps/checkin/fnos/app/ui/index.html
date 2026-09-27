@@ -436,7 +436,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.2</span>
+      <span class="ver" id="appVersion">v1.9.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -955,10 +955,9 @@ function renderAcctCard(key, a, cap) {
     : "";
   const enabled = a.enabled !== false;
   const last = d ? d.last : null;
-  // 1.9.2：站点小图标保留；站点名由图标 tooltip + 标题行极小归属标签（.nm）承载，不占独立行
+  // 1.9.3：站点小图标保留；站点名由图标 tooltip 承载，标题区只显示账号名
   const siteIcon = '<span class="site-tag ' + siteTagClass(key) + '" title="' + esc(siteName(key)) + '"' +
     ' style="width:18px;height:18px;border-radius:6px;font-size:9px">' + esc(siteShort(key)) + "</span>";
-  const siteNm = '<span class="nm" title="' + esc(siteName(key)) + '">' + esc(siteName(key)) + "</span>";
   // 今日判定徽标（F2）：有今日签到成功 → 「已签 HH:MM」；仅上次记录 → 「上次 HH:MM（M-D）」；无记录 → 空。
   // 失败保留红色展示（今日失败无日期；历史失败附 M-D，避免旧失败误导为今日）。
   // 1.8.8：统一徽标体系新增「已跳过」——站点签到需人机验证（signin_skip）→ 琥珀色跳过徽标；
@@ -1024,7 +1023,7 @@ function renderAcctCard(key, a, cap) {
     (enabled ? "" : " disabled") +
     ' onclick="cardCheckinAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">签到</button>';
   return '<div class="acct-card"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
-    '<div class="acct-card-top">' + siteIcon + siteNm +
+    '<div class="acct-card-top">' + siteIcon +
       '<div class="acct-card-title">' +
         '<div class="t" title="' + esc(title) + '">' + esc(title) + "</div>" +
         subHtml +
