@@ -442,7 +442,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.8</span>
+      <span class="ver" id="appVersion">v1.9.9</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -1718,7 +1718,12 @@ function accountEditEl(key, acc) {
       </div>`;
     }
     if (f.type === "select") {
-      const val = (vals[f.key] != null ? vals[f.key] : (acc[f.key] || (f.options && f.options[0] ? f.options[0].value : ""))) || "";
+      // 回填：优先 field_values → 账号顶层 →（provider 字段）按已配置平台地址反推 custom（自定义平台）→ 首项
+      let val = (vals[f.key] != null && vals[f.key] !== "" ) ? vals[f.key]
+        : (acc[f.key] != null && acc[f.key] !== "") ? acc[f.key]
+        : (f.key === "provider" && (vals.base_url || acc.base_url)) ? "custom"
+        : (f.options && f.options[0] ? f.options[0].value : "");
+      val = val || "";
       const opts = f.options || [];
       // 存量值不在选项集（如 1.9.7 合并前 provider=newapi）→ 保留原值展示，避免被默认顶成首项、保存时改写语义
       const hasVal = opts.some((o) => String(o.value) === String(val));
