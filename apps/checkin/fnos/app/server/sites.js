@@ -903,48 +903,50 @@ const NEWAPI = {
   mode: "Cookie / 令牌 / 账密",
   // 合并单站点：手动 Cookie 为主（WAF 站点唯一可行方式）；访问令牌 / 账号密码同表单可选。
   login_caps: ["cookie"],
-  desc: "NewAPI / OneAPI / Sub2API / AnyRouter / AgentRouter 通用 · provider 选站点，Cookie / 访问令牌 / 邮箱密码三选一",
+  desc: "NewAPI / OneAPI / Sub2API / AnyRouter / AgentRouter 通用 · 先选平台，再从「网页 Cookie / 系统访问令牌 / 账号密码」里挑一种登录方式",
   fields: [
-    // 2.0.3：字段按「平台 / 登录认证 / 签到行为 / 平台高级」分组渲染（前端据 grp/auth 联动，仅 UI；
-    // 字段键、保存语义、API 完全不变）。grp: platform|auth|signin|platform-adv；auth: cookie|token|password。
-    { key: "provider", label: "提供商", type: "select", grp: "platform", options: [
-      // 认证推荐对齐上游 dctx-team/Regular-inspection：anyrouter.top 有阿里云盾 WAF
-      //（浏览器抓 acw_tc/cdn_sec_tc/acw_sc__v2 通过校验），后端无浏览器 → 建议手动 Cookie；
-      // agentrouter.org 上游明确跳过 WAF（无人机验证），邮箱密码 / Cookie 均可。
-      { value: "anyrouter", label: "AnyRouter（anyrouter.top · 有 WAF，建议 Cookie）" },
-      { value: "agentrouter", label: "AgentRouter（agentrouter.org · 无 WAF，邮箱密码/Cookie 均可）" },
-      { value: "custom", label: "自定义 / 通用 NewAPI·OneAPI（填平台地址）" },
+    // 2.0.7 配置项重构（对齐上游 aceHubert/newapi-ai-check-in 的配置语义 + 通俗化文案）：
+    // 表单按「第一步·选平台 / 第二步·登录方式 / 第三步·签到设置 / 平台高级」引导式分组渲染
+    //（前端据 grp/auth 联动，纯 UI；字段键、保存语义、API 完全不变——旧账号零迁移即可读）。
+    // grp: platform|auth|signin|platform-adv；auth: cookie|token|password。文案一律说人话：
+    // 「平台网址」而非「base_url」；「网站防护（验证码）绕过」而非「WAF 绕过」。
+    { key: "provider", label: "选择平台", type: "select", grp: "platform", options: [
+      // 认证推荐对齐上游：anyrouter.top 有阿里云盾防护（浏览器抓 acw_tc/cdn_sec_tc/acw_sc__v2 过验证），
+      // 本应用在后台跑、没有浏览器 → 建议直接贴网页 Cookie；agentrouter.org 无验证码，账号密码/Cookie 都行。
+      { value: "anyrouter", label: "AnyRouter（anyrouter.top · 有验证码，建议用网页 Cookie）" },
+      { value: "agentrouter", label: "AgentRouter（agentrouter.org · 无验证码，账号密码/Cookie 都行）" },
+      { value: "custom", label: "其它 NewAPI / OneAPI 站点（下方填平台网址）" },
     ] },
-    { key: "base_url", label: "平台地址", type: "text", grp: "platform", ph: "AnyRouter/AgentRouter 可留空；自定义 / 通用 NewAPI·OneAPI 必填" },
-    { key: "cookie", label: "Cookie", type: "password", grp: "auth", auth: "cookie", ph: "浏览器会话 Cookie（AnyRouter 建议用这个，需含 acw_tc 等 WAF 校验）" },
-    { key: "api_user", label: "API User", type: "text", grp: "auth", auth: "cookie", ph: "new-api-user 值（Cookie 方式可选）" },
-    { key: "access_token", label: "访问令牌", type: "password", grp: "auth", auth: "token", ph: "Bearer 令牌（NewAPI/Sub2API 通用）" },
-    { key: "username", label: "账号 / 邮箱", type: "text", grp: "auth", auth: "password", ph: "邮箱密码登录（AgentRouter 无 WAF 可直接用；AnyRouter 受 WAF 限制建议改 Cookie）" },
-    { key: "password", label: "密码", type: "password", grp: "auth", auth: "password", ph: "输入新密码（留空不改）" },
-    { key: "totp", label: "TOTP 密钥", type: "password", grp: "auth", auth: "password", ph: "2FA 验证器密钥（可选，登录自动生成验证码）" },
-    { key: "sign_in_path", label: "签到路径", type: "text", grp: "signin", ph: "默认 /api/user/sign_in；填 __auto__ = 无签到接口（查询用户信息自动签到）" },
-    { key: "delta_ok", label: "余额增量判定（旧项）", type: "select", grp: "signin", options: [
-      { value: "on", label: "开启（成功判定已对齐上游：按接口返回码 ret/code/success；本项保留仅为兼容）" },
-      { value: "off", label: "关闭（同上，成功判定不受影响）" },
+    { key: "base_url", label: "平台网址", type: "text", grp: "platform", ph: "选 AnyRouter/AgentRouter 可留空；其它站点填首页网址，如 https://你的站点.com" },
+    { key: "cookie", label: "网页 Cookie", type: "password", grp: "auth", auth: "cookie", ph: "登录站点后按 F12 → 应用 → Cookie，复制整段（AnyRouter 请含 acw_tc 等验证码 Cookie）" },
+    { key: "api_user", label: "用户 ID（选填）", type: "text", grp: "auth", auth: "cookie", ph: "F12 → 应用 → 本地存储 user 里的 id；发 new-api-user 请求头用（多数留空即可）" },
+    { key: "access_token", label: "系统访问令牌", type: "password", grp: "auth", auth: "token", ph: "站点后台「个人设置 → 安全设置 → 生成令牌」复制（NewAPI/Sub2API 通用；上游 system_access_token）" },
+    { key: "username", label: "账号 / 邮箱", type: "text", grp: "auth", auth: "password", ph: "AgentRouter 无验证码可直接用；AnyRouter 有验证码，建议改用网页 Cookie" },
+    { key: "password", label: "登录密码", type: "password", grp: "auth", auth: "password", ph: "站点登录密码（仅用于签到时现场登录，不会改你的密码）" },
+    { key: "totp", label: "两步验证密钥（选填）", type: "password", grp: "auth", auth: "password", ph: "开了两步验证（2FA）才填：验证器里的密钥，签到时自动算验证码" },
+    { key: "sign_in_path", label: "签到接口路径（选填）", type: "text", grp: "signin", ph: "留空自动识别；填 __auto__ 表示该站没有签到接口，靠查询余额自动签到" },
+    { key: "delta_ok", label: "按余额变化判断（旧选项）", type: "select", grp: "signin", options: [
+      { value: "on", label: "开启（成功判定已按接口返回码，本项仅为兼容旧账号保留）" },
+      { value: "off", label: "关闭（成功判定不受影响）" },
     ] },
-    { key: "use_proxy", label: "代理", type: "select", grp: "signin", options: [
-      { value: "", label: "默认（跟随站点代理开关）" },
-      { value: "on", label: "开启（本账号强制走代理）" },
-      { value: "off", label: "关闭（本账号强制不走代理）" },
+    { key: "use_proxy", label: "走代理", type: "select", grp: "signin", options: [
+      { value: "", label: "跟随全局设置（默认）" },
+      { value: "on", label: "本账号强制走代理" },
+      { value: "off", label: "本账号强制不走代理" },
     ] },
-    // ── 平台高级配置（grp=platform-adv，仍走折叠+清除区；对齐 anyrouter-check-in 自定义 Provider 配置）──
-    // 全部可留空：留空/清除 → 使用当前 NEWAPI 适配器默认路径 / 请求头，行为与 1.8.9 完全一致（零回归）。
-    { key: "domain", label: "服务商地址（覆盖）", type: "text", grp: "platform-adv", group: "advanced",
-      ph: "如 https://custom.example.com（留空=用上方平台地址）" },
-    { key: "login_path", label: "登录路径", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 /api/user/login" },
-    { key: "user_info_path", label: "用户信息路径", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 /api/user/self" },
-    { key: "api_user_key", label: "API User 头名", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 new-api-user（自定义平台可改）" },
-    { key: "bypass_method", label: "WAF 绕过", type: "select", grp: "platform-adv", group: "advanced", options: [
-      { value: "", label: "无（默认，被拦时按响应识别）" },
-      { value: "waf_cookies", label: "waf_cookies（认证前校验 WAF Cookie 是否齐全）" },
+    // ── 平台高级配置（grp=platform-adv，折叠+一键清除；对齐上游自定义 Provider 的可覆盖项）──
+    // 全部可留空：留空/清除 → 用适配器内置默认路径 / 请求头，行为与旧版完全一致（零回归）。
+    { key: "domain", label: "平台网址（覆盖）", type: "text", grp: "platform-adv", group: "advanced",
+      ph: "一般不用填；填了就优先用它，如 https://你的站点.com（留空=用上面第一步的平台网址）" },
+    { key: "login_path", label: "登录接口路径", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 /api/user/login，改了站点才填" },
+    { key: "user_info_path", label: "用户信息接口路径", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 /api/user/self，改了站点才填" },
+    { key: "api_user_key", label: "用户 ID 请求头名", type: "text", grp: "platform-adv", group: "advanced", ph: "默认 new-api-user，自定义站点才改" },
+    { key: "bypass_method", label: "网站防护（验证码）绕过", type: "select", grp: "platform-adv", group: "advanced", options: [
+      { value: "", label: "不处理（默认，被拦时按响应自动识别提示）" },
+      { value: "waf_cookies", label: "签到前先检查验证码 Cookie 是否齐全（缺了直接给提示）" },
     ] },
-    { key: "waf_cookie_names", label: "WAF Cookie 名", type: "text", grp: "platform-adv", group: "advanced",
-      ph: "逗号分隔（仅 WAF 绕过=waf_cookies 生效）；留空按 provider：AnyRouter=acw_tc,cdn_sec_tc,acw_sc__v2，AgentRouter=无 WAF" },
+    { key: "waf_cookie_names", label: "验证码 Cookie 名单", type: "text", grp: "platform-adv", group: "advanced",
+      ph: "逗号分隔，仅上面选了「检查验证码 Cookie」才生效；留空按平台自动：AnyRouter=acw_tc,cdn_sec_tc,acw_sc__v2" },
   ],
   base: "", // NewAPI 无默认地址（base_url 必填，缺失时明确报错，避免请求假占位域名）
   loginPath: "/api/user/login",
@@ -1005,6 +1007,13 @@ const NEWAPI = {
     const n = { ...(cfg || {}) };
     if (!String(n.username || "").trim() && String(n.email || "").trim()) n.username = String(n.email).trim();
     if ((n.cookie == null || n.cookie === "") && n.cookies) n.cookie = n.cookies;
+    // 2.0.7：对齐上游 aceHubert/newapi-ai-check-in 的令牌键名。上游把系统访问令牌叫 system_access_token；
+    // 本应用历史用 access_token（存储键不变，避免动既有账号数据）。这里把上游键名当读取别名折叠进
+    // access_token（仅补空，绝不覆盖已有值）→ 从上游/生成器导入的配置可直接用，旧账号也零迁移。
+    if (!String(n.access_token || "").trim()) {
+      const alias = String(n.system_access_token || n.systemAccessToken || "").trim();
+      if (alias) n.access_token = alias;
+    }
     let provider = String(n.provider || "").trim();
     if (!provider && n.base_url) {
       const h = String(n.base_url).toLowerCase();
@@ -1544,6 +1553,11 @@ const NEWAPI = {
 
     const j = parseJson(r.text);
     if (!j || typeof j !== "object") {
+      // 对齐上游 execute_check_in（checkin.py:758）：HTTP 200 但响应体不是 JSON 时，
+      // 正文（小写）含 "success" 仍判签到成功——部分站点签到成功只回纯文本，不能一概判失败。
+      if (r.status === 200 && /success/i.test(String(r.text || ""))) {
+        return this._ok("签到成功", "签到成功", "-", "-", cfg, auth);
+      }
       throw new Error(`签到接口没回 JSON：${cleanText(r.text).slice(0, 60) || "空响应"}`);
     }
     const msg = String(j.msg || j.message || "").trim();

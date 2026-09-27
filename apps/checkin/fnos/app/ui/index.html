@@ -305,7 +305,13 @@
   .auth-tag.warn { color: #e5484d; background: rgba(229, 72, 77, .10); }
   /* 2.0.3：newapi 表单分组（登录认证 / 签到行为 / 平台）—— 仅 UI 归类，字段键/保存不变 */
   .np-grp { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 4px; margin-bottom: 10px; }
-  .np-grp-h { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; letter-spacing: .02em; }
+  .np-grp-h { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; letter-spacing: .02em;
+    display: flex; align-items: center; gap: 6px; }
+  /* 2.0.7：引导式步骤序号徽标（第一步/第二步/第三步）+ 分组说明文案 */
+  .np-step { flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700;
+    color: #fff; background: var(--accent, #2563eb); }
+  .np-grp-sub { font-size: 11.5px; line-height: 1.5; color: var(--muted); margin: -2px 0 8px; }
   .np-auth-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
   .np-auth-tab { flex: 1; padding: 6px 4px; font-size: 12px; border: 1px solid var(--border); border-radius: 8px;
                  background: var(--bg); color: var(--ink); cursor: pointer; transition: all .12s ease; }
@@ -452,7 +458,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.0.6</span>
+      <span class="ver" id="appVersion">v2.0.7</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -749,32 +755,32 @@ function clearAdvancedConfig(btn) {
   box.querySelectorAll("input").forEach((i) => { if (!i.readOnly) i.value = ""; });
   box.querySelectorAll("select").forEach((s) => { s.selectedIndex = 0; });
 }
-/** 2.0.3：newapi 表单按「平台 / 登录认证 / 签到行为」分组渲染（仅 UI；字段键/保存语义不变）。
+/** 2.0.7：newapi 表单引导式重构——「第一步·选平台 / 第二步·登录方式 / 第三步·签到设置 / 平台高级」。
  *  分组依据后端字段 grp/auth 元数据；fieldRow(f)=>html 由调用方提供（add: id=addck_ / edit: data-f=）。
- *  登录认证组三种方式（cookie/token/password）单选联动，未选显示提示；平台高级仍走折叠+清除区。 */
+ *  三种登录方式（cookie/token/password）单选联动，未选给引导提示；平台高级仍走折叠+清除区。
+ *  纯 UI 编排：字段键、采集与保存语义完全不变（旧账号零迁移即可编辑）。 */
 function newapiGroupedFormHtml(fieldRow, advOpen) {
   const fields = siteFields("newapi");
   const rowsWhere = (pred) => fields.filter(pred).map(fieldRow).join("");
   const auth = (m) => rowsWhere((f) => f.grp === "auth" && f.auth === m);
-  const platformGroup =
-    '<div class="np-grp"><div class="np-grp-h">平台</div>' +
-      rowsWhere((f) => f.grp === "platform") +
-      advancedSectionHtml(rowsWhere((f) => f.grp === "platform-adv"), advOpen) +
-    '</div>';
-  const authGroup =
-    '<div class="np-grp"><div class="np-grp-h">登录认证</div>' +
-      '<div class="np-auth-tabs" data-np-authtabs>' +
-        '<button type="button" class="np-auth-tab" data-m="cookie">Cookie</button>' +
-        '<button type="button" class="np-auth-tab" data-m="token">访问令牌</button>' +
-        '<button type="button" class="np-auth-tab" data-m="password">邮箱密码</button>' +
-      '</div>' +
-      '<div class="np-auth-hint" data-np-authhint>请选择上方一种认证方式后填写对应凭据</div>' +
-      '<div class="np-auth-panel" data-authgrp="cookie" hidden>' + auth("cookie") + '</div>' +
-      '<div class="np-auth-panel" data-authgrp="token" hidden>' + auth("token") + '</div>' +
-      '<div class="np-auth-panel" data-authgrp="password" hidden>' + auth("password") + '</div>' +
-    '</div>';
-  const signinGroup =
-    '<div class="np-grp"><div class="np-grp-h">签到行为</div>' + rowsWhere((f) => f.grp === "signin") + '</div>';
+  const step = (n, title, sub, body) =>
+    '<div class="np-grp"><div class="np-grp-h"><span class="np-step">' + n + '</span>' + title + '</div>' +
+      (sub ? '<div class="np-grp-sub">' + sub + '</div>' : '') + body + '</div>';
+  const platformGroup = step(1, "选平台", "先选你要签到的站点；AnyRouter / AgentRouter 网址已内置，其它站点请填网址。",
+    rowsWhere((f) => f.grp === "platform") +
+    advancedSectionHtml(rowsWhere((f) => f.grp === "platform-adv"), advOpen));
+  const authGroup = step(2, "登录方式", "三选一即可：网页 Cookie 最省事，账号密码要没验证码的站点，系统访问令牌最稳。",
+    '<div class="np-auth-tabs" data-np-authtabs>' +
+      '<button type="button" class="np-auth-tab" data-m="cookie">网页 Cookie</button>' +
+      '<button type="button" class="np-auth-tab" data-m="token">系统访问令牌</button>' +
+      '<button type="button" class="np-auth-tab" data-m="password">账号密码</button>' +
+    '</div>' +
+    '<div class="np-auth-hint" data-np-authhint>点上面一种方式，再填对应的凭据</div>' +
+    '<div class="np-auth-panel" data-authgrp="cookie" hidden>' + auth("cookie") + '</div>' +
+    '<div class="np-auth-panel" data-authgrp="token" hidden>' + auth("token") + '</div>' +
+    '<div class="np-auth-panel" data-authgrp="password" hidden>' + auth("password") + '</div>');
+  const signinGroup = step(3, "签到设置", "一般全默认即可，改了站点或要单独走代理时再调。",
+    rowsWhere((f) => f.grp === "signin"));
   return platformGroup + authGroup + signinGroup;
 }
 /** 登录认证组三态联动：选中某方式 → 仅显示该组凭据字段、高亮该 tab、隐藏提示；未选 → 全隐藏并提示。
