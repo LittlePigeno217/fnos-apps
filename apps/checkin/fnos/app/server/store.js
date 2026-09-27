@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "2.0.3",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "2.0.4",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -180,6 +180,9 @@ class Store {
         // 非表单字段，旧文件无此字段 → ""（未标记）。纳入归一白名单，否则重启/编辑后标记丢失。
         signin_skip: (a.signin_skip === null || a.signin_skip === undefined) ? "" : String(a.signin_skip),
         skip_reason: (a.skip_reason === null || a.skip_reason === undefined) ? "" : String(a.skip_reason),
+        // auth：2.0.4 显式认证方式（cookie|token|password；newapi 表单三态选择落盘）。非表单字段，
+        // 旧文件无此字段 → ""（未标记 → 运行期回退历史自动判定，零破坏）。仅接受三种合法值，其余归 ""。
+        auth: (typeof a.auth === "string" && (a.auth === "cookie" || a.auth === "token" || a.auth === "password")) ? a.auth : "",
       };
       // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）。
       // 1.9.0：newapi 服务商高级项（domain/login_path/sign_in_path/user_info_path/api_user_key/
@@ -474,6 +477,11 @@ class Store {
               merged.skip_reason = (a.skip_reason === undefined || a.skip_reason === null)
                 ? (prev.skip_reason || "")
                 : String(a.skip_reason);
+              // auth（2.0.4 显式认证方式）：前端带合法值（cookie|token|password）→ 更新；空/未带 → 保留原值。
+              // 这样「切换方式」写入新方式即时生效，而 {id}-only 等未带 auth 的保存路径不误清历史选择。
+              merged.auth = (a.auth === "cookie" || a.auth === "token" || a.auth === "password")
+                ? a.auth
+                : (prev.auth || "");
               for (const f of accountFieldKeys(k)) {
                 const rawV = a[f];
                 const prevV = prev[f] || "";

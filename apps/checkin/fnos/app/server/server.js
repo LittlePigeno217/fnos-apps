@@ -915,6 +915,8 @@ class Server {
             auth_mode: (key === "newapi" && a)
               ? (a.access_token ? "token" : ((a.cookie || a.cookies) ? "cookie" : ((a.username || a.email) ? "password" : "none")))
               : "",
+            // auth：2.0.4 存储的显式认证方式（编辑页据此预选认证 tab；空则前端按凭据推断，与自动判定一致）。非敏感。
+            auth: (key === "newapi") ? (a.auth || "") : "",
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
             daily_gain_display: (supportsBalance && ["workbuddy", "newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",

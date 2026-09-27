@@ -1016,6 +1016,16 @@ const NEWAPI = {
       else if (provider === "anyrouter") n.base_url = "https://anyrouter.top";
     }
     if (provider) n.provider = provider;
+    // 2.0.4：认证方式显式化——账号显式标注 auth（cookie|token|password）时，工作副本只保留该方式凭据，
+    // 清除其余方式的残留字段（清除仅作用于本次运行的浅拷贝 n，不改存储；rawCfg 原值不变）。这样
+    // _authHeaders 的「字段存在优先级」与下游 access_token 判定（Sub2 回退等）都只看所选方式的凭据，
+    // 从根上消除「切换方式后旧字段残留导致选择不生效」。无 auth（旧账号）→ 不清除，回退历史自动判定（零破坏）。
+    const method = String(n.auth || "").trim().toLowerCase();
+    if (method === "cookie" || method === "token" || method === "password") {
+      for (const f of (Array.isArray(this.fields) ? this.fields : [])) {
+        if (f.grp === "auth" && f.auth && f.auth !== method) n[f.key] = "";
+      }
+    }
     return n;
   },
   /** 余额增量判定开关（对齐上游 BALANCE_HASH 思想，合并站点默认开启）：

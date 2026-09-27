@@ -452,7 +452,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.0.3</span>
+      <span class="ver" id="appVersion">v2.0.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -787,9 +787,15 @@ function bindNewapiAuthGroups(root, initialMethod) {
     panels.forEach((p) => { p.hidden = p.getAttribute("data-authgrp") !== m; });
     btns.forEach((b) => b.classList.toggle("active", b.getAttribute("data-m") === m));
     if (hint) hint.hidden = !!m;
+    tabs.dataset.method = m || ""; // 2.0.4：记录当前所选认证方式，保存时读取写入账号 auth 字段
   };
   btns.forEach((b) => b.addEventListener("click", () => show(b.getAttribute("data-m"))));
   show(initialMethod || "");
+}
+/** 2.0.4：读取容器内 newapi 认证组当前所选方式（cookie|token|password）；未选返回 ""。 */
+function newapiSelectedAuth(root) {
+  const tabs = root && root.querySelector("[data-np-authtabs]");
+  return (tabs && tabs.dataset.method) || "";
 }
 function siteShort(key) {
   const m = getSiteMeta(key);
@@ -1576,6 +1582,12 @@ async function submitAddCookie() {
     if (inp) { acc[f.key] = inp.value.trim(); if (acc[f.key]) hasVal = true; }
   }
   if (!hasVal) { $("addckState").textContent = "请至少填写一个凭据字段"; $("addckState").className = "err"; return; }
+  // 2.0.4：newapi 认证方式显式化——记录所选方式到账号 auth（cookie|token|password），后端只按该方式取凭据。
+  if (key === "newapi") {
+    const method = newapiSelectedAuth($("addPanel"));
+    if (!method) { $("addckState").textContent = "请先选择一种登录认证方式（Cookie / 访问令牌 / 邮箱密码）"; $("addckState").className = "err"; return; }
+    acc.auth = method;
+  }
   acc.remark = ($("addck_remark") && $("addck_remark").value.trim()) || "";
   const st = SITE_DATA[key] || {};
   const existing = (Array.isArray(st.accounts) ? st.accounts : []).map((a) => ({ id: a.id })); // 仅带 id，后端保留原字段
@@ -1818,11 +1830,14 @@ function accountEditEl(key, acc) {
     '</div>';
   // 1.9.5：newapi provider 联动（编辑页 data-f 定位）——anyrouter/agentrouter 平台地址固定+只读
   // 2.0.3：登录认证三态联动——按已配置凭据推断当前方式（令牌 > Cookie > 邮箱密码），无凭据则不预选
+  // 2.0.4：优先用账号已存的显式 auth 预选；无 auth（旧账号）→ 回退按凭据推断（与后端自动判定一致）
   if (key === "newapi") {
     bindNewapiProviderLink(div.querySelector('[data-f="provider"]'), div.querySelector('[data-f="base_url"]'));
-    const initMethod = masks.access_token ? "token"
-      : masks.cookie ? "cookie"
-      : ((vals.username || acc.username || masks.password) ? "password" : "");
+    const stored = (acc.auth === "cookie" || acc.auth === "token" || acc.auth === "password") ? acc.auth : "";
+    const initMethod = stored
+      || (masks.access_token ? "token"
+        : masks.cookie ? "cookie"
+        : ((vals.username || acc.username || masks.password) ? "password" : ""));
     bindNewapiAuthGroups(div, initMethod);
   }
   return div;
@@ -1844,6 +1859,11 @@ function collectModalAccounts() {
       if (!inp) continue;
       // 留空 → 送空串（后端保留原值）；填写 → 覆盖。1.4.6 起敏感字段不再回填脱敏串。
       a[f.key] = inp.value.trim();
+    }
+    // 2.0.4：newapi 记录所选认证方式到 auth（cookie|token|password）；后端只按该方式取凭据，忽略残留旧字段。
+    if (MODAL_KEY === "newapi") {
+      const method = newapiSelectedAuth(row);
+      if (method) a.auth = method;
     }
     accs.push(a);
   });
