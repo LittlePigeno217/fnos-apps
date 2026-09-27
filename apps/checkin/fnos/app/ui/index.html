@@ -262,9 +262,9 @@
 
   /* ---------- 账号为中心卡片（阶段3） ---------- */
   /* 账号卡片：每个账号一张精简卡（网格容器见 .acct-grid-global） */
-  .acct-card { display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  .acct-card { display: flex; flex-direction: column; gap: 6px; min-width: 0;
                background: var(--card); border: 1px solid var(--border); border-radius: var(--jc-radius);
-               padding: 14px; transition: border-color .15s ease, box-shadow .15s ease; }
+               padding: 10px 12px; transition: border-color .15s ease, box-shadow .15s ease; }
   .acct-card:hover { border-color: var(--accent); box-shadow: 0 6px 18px rgba(30,40,80,.08); }
   /* 全局账号列表：跨站点每行三卡（自适应降列），站点来源用卡上小标签区分 */
   .acct-section-head { display: flex; align-items: baseline; gap: 8px; margin: 4px 2px 10px; flex-wrap: wrap; }
@@ -291,48 +291,51 @@
   .acct-group-empty .ttl { font-size:14px; font-weight:600; color:var(--ink); }
   .acct-group-empty .sub { font-size:12.5px; color:var(--muted); max-width:340px; line-height:1.55; margin-bottom:2px; }
   @media (max-width: 560px) { .acct-grid-global { grid-template-columns: 1fr; } }
-  /* 账号卡站点来源标识（色块小标签 + 站点名） */
-  .acct-site { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; }
-  .acct-site .st { width: 18px; height: 18px; flex: none; border-radius: 6px; display: grid; place-items: center;
-                   font-size: 9px; font-weight: 800; color: #fff; letter-spacing: .2px; }
-  .acct-site .nm { font-size: 11px; color: var(--muted); font-weight: 600;
-                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* 1.6.2：站点标题链接（NewAPI 系账号卡标题点击跳转平台） */
-  .acct-card-title .t a.nm-link { color: var(--accent, #2563eb); text-decoration: none; }
-  .acct-card-title .t a.nm-link:hover { text-decoration: underline; }
+  /* 1.9.2：站点小图标 + 极小归属标签并入标题行（不再占独立行）；站点名由图标 tooltip / .nm 承载 */
+  .acct-card-top .nm { flex: none; max-width: 76px; font-size: 10px; color: var(--muted); font-weight: 600;
+                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 1.6.2 迁至 1.9.2：NewAPI 系副标题平台地址链接（点击跳转平台） */
+  .acct-card-title a.nm-link { color: var(--accent, #2563eb); text-decoration: none; }
+  .acct-card-title a.nm-link:hover { text-decoration: underline; }
   /* 1.7.2：认证方式标签（NewAPI 系副标题行） */
-  .auth-tag { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding: 1px 7px;
-              border-radius: 10px; font-size: 10px; line-height: 1.5; color: #9aa7b8;
+  .auth-tag { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding: 0 6px;
+              border-radius: 10px; font-size: 9.5px; line-height: 1.4; color: #9aa7b8;
               background: rgba(128, 138, 158, .12); white-space: nowrap; vertical-align: middle; }
   .auth-tag.warn { color: #e5484d; background: rgba(229, 72, 77, .10); }
-  .acct-card-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+  .acct-card-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .acct-card-title { min-width: 0; flex: 1; }
-  .acct-card-title .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .acct-card-title .sub { font-size: 11px; color: var(--muted); margin-top: 1px;
+  .acct-card-title .t { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-card-title .sub { font-size: 10.5px; color: var(--muted); margin-top: 0;
                           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* 账号数值主视觉（1.8.8 重新设计）：主值适度大小（20px）+ 标签行右端「今日收益」小徽标，
-     字号阶梯明确（标签 11 / 主值 20 / 徽标 10.5）、间距统一、对齐一致；收益完整不截断（单位/千分位/标签齐全）。 */
-  .acct-hero { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-radius: 11px;
+  /* 账号数值主视觉（1.8.8 重新设计，1.9.2 压缩字号）：主值适度大小（17px）+ 标签行右端「今日收益」小徽标，
+     字号阶梯明确（标签 10 / 主值 17 / 徽标 9.5）、间距统一、对齐一致；收益完整不截断（单位/千分位/标签齐全）。 */
+  .acct-hero { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 10px;
                background: linear-gradient(135deg, rgba(37,99,235,.08), rgba(79,70,229,.10));
                border: 1px solid var(--brand-soft); font-variant-numeric: tabular-nums; }
-  .acct-hero .hero-ico { width: 26px; height: 26px; flex: none; border-radius: 8px; display: grid; place-items: center;
+  .acct-hero .hero-ico { width: 22px; height: 22px; flex: none; border-radius: 7px; display: grid; place-items: center;
                          background: var(--brand-grad); color: #fff; box-shadow: 0 3px 10px rgba(79,70,229,.28); }
-  .acct-hero .hero-ico svg { width: 15px; height: 15px; }
-  .acct-hero .hero-main { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; line-height: 1.2; }
+  .acct-hero .hero-ico svg { width: 12px; height: 12px; }
+  .acct-hero .hero-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; line-height: 1.2; }
   .acct-hero .hero-lb-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-  .acct-hero .hero-lb { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .2px;
+  .acct-hero .hero-lb { font-size: 10px; color: var(--muted); font-weight: 600; letter-spacing: .2px;
                         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .acct-hero .hero-num { font-size: 20px; font-weight: 800; letter-spacing: -.3px;
+  .acct-hero .hero-num { font-size: 17px; font-weight: 800; letter-spacing: -.3px;
                          background: var(--hero-num-grad); -webkit-background-clip: text; background-clip: text;
                          -webkit-text-fill-color: transparent; color: var(--brand-a);
                          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .acct-hero.empty .hero-num { background: none; -webkit-text-fill-color: initial; color: var(--muted-2); }
-  .acct-hero .hero-delta { flex: none; display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 700;
-                           padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .acct-hero .hero-delta { flex: none; display: inline-flex; align-items: center; font-size: 9.5px; font-weight: 700;
+                           padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
   .acct-hero .hero-delta.up { color: var(--ok); background: var(--ok-glow); }
   .acct-hero .hero-delta.down { color: var(--err); background: var(--err-bg); }
-  .acct-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; }
+  /* 1.9.2：状态 + 操作合并为一行（.acct-bar），压缩卡片高度；窄卡 flex-wrap 自动换行 */
+  .acct-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .acct-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
   .acct-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+  .acct-bar .acct-actions { margin-left: auto; margin-top: 0; }
+  .acct-card .acct-actions { gap: 4px; }
+  .acct-card .acct-actions .btn-mini { padding: 2px 7px; font-size: 11.5px; }
+  .acct-card .row-badge { font-size: 11px; padding: 1px 7px; }
   /* 登录态徽标 */
   .login-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; white-space: nowrap;
                  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: transparent; }
@@ -433,7 +436,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.9.1</span>
+      <span class="ver" id="appVersion">v1.9.2</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -902,7 +905,8 @@ function authModeTag(m) {
   return map[m] || "";
 }
 
-/** 单个账号卡（全局账号列表用）：站点来源标签 + 标题（备注优先）+ 余额/积分 + 状态 + 操作。 */
+/** 单个账号卡（全局账号列表用，1.9.2 压缩版）：站点小图标 + 标题位=账号名 + 余额/积分 + 状态 + 操作。
+ *  站点名由图标 tooltip / 标题行极小归属标签（.nm）承载；副标题仅在有价值时渲染（压缩高度）。 */
 // 英雄大数字图标：持有量语义为「流量」→ 数据/流量图标；其余（积分/余额/金币）→ 金币图标。
 function heroIcon(label) {
   const traffic = /流量/.test(String(label || ""));
@@ -916,10 +920,12 @@ function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
   let nmAuthTag = ""; // 1.7.2：NewAPI 系认证方式标签（无凭据/非 NewAPI 系为空）
-  // 卡片标题（备注优先）：newapi 合并单站点 → 同一标题分支（NewAPI / NewAPI · base_url host），
-  // 账号标识落副标题；其余站点：无备注 → 账号标识(label 脱敏) → 「账号 N」（站点名仅由来源标签 siteTag 承载）
+  // 1.9.2：标题位一律=「账号名称」（备注别名 → 账号标识 label → 「账号 N」），站点名不再占标题位——
+  //   站点归属由标题行极小归属标签（.nm）+ 图标 tooltip 承载（压缩卡片高度）
   const acctLabel = a.label || (d && d.label) || "";
-  // newapi 账号可无 base_url（provider 驱动 anyrouter/agentrouter）→ 按 provider 推导平台 URL，标题才可达
+  const acctName = a.remark || acctLabel || ("账号 " + (a.id || ""));
+  const title = acctName;
+  // newapi 账号可无 base_url（provider 驱动 anyrouter/agentrouter）→ 按 provider 推导平台 URL，副标题链接才可达
   const provVal = (d && d.field_values && d.field_values.provider) || "";
   const baseUrl = (d && d.field_values && d.field_values.base_url)
     || (key === "newapi"
@@ -930,30 +936,29 @@ function renderAcctCard(key, a, cap) {
     const m = String(u || "").match(/^https?:\/\/([^/]+)/i);
     return (m ? m[1] : String(u || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).trim();
   };
-  let title, subLabel;
+  const host = hostOf(baseUrl);
+  // 副标题（仅有用时渲染，压缩高度）：备注账号 → 真实账号标识；NewAPI 无备注 → 平台地址（可点击跳转平台）
+  let subLabel = "";
   if (a.remark) {
-    title = a.remark;
     subLabel = (acctLabel && acctLabel !== a.remark) ? acctLabel : "";
   } else if (key === "newapi") {
-    const host = hostOf(baseUrl);
-    // 1.6.6：站点标题匹配做尾斜杠归一（后端存储去斜杠；账号 base_url 可能带 /）
-    const st = (window.SITE_TITLES || {})[String(baseUrl || "").replace(/\/+$/, "")] || "";
-    // 1.7.3：内置映射兜底（站点头像可直接定名，无需等异步 site_titles 返回）
-    const nmSt = { "https://anyrouter.top": "Any Router", "https://agentrouter.org": "Agent Router" }[String(baseUrl || "").replace(/\/+$/, "")] || "";
-    title = st || nmSt || (host ? ("NewAPI · " + host) : "NewAPI");
-    // 1.7.2 卡片重设计：副标题显示「平台地址 + 认证方式标签」；用户备注存在时优先备注
     nmAuthTag = authModeTag(d && d.auth_mode);
-    subLabel = (acctLabel && acctLabel !== title) ? acctLabel : host;
-  } else {
-    title = acctLabel || ("账号 " + (a.id || ""));
-    subLabel = "";
+    subLabel = host;
   }
+  const subHtml = (subLabel || nmAuthTag)
+    ? '<div class="sub">' +
+        (key === "newapi" && baseUrl
+          ? '<a class="nm-link" href="' + esc(baseUrl) + '" target="_blank" rel="noopener nofollow">' + esc(subLabel) + "</a>"
+          : esc(subLabel || "")) +
+        nmAuthTag +
+      "</div>"
+    : "";
   const enabled = a.enabled !== false;
   const last = d ? d.last : null;
-  // 站点来源标签（色块 + 站点名）：跨站点混合列表中区分账号归属，站点名唯一出处
-  const siteTag = '<div class="acct-site">' +
-    '<span class="site-tag ' + siteTagClass(key) + '" style="width:18px;height:18px;border-radius:6px;font-size:9px">' + esc(siteShort(key)) + "</span>" +
-    '<span class="nm" title="' + esc(siteName(key)) + '">' + esc(siteName(key)) + "</span></div>";
+  // 1.9.2：站点小图标保留；站点名由图标 tooltip + 标题行极小归属标签（.nm）承载，不占独立行
+  const siteIcon = '<span class="site-tag ' + siteTagClass(key) + '" title="' + esc(siteName(key)) + '"' +
+    ' style="width:18px;height:18px;border-radius:6px;font-size:9px">' + esc(siteShort(key)) + "</span>";
+  const siteNm = '<span class="nm" title="' + esc(siteName(key)) + '">' + esc(siteName(key)) + "</span>";
   // 今日判定徽标（F2）：有今日签到成功 → 「已签 HH:MM」；仅上次记录 → 「上次 HH:MM（M-D）」；无记录 → 空。
   // 失败保留红色展示（今日失败无日期；历史失败附 M-D，避免旧失败误导为今日）。
   // 1.8.8：统一徽标体系新增「已跳过」——站点签到需人机验证（signin_skip）→ 琥珀色跳过徽标；
@@ -1019,22 +1024,22 @@ function renderAcctCard(key, a, cap) {
     (enabled ? "" : " disabled") +
     ' onclick="cardCheckinAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">签到</button>';
   return '<div class="acct-card"' + (enabled ? "" : ' style="opacity:.55"') + ">" +
-    siteTag +
-    '<div class="acct-card-top"><div class="acct-card-title">' +
-      '<div class="t" title="' + esc(title) + '">' +
-        (key === "newapi" && baseUrl
-          ? '<a class="nm-link" href="' + esc(baseUrl) + '" target="_blank" rel="noopener nofollow">' + esc(title) + "</a>"
-          : esc(title)) +
+    '<div class="acct-card-top">' + siteIcon + siteNm +
+      '<div class="acct-card-title">' +
+        '<div class="t" title="' + esc(title) + '">' + esc(title) + "</div>" +
+        subHtml +
       "</div>" +
-      // 1.7.2：副标题行 = 平台地址/备注（esc）+ 认证方式标签（authModeTag 内部键值固定，无注入）
-      (subLabel || nmAuthTag ? '<div class="sub" title="' + esc(subLabel || "") + '">' + esc(subLabel || "") + nmAuthTag + "</div>" : "") +
-    "</div>" + loginBadge + "</div>" +
+      loginBadge +
+    "</div>" +
     balLine +
-    '<div class="acct-meta">' + dayBadge + "</div>" +
-    '<div class="acct-actions">' +
-      editBtn + checkinBtn +
-      '<button class="btn btn-mini" onclick="cardTestAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
-      '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
+    // 1.9.2：状态徽标 + 操作按钮合并为一行（.acct-bar），窄卡 flex-wrap 自动换行，压缩高度
+    '<div class="acct-bar">' +
+      '<div class="acct-meta">' + dayBadge + "</div>" +
+      '<div class="acct-actions">' +
+        editBtn + checkinBtn +
+        '<button class="btn btn-mini" onclick="cardTestAccount(this,\'' + key + "','" + esc(a.id || "") + '\')">测试</button>' +
+        '<button class="btn btn-mini" style="color:var(--err);border-color:var(--err)" onclick="cardDeleteAccount(\'' + key + "','" + esc(a.id || "") + '\')">删除</button>' +
+      "</div>" +
     "</div>" +
   "</div>";
 }
