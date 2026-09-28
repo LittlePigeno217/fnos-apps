@@ -367,7 +367,7 @@
   /* ---------- 结果摘要 ---------- */
   .summary-line { margin-top: 10px; white-space: pre-line; font-size: 13px; }
 
-  /* ---------- 签到历史面板（1.5.4；2.1.0 起内嵌运行日志下方，非弹窗；2.1.1 起头部菜单栏复用 .toolbar 与运行日志同风格） ---------- */
+  /* ---------- 签到历史面板（1.5.4；2.1.0 内嵌运行日志下方；2.1.2 起拆为独立导航页；头部菜单栏复用 .toolbar 与运行日志同风格） ---------- */
   .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
   @media (max-width: 560px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .stat-card { border: 1px solid var(--border); border-radius: var(--jc-radius); padding: 10px 12px;
@@ -446,13 +446,17 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.5a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.5a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
         <span>运行设置</span>
       </button>
-      <button data-tab="history">
+      <button data-tab="log">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h9v12h-9M6 6v9"/><path d="M9 6v9"/><path d="M12 6v9"/><path d="M15 6v9"/></svg>
         <span>运行日志</span>
       </button>
+      <button data-tab="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 3"/></svg>
+        <span>签到历史</span>
+      </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.1.1</span>
+      <span class="ver" id="appVersion">v2.1.2</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -544,8 +548,8 @@
         </div>
       </section>
 
-      <!-- 运行日志（含内嵌签到历史） -->
-      <section id="tab-history" hidden>
+      <!-- 运行日志 -->
+      <section id="tab-log" hidden>
         <div class="pane" style="padding:0;overflow:hidden">
           <div class="toolbar" style="margin:0;padding:10px 14px 0;border-bottom:none">
             <span style="font-weight:600;font-size:13.5px">运行日志</span>
@@ -556,9 +560,11 @@
           </div>
           <pre id="logView" style="margin:0;padding:12px 14px;height:40vh;overflow:auto;background:#0C1218;color:#D7E3EC;font:12px/1.6 var(--font-mono);white-space:pre-wrap;word-break:break-all;tab-size:2"></pre>
         </div>
+      </section>
 
-        <!-- 签到历史：内嵌在运行日志下方（不再弹窗）——菜单栏与运行日志工具栏同风格 -->
-        <div class="pane" style="margin-top:14px;padding:0;overflow:hidden">
+      <!-- 签到历史（独立页面）：菜单栏 + 概览四卡 + 按日期分组明细 -->
+      <section id="tab-history" hidden>
+        <div class="pane" style="padding:0;overflow:hidden">
           <div class="toolbar" style="margin:0;padding:10px 14px 0;border-bottom:none">
             <span style="font-weight:600;font-size:13.5px">签到历史</span>
             <span style="flex:1"></span>
@@ -676,7 +682,7 @@ async function call(action, method = "GET", body = null, timeoutMs = 15000) {
   finally { clearTimeout(timer); }
 }
 
-const TITLES = { sites: "站点签到", settings: "运行设置", history: "运行日志" };
+const TITLES = { sites: "站点签到", settings: "运行设置", log: "运行日志", history: "签到历史" };
 
 /* 站点元数据单一事实源来自后端 adapter.meta（get_config 回传）；前端不再维护 SITES 字典，
  * 新增站点类型 = 后端 sites.js 注册 1 行，前端零改动（P2 扩展性目标）。 */
@@ -2017,9 +2023,9 @@ async function logClear() {
 }
 
 /* ── 签到历史（1.8.8 重新设计）────────────────────────────────
- * 展示：内嵌在「运行日志」页运行日志下方（2.1.0 起不再弹窗）。
+ * 展示：独立导航页「签到历史」（2.1.2 起从运行日志页拆出为第 4 个页签，不再内嵌）。
  * 内容：概览 stat 卡 + 按日期分组的签到明细（今天 / 昨天 / 更早 折叠组）。
- * 数据：切到运行日志页时 GET history?limit=500（store 持久化上限 500，实际为全量）；「刷新」重新拉取。
+ * 数据：切到签到历史页时 GET history?limit=500（store 持久化上限 500，实际为全量）；「刷新」重新拉取。
  * 每条明细：站点 · 账号 → 状态徽标（成功/失败/已跳过/待签）· 本地时间 · 收益（如有）；
  * 失败原因归一为直观短文案（Cookie 过期 / 登录态失效 / 人机验证 / 账号或密码错误 / 网络或 IP 限制）。
  * 纯 CSS 实现，不引入图表库（fnOS 单文件前端重量受限）。 */
@@ -2270,7 +2276,9 @@ document.querySelectorAll(".nav button").forEach((b) => {
     // 仅切换顶层视图 section（用 > 直接子级；否则会连带隐藏 #tab-sites 内嵌的 #acctSection 账号列表）
     document.querySelectorAll(".content > section").forEach((s) => (s.hidden = true));
     $("tab-" + b.dataset.tab).hidden = false;
-    if (b.dataset.tab === "history") { logPoll(); refreshHistoryPanel(); }
+    // 运行日志页 → 拉日志；签到历史页 → 拉历史（两页独立，互不加载对方内容）
+    if (b.dataset.tab === "log") { logPoll(); }
+    else if (b.dataset.tab === "history") { refreshHistoryPanel(); }
   });
 });
 
