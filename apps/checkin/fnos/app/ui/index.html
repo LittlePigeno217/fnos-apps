@@ -210,6 +210,8 @@
   .btn.primary:hover { filter: brightness(1.06); color: #fff; transform: translateY(-1px);
                        box-shadow: 0 8px 22px rgba(79,70,229,.36); }
   .btn.btn-mini { padding: 3px 8px; font-size: 12px; gap: 4px; }
+  /* 危险操作（清理历史等删除类）：默认中性，hover 才显红，避免误触且与工具栏协调 */
+  .btn.btn-danger:hover { border-color: #ef4444; color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.14); }
 
   /* ---------- 表单 ---------- */
   .input { width: 100%; padding: 8px 11px; border: 1px solid var(--border); border-radius: 8px;
@@ -456,7 +458,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.1.2</span>
+      <span class="ver" id="appVersion">v2.1.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -572,6 +574,10 @@
             <button type="button" class="btn btn-mini" onclick="exportHistoryCsv()" title="下载全部签到记录为 CSV（Excel 可直接打开）">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
               导出 CSV
+            </button>
+            <button type="button" class="btn btn-mini btn-danger" onclick="clearHistory()" title="清空全部签到历史记录（不影响账号 / 运行设置 / 运行日志）">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              清理历史
             </button>
           </div>
           <div id="histBody" style="padding:12px 14px 16px"><div class="empty">正在加载签到历史…</div></div>
@@ -2224,6 +2230,19 @@ function toggleHistGroup(btn) {
 /** 导出 CSV：GET checkin/history_export（text/csv + Content-Disposition → 浏览器直接下载，不跳转页面） */
 function exportHistoryCsv() {
   window.location.href = API_BASE + "checkin/history_export";
+}
+
+/** 清理历史：二次确认 → POST history_clear（后端 store.clearHistory 写空数组，幂等）；
+ *  仅清空签到历史记录，不影响账号 / 运行设置 / 运行日志 / 调度状态。清空后刷新历史页为空态。 */
+async function clearHistory() {
+  if (!confirm("清空全部签到历史记录？\n此操作不可恢复（不影响账号、运行设置与运行日志）。")) return;
+  const r = await call("history_clear", "POST", {});
+  if (r && r.success) {
+    await refreshHistoryPanel();
+    toast("签到历史已清空", "ok");
+  } else {
+    toast("清空失败：" + ((r && r.message) || "网络异常，请重试"), "err");
+  }
 }
 
 /* ── 热更新 ── */
