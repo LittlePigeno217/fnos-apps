@@ -433,6 +433,73 @@
   @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); }
                        to   { opacity: 1; transform: translate(-50%, 0); } }
 
+  /* ---------- 历史页（1.3.6 重设计：参考 checkin 签到历史设计语言）----------
+   * 概览统计四卡 + 按日期分组（今天/昨天/更早）的执行明细，替代原扁平表格。
+   * 状态徽标统一 ok/err；类型标签色块区分 上传/签到/取链/STRM/其他。 */
+  .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin: 2px 0 14px; }
+  .stat-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
+               background: var(--surface); min-width: 0; }
+  .stat-card .stat-k { font-size: 11px; color: var(--muted); }
+  .stat-card .stat-v { font-size: 15px; font-weight: 700; margin-top: 2px; color: var(--ink);
+                       font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .hist-list-title { font-size: 13px; font-weight: 700; margin: 4px 2px 6px; color: var(--ink); }
+  .hist-groups { display: flex; flex-direction: column; gap: 8px; }
+  .hist-group { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+  .hist-group-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px;
+                     background: transparent; border: 0; color: var(--ink); font-size: 13px; font-weight: 700;
+                     cursor: pointer; text-align: left; font-family: inherit; }
+  .hist-group-head:hover { background: var(--hover); }
+  .hist-group-head:focus-visible { box-shadow: var(--focus); border-radius: 8px; }
+  .hg-date { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .hg-date em { font-style: normal; font-weight: 500; font-size: 11.5px; color: var(--muted); }
+  .hg-count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--muted);
+              padding: 1px 8px; border-radius: 999px; background: var(--hover); }
+  .hg-chev { flex: none; width: 14px; height: 14px; color: var(--muted); transition: transform .15s ease; }
+  .hist-group.closed .hg-chev { transform: rotate(-90deg); }
+  .hist-group-body { border-top: 1px solid var(--border); padding: 4px 10px 8px; }
+  .hist-group.closed .hist-group-body { display: none; }
+
+  .hist-item { display: flex; align-items: center; gap: 10px; padding: 8px 6px; flex-wrap: wrap; }
+  .hist-item + .hist-item { border-top: 1px dashed var(--border); }
+  .type-tag { width: 26px; height: 26px; flex: none; border-radius: 8px; display: grid; place-items: center;
+              font-size: 11px; font-weight: 700; color: #fff; }
+  .type-tag.ht-upload { background: linear-gradient(135deg,#E8451C,#C93A16); }
+  .type-tag.ht-checkin { background: linear-gradient(135deg,#20B08A,#0C7A5F); }
+  .type-tag.ht-link { background: linear-gradient(135deg,#3B82F6,#1D4ED8); }
+  .type-tag.ht-strm { background: linear-gradient(135deg,#7B4FE0,#4A2B9E); }
+  .type-tag.ht-other { background: linear-gradient(135deg,#8A94A6,#5B6472); }
+  .hist-item-main { flex: 1; min-width: 130px; }
+  .hist-item-title { font-size: 12.5px; font-weight: 600; color: var(--ink);
+                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-item-detail { font-size: 11px; color: var(--muted); margin-top: 1px;
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-item-detail.fail { color: var(--err); }
+  .hist-item-side { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .hist-item-time { font-size: 11px; color: var(--muted); font-family: var(--font-mono); white-space: nowrap; }
+  .row-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; flex: none;
+               padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); font-weight: 600; }
+  .row-badge .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+  .row-badge.b-ok { color: var(--ok); background: var(--ok-glow); border-color: var(--ok-border); }
+  .row-badge.b-ok .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-glow); }
+  .row-badge.b-err { color: var(--err); background: var(--accent-soft); border-color: var(--err); }
+  .row-badge.b-err .dot { background: var(--err); }
+
+  .hist-empty { padding: 34px 12px 30px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.8; }
+  .hist-empty::before { content: "▦"; display: block; margin-bottom: 8px; font-size: 26px; color: var(--accent); opacity: .5; }
+  .hist-empty b { color: var(--ink); }
+
+  /* 冲突提醒卡：与新历史设计协调的告警外观（复用既有 conflictTable 逻辑） */
+  .hist-alert { border: 1px solid var(--danger); border-radius: var(--radius); background: var(--accent-soft);
+                padding: 10px 14px; margin-bottom: 12px; }
+  .hist-alert .alert-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 700; }
+  .hist-alert .alert-head .grow { flex: 1; min-width: 40px; }
+
+  @media (max-width: 560px) {
+    .stat-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .hist-item-side { flex-basis: 100%; justify-content: flex-end; }
+  }
+
 </style>
 </head>
 <body>
@@ -476,7 +543,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.5</span>
+      <span class="ver" id="appVersion">v1.3.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -921,7 +988,7 @@
       <!-- 历史 -->
       <section id="tab-history" class="pane" hidden>
         <div class="toolbar">
-          <span class="muted">最近 50 条执行记录</span>
+          <span class="muted">执行记录 · 本地时间</span>
           <span class="grow"></span>
           <button class="btn" onclick="refreshHistory()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
@@ -929,25 +996,25 @@
           </button>
           <button class="btn" style="color:var(--danger);border-color:var(--danger)" onclick="clearHistory()" title="清空历史执行记录（保留今日签到状态）">清空历史</button>
         </div>
-        <div class="termline" aria-label="上传身份冲突" id="conflictBlock" hidden>
-          <span class="term-prompt">❯</span>
-          <span class="term-path">上传身份冲突</span>
-          <span class="grow"></span>
-          <button class="btn btn-mini" onclick="refreshConflicts()">刷新</button>
-        </div>
-        <div class="table-wrap">
-          <table id="conflictTable" hidden>
-            <thead><tr><th>本地路径</th><th>目标</th><th>记录 Pickcode</th><th>远端 Pickcode</th><th class="ops">处理</th></tr></thead>
-            <tbody></tbody>
-          </table>
+
+        <!-- 上传身份冲突（保留原逻辑，重设计为告警卡） -->
+        <div class="hist-alert" id="conflictBlock" hidden>
+          <div class="alert-head">
+            <span>⚠ 上传身份冲突</span>
+            <span class="grow"></span>
+            <button class="btn btn-mini" onclick="refreshConflicts()">刷新</button>
+          </div>
+          <div class="table-wrap" style="margin-top:8px">
+            <table id="conflictTable" hidden>
+              <thead><tr><th>本地路径</th><th>目标</th><th>记录 Pickcode</th><th>远端 Pickcode</th><th class="ops">处理</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
         <p class="empty" id="conflictEmpty" hidden></p>
-        <div class="table-wrap" style="margin-top:14px">
-          <table id="historyTable" hidden>
-            <thead><tr><th>时间</th><th>类型</th><th>操作</th><th class="ops">结果</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
+
+        <!-- 概览统计 + 按日期分组明细 -->
+        <div id="historyBody"></div>
         <p class="empty" id="historyEmpty">暂无执行记录</p>
         <div style="text-align:center;margin-top:8px">
           <button class="btn" id="historyMoreBtn" onclick="renderHistoryPage()" hidden>加载更多</button>
@@ -4343,44 +4410,164 @@ async function resolveConflict(p, action){
 }
 async function refreshHistory(){
   const r = await call("history");
-  const tb = el("historyTable").querySelector("tbody");
   const empty = el("historyEmpty");
   const more = el("historyMoreBtn");
-  tb.innerHTML="";
-  if (!r.success){
-    empty.innerHTML = esc(r.message || "读取失败") + " · <a href=\"javascript:void(0)\" onclick=\"refreshHistory()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>";
-    empty.hidden=false; el("historyTable").hidden=true; if(more) more.hidden=true;
+  const body = el("historyBody");
+  if (body) body.innerHTML = "";
+  if (!(r && r.success)){
+    empty.innerHTML = esc((r && r.message) || "读取失败") + " · <a href=\"javascript:void(0)\" onclick=\"refreshHistory()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>";
+    empty.hidden = false; if(more) more.hidden = true;
     historyAll = [];
     return;
   }
-  const items = Array.isArray(r.data.items) ? r.data.items : [];
+  const items = (r.data && Array.isArray(r.data.items)) ? r.data.items : [];
   historyAll = items;
   historyIdx = 0;
   empty.hidden = items.length > 0;
-  el("historyTable").hidden = items.length === 0;
-  if (more) more.hidden = items.length <= HISTORY_PAGE;
   renderHistoryPage();
 }
+
+/* 概览四卡：由本次拉取的记录本地计算（本地时区），反映全量而非当前展示页。 */
+function renderHistStats(records){
+  const list = Array.isArray(records) ? records.filter(x => x && typeof x === "object") : [];
+  const ok = list.filter(x => x.ok !== false).length;
+  const fail = list.length - ok;
+  const todayK = histDateKey(Date.now());
+  const todayOk = list.filter(x => x.ok !== false && histDateKey(x.ts) === todayK).length;
+  const rate = list.length ? Math.round((ok / list.length) * 1000) / 10 : 0;
+  const last = list[0] || null;
+  const cards = [
+    { k: "总记录", v: String(list.length) },
+    { k: "今日成功", v: String(todayOk) },
+    { k: "成功率", v: rate + "%" },
+    { k: "最近执行", v: last ? histMdHm(last.ts) : "—" },
+  ];
+  return '<div class="stat-grid">' +
+    cards.map(c => '<div class="stat-card"><div class="stat-k">' + esc(c.k) + '</div><div class="stat-v" title="' + esc(c.v) + '">' + esc(c.v) + '</div></div>').join("") +
+    '</div>' +
+    '<div class="hist-list-title">执行明细 <span class="muted" style="font-weight:400;font-size:11.5px">按日期分组 · 本地时间</span></div>';
+}
+
+/* ts(ms) → 本地日期键 YYYY-MM-DD；非法时间返回 "" */
+function histDateKey(ts){
+  const d = new Date(Number(ts) || 0);
+  if (!ts || isNaN(d.getTime())) return "";
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+function histHm(ts){
+  const d = new Date(Number(ts) || 0);
+  if (!ts || isNaN(d.getTime())) return "";
+  return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+function histMd(ts){
+  const d = new Date(Number(ts) || 0);
+  if (!ts || isNaN(d.getTime())) return "";
+  return (d.getMonth()+1) + "-" + d.getDate();
+}
+function histMdHm(ts){ const md = histMd(ts), hm = histHm(ts); return (md ? md + " " : "") + hm || "—"; }
+function offsetDateKey(off){
+  const d = new Date(); d.setDate(d.getDate() + off);
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+function weekdayName(date){ return "周" + "日一二三四五六"[date.getDay()]; }
+
+/* 类型标签：色块 + 一字缩写，对齐 checkin 站点色块视觉 */
+function histTypeTag(type){
+  const map = {
+    upload:  { cls: "ht-upload",  s: "上" },
+    checkin: { cls: "ht-checkin", s: "签" },
+    link:    { cls: "ht-link",    s: "链" },
+    strm:    { cls: "ht-strm",    s: "S" },
+  };
+  const t = map[type] || { cls: "ht-other", s: "•" };
+  return '<span class="type-tag ' + t.cls + '">' + t.s + '</span>';
+}
+function histBadge(ok){
+  return ok
+    ? '<span class="row-badge b-ok"><span class="dot"></span>成功</span>'
+    : '<span class="row-badge b-err"><span class="dot"></span>失败</span>';
+}
+
+/* 单条明细行：类型色块 · 标题/详情 → 状态徽标 · 本地时间 */
+function histItemHtml(it, inEarlier){
+  const ok = it.ok !== false;
+  const typeName = HISTORY_TYPES[it.type] || it.type || "其他";
+  const title = esc(it.title || typeName);
+  const detail = String(it.detail || "");
+  const timeTxt = inEarlier ? histMdHm(it.ts) : histHm(it.ts);
+  const detailLine = detail
+    ? '<div class="hist-item-detail' + (ok ? "" : " fail") + '" title="' + escAttr(detail) + '">' + esc(detail) + '</div>'
+    : "";
+  return '<div class="hist-item">' +
+    histTypeTag(it.type) +
+    '<div class="hist-item-main">' +
+      '<div class="hist-item-title"><b>' + esc(typeName) + '</b> · ' + title + '</div>' +
+      detailLine +
+    '</div>' +
+    histBadge(ok) +
+    '<div class="hist-item-side">' +
+      (timeTxt ? '<span class="hist-item-time">' + esc(timeTxt) + '</span>' : "") +
+    '</div>' +
+  '</div>';
+}
+
+/* 渲染：概览统计（全量）+ 按日期分组（今天/昨天/更早）的可见切片；「加载更多」逐页扩展可见量后整体重绘 */
 function renderHistoryPage(){
-  const tb = el("historyTable").querySelector("tbody");
-  const slice = historyAll.slice(historyIdx, historyIdx + HISTORY_PAGE);
-  historyIdx += slice.length;
+  const body = el("historyBody");
+  const empty = el("historyEmpty");
   const more = el("historyMoreBtn");
-  if (more) more.hidden = historyIdx >= historyAll.length;
-  for (const it of slice){
-    if (!it || typeof it !== "object") continue;
-    const tr = document.createElement("tr");
-    const d = new Date(Number(it.ts) || 0);
-    const time = isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12: false });
-    const type = HISTORY_TYPES[it.type] || it.type || "其他";
-    const ok = it.ok !== false;
-    tr.innerHTML =
-      `<td class="mono">${esc(time)}</td>` +
-      `<td>${esc(type)}</td>` +
-      `<td class="name">${esc(it.title || "")}<div class="muted">${esc(it.detail || "")}</div></td>` +
-      `<td class="ops ${ok ? "ok" : "err"}">${ok ? "成功" : "失败"}</td>`;
-    tb.appendChild(tr);
+  if (!body) return;
+  if (!historyAll.length){
+    body.innerHTML = "";
+    empty.innerHTML = "暂无执行记录";
+    empty.hidden = false;
+    if (more) more.hidden = true;
+    return;
   }
+  empty.hidden = true;
+  historyIdx = Math.min(historyIdx + HISTORY_PAGE, historyAll.length);
+  const shown = historyAll.slice(0, historyIdx).filter(x => x && typeof x === "object");
+
+  const todayK = offsetDateKey(0), yestK = offsetDateKey(-1);
+  const today = [], yest = [], earlier = [];
+  for (const it of shown){
+    const k = histDateKey(it.ts);
+    if (k && k === todayK) today.push(it);
+    else if (k && k === yestK) yest.push(it);
+    else earlier.push(it);
+  }
+  const dToday = new Date(), dYest = new Date(); dYest.setDate(dYest.getDate() - 1);
+  const groups = [
+    { label: "今天", date: dToday, items: today, open: true },
+    { label: "昨天", date: dYest, items: yest, open: true },
+    { label: "更早", date: null, items: earlier, open: false },
+  ];
+  let html = renderHistStats(historyAll) + '<div class="hist-groups">';
+  let any = false;
+  for (const g of groups){
+    if (!g.items.length) continue;
+    any = true;
+    const dateHtml = g.date ? ' <em>' + (g.date.getMonth()+1) + '月' + g.date.getDate() + '日 ' + weekdayName(g.date) + '</em>' : "";
+    const bodyHtml = g.items.map(it => histItemHtml(it, g.label === "更早")).join("");
+    html += '<div class="hist-group' + (g.open ? "" : " closed") + '">' +
+      '<button type="button" class="hist-group-head" aria-expanded="' + (g.open ? "true" : "false") + '" onclick="toggleHistGroup(this)">' +
+        '<span class="hg-date">' + g.label + dateHtml + '</span>' +
+        '<span class="hg-count">' + g.items.length + ' 条</span>' +
+        '<svg class="hg-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>' +
+      '</button>' +
+      '<div class="hist-group-body">' + bodyHtml + '</div>' +
+    '</div>';
+  }
+  html += '</div>';
+  body.innerHTML = any ? html : renderHistStats(historyAll) + '<div class="hist-empty"><b>还没有执行记录</b><br><span class="muted">上传 / 签到 / 取链 / STRM 的结果会按日期出现在这里。</span></div>';
+  if (more) more.hidden = historyIdx >= historyAll.length;
+}
+
+function toggleHistGroup(btn){
+  const g = btn && btn.parentElement;
+  if (!g) return;
+  const closed = g.classList.toggle("closed");
+  btn.setAttribute("aria-expanded", closed ? "false" : "true");
 }
 
 async function clearHistory(){
