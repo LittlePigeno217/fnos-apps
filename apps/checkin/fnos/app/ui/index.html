@@ -367,10 +367,7 @@
   /* ---------- 结果摘要 ---------- */
   .summary-line { margin-top: 10px; white-space: pre-line; font-size: 13px; }
 
-  /* ---------- 签到历史面板（1.5.4；2.1.0 起内嵌运行日志下方，非弹窗） ---------- */
-  .history-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-  .history-title { font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
-  .history-head .grow { flex: 1; min-width: 0; }
+  /* ---------- 签到历史面板（1.5.4；2.1.0 起内嵌运行日志下方，非弹窗；2.1.1 起头部菜单栏复用 .toolbar 与运行日志同风格） ---------- */
   .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
   @media (max-width: 560px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .stat-card { border: 1px solid var(--border); border-radius: var(--jc-radius); padding: 10px 12px;
@@ -455,7 +452,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.1.0</span>
+      <span class="ver" id="appVersion">v2.1.1</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -560,18 +557,18 @@
           <pre id="logView" style="margin:0;padding:12px 14px;height:40vh;overflow:auto;background:#0C1218;color:#D7E3EC;font:12px/1.6 var(--font-mono);white-space:pre-wrap;word-break:break-all;tab-size:2"></pre>
         </div>
 
-        <!-- 签到历史：内嵌在运行日志下方（不再弹窗） -->
-        <div class="pane" style="margin-top:14px">
-          <div class="history-head">
-            <div class="history-title">签到历史</div>
-            <span class="grow"></span>
+        <!-- 签到历史：内嵌在运行日志下方（不再弹窗）——菜单栏与运行日志工具栏同风格 -->
+        <div class="pane" style="margin-top:14px;padding:0;overflow:hidden">
+          <div class="toolbar" style="margin:0;padding:10px 14px 0;border-bottom:none">
+            <span style="font-weight:600;font-size:13.5px">签到历史</span>
+            <span style="flex:1"></span>
             <button type="button" class="btn btn-mini" onclick="refreshHistoryPanel()">刷新</button>
             <button type="button" class="btn btn-mini" onclick="exportHistoryCsv()" title="下载全部签到记录为 CSV（Excel 可直接打开）">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
               导出 CSV
             </button>
           </div>
-          <div id="histBody" class="empty">正在加载签到历史…</div>
+          <div id="histBody" style="padding:12px 14px 16px"><div class="empty">正在加载签到历史…</div></div>
         </div>
       </section>
 
