@@ -367,10 +367,7 @@
   /* ---------- 结果摘要 ---------- */
   .summary-line { margin-top: 10px; white-space: pre-line; font-size: 13px; }
 
-  /* ---------- 签到历史面板（1.5.4） ---------- */
-  .history-panel { background: var(--card); border: 1px solid var(--border); border-radius: 18px;
-                   width: min(720px, 94vw); max-height: 88vh; overflow: auto; padding: 20px 22px;
-                   box-shadow: var(--shadow-card); backdrop-filter: blur(10px); }
+  /* ---------- 签到历史面板（1.5.4；2.1.0 起内嵌运行日志下方，非弹窗） ---------- */
   .history-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
   .history-title { font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
   .history-head .grow { flex: 1; min-width: 0; }
@@ -454,11 +451,11 @@
       </button>
       <button data-tab="history">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h9v12h-9M6 6v9"/><path d="M9 6v9"/><path d="M12 6v9"/><path d="M15 6v9"/></svg>
-        <span>日志</span>
+        <span>运行日志</span>
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.0.9</span>
+      <span class="ver" id="appVersion">v2.1.0</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -483,10 +480,6 @@
           <button class="btn primary" id="runAllBtn" onclick="runAll()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 8a9 9 0 1 0 1 7"/></svg>
             立即签到全部
-          </button>
-          <button class="btn" onclick="openHistoryPanel()" title="签到历史（按日期分组查看 / 导出 CSV）">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-9M12 20V4M18 20v-6"/><path d="M3 20h18"/></svg>
-            签到历史
           </button>
           <span class="muted" id="runSummary"></span>
           <span style="flex:1"></span>
@@ -554,7 +547,7 @@
         </div>
       </section>
 
-      <!-- 日志 -->
+      <!-- 运行日志（含内嵌签到历史） -->
       <section id="tab-history" hidden>
         <div class="pane" style="padding:0;overflow:hidden">
           <div class="toolbar" style="margin:0;padding:10px 14px 0;border-bottom:none">
@@ -564,7 +557,21 @@
             <button class="btn btn-mini" id="logPauseBtn" onclick="logTogglePause()">暂停</button>
             <button class="btn btn-mini" onclick="logClear()">清空日志</button>
           </div>
-          <pre id="logView" style="margin:0;padding:12px 14px;height:62vh;overflow:auto;background:#0C1218;color:#D7E3EC;font:12px/1.6 var(--font-mono);white-space:pre-wrap;word-break:break-all;tab-size:2"></pre>
+          <pre id="logView" style="margin:0;padding:12px 14px;height:40vh;overflow:auto;background:#0C1218;color:#D7E3EC;font:12px/1.6 var(--font-mono);white-space:pre-wrap;word-break:break-all;tab-size:2"></pre>
+        </div>
+
+        <!-- 签到历史：内嵌在运行日志下方（不再弹窗） -->
+        <div class="pane" style="margin-top:14px">
+          <div class="history-head">
+            <div class="history-title">签到历史</div>
+            <span class="grow"></span>
+            <button type="button" class="btn btn-mini" onclick="refreshHistoryPanel()">刷新</button>
+            <button type="button" class="btn btn-mini" onclick="exportHistoryCsv()" title="下载全部签到记录为 CSV（Excel 可直接打开）">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              导出 CSV
+            </button>
+          </div>
+          <div id="histBody" class="empty">正在加载签到历史…</div>
         </div>
       </section>
 
@@ -642,23 +649,6 @@
   </div>
 </div>
 
-<!-- 签到历史面板（1.8.8 重新设计）：概览统计 + 按日期分组（今天/昨天/更早）的签到明细 + 导出 CSV -->
-<div id="historyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
-  <div class="history-panel">
-    <div class="history-head">
-      <div class="history-title">签到历史</div>
-      <span class="grow"></span>
-      <button type="button" class="btn btn-mini" onclick="refreshHistoryPanel()">刷新</button>
-      <button type="button" class="btn btn-mini" onclick="exportHistoryCsv()" title="下载全部签到记录为 CSV（Excel 可直接打开）">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-        导出 CSV
-      </button>
-      <button type="button" class="btn btn-mini" onclick="closeHistoryPanel()">✕</button>
-    </div>
-    <div id="histBody" class="empty">正在加载签到历史…</div>
-  </div>
-</div>
-
 <script>
 const $ = (id) => document.getElementById(id);
 // 对齐 115网盘助手：API 走 fnOS 网关 /app/checkin/action/<name> 通道
@@ -689,7 +679,7 @@ async function call(action, method = "GET", body = null, timeoutMs = 15000) {
   finally { clearTimeout(timer); }
 }
 
-const TITLES = { sites: "站点签到", settings: "运行设置", history: "日志" };
+const TITLES = { sites: "站点签到", settings: "运行设置", history: "运行日志" };
 
 /* 站点元数据单一事实源来自后端 adapter.meta（get_config 回传）；前端不再维护 SITES 字典，
  * 新增站点类型 = 后端 sites.js 注册 1 行，前端零改动（P2 扩展性目标）。 */
@@ -2030,21 +2020,12 @@ async function logClear() {
 }
 
 /* ── 签到历史（1.8.8 重新设计）────────────────────────────────
- * 面板：概览 stat 卡 + 按日期分组的签到明细（今天 / 昨天 / 更早 折叠组）。
- * 数据：打开时 GET history?limit=500（store 持久化上限 500，实际为全量）一次；「刷新」重新拉取。
+ * 展示：内嵌在「运行日志」页运行日志下方（2.1.0 起不再弹窗）。
+ * 内容：概览 stat 卡 + 按日期分组的签到明细（今天 / 昨天 / 更早 折叠组）。
+ * 数据：切到运行日志页时 GET history?limit=500（store 持久化上限 500，实际为全量）；「刷新」重新拉取。
  * 每条明细：站点 · 账号 → 状态徽标（成功/失败/已跳过/待签）· 本地时间 · 收益（如有）；
  * 失败原因归一为直观短文案（Cookie 过期 / 登录态失效 / 人机验证 / 账号或密码错误 / 网络或 IP 限制）。
  * 纯 CSS 实现，不引入图表库（fnOS 单文件前端重量受限）。 */
-
-async function openHistoryPanel() {
-  $("historyModal").style.display = "flex";
-  $("histBody").innerHTML = '<div class="empty">正在加载签到历史…</div>';
-  await refreshHistoryPanel();
-}
-
-function closeHistoryPanel() {
-  $("historyModal").style.display = "none";
-}
 
 /** 重新拉取签到历史并渲染（加载/失败态明确提示） */
 async function refreshHistoryPanel() {
@@ -2292,7 +2273,7 @@ document.querySelectorAll(".nav button").forEach((b) => {
     // 仅切换顶层视图 section（用 > 直接子级；否则会连带隐藏 #tab-sites 内嵌的 #acctSection 账号列表）
     document.querySelectorAll(".content > section").forEach((s) => (s.hidden = true));
     $("tab-" + b.dataset.tab).hidden = false;
-    if (b.dataset.tab === "history") logPoll();
+    if (b.dataset.tab === "history") { logPoll(); refreshHistoryPanel(); }
   });
 });
 
