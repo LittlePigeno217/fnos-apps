@@ -476,7 +476,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.3</span>
+      <span class="ver" id="appVersion">v1.3.4</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -3263,10 +3263,12 @@ const API = "/app/p115assistant/action/";
 async function call(name, method="GET", body=null){
   const opt = { method, headers:{ "Accept":"application/json" } };
   if (body){ opt.headers["Content-Type"]="application/json"; opt.body=JSON.stringify(body); }
-  const r = await fetch(API+name, opt);
+  let resp;
+  try { resp = await fetch(API+name, opt); }
+  catch(_e){ return { success:false, message:"网络请求失败" }; }
   let json = { success:false };
-  try { json = await r.json(); } catch(_e){}
-  if (!json.success && r.status===401){ await refreshAuth(); }
+  try { json = await resp.json(); } catch(_e){}
+  if (!json.success && resp.status===401){ await refreshAuth(); }
   return json;
 }
 function el(id){ return document.getElementById(id); }
@@ -3389,7 +3391,7 @@ async function refreshDrive(){
   const r = await call("disk_list?cid="+encodeURIComponent(cid));
   const tb = el("driveTable").querySelector("tbody");
   tb.innerHTML="";
-  if (!r.success){ el("driveEmpty").innerHTML = esc(r.message||"加载失败")+" · <a href=\"javascript:void(0)\" onclick=\"refreshDrive()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>"; el("driveTable").hidden=true; return; }
+  if (!r.success || !r.data || !Array.isArray(r.data.items)){ el("driveEmpty").innerHTML = esc(r.message||"加载失败")+" · <a href=\"javascript:void(0)\" onclick=\"refreshDrive()\" style=\"color:var(--accent-strong);text-decoration:underline\">重试</a>"; el("driveTable").hidden=true; return; }
   el("driveTable").hidden=false;
   el("driveEmpty").textContent = r.data.items && r.data.items.length ? "" : "空目录";
   el("upBtn").disabled = (stack.length===0);
@@ -3397,6 +3399,7 @@ async function refreshDrive(){
   // TODO（长列表虚拟化）：大目录（>2000 项）全量渲染 DOM 会卡顿；未来可改为
   // 分页/虚拟滚动 + 全表事件委托，当前保持直接渲染（目录页每次最多 1150 项）。
   for (const it of r.data.items){
+    if (!it || typeof it !== "object") continue;
     const tr=document.createElement("tr");
     if (it.is_dir) tr.className="row-dir";
     const glyph = it.is_dir ? ICON_DIR : ICON_FILE;
@@ -3671,7 +3674,11 @@ function renderMappingCards(){
   const box = el("mappingList");
   box.innerHTML = "";
   el("uploadEmpty").hidden = mappingCards.length > 0;
-  for (const m of mappingCards) box.appendChild(mappingCardEl(m));
+  for (const m of mappingCards){
+    if (!m || typeof m !== "object") continue;
+    try { box.appendChild(mappingCardEl(m)); }
+    catch (e) { console.error("上传映射卡渲染失败，已跳过：", e); }
+  }
 }
 function mappingCardEl(m){
   const wrap = document.createElement("div");
@@ -3768,30 +3775,45 @@ async function addMappingCard(){
   if (first) first.focus();
 }
 async function sweep(){ el("sweepState").textContent="已入队…"; const r=await call("upload_sweep","POST",{}); el("sweepState").textContent=r.message||"开始上传"; refreshWatchStatus(); if(r.success) uploadStatus(); }
-async function uploadStatus(){ const r=await call("upload_status"); if(r.success){ el("sweepState").textContent=`上传中:${r.data.active}, 待处理:${r.data.pending}`; updateCancelTaskBtn(r.data.active, r.data.pending); } refreshUploadFailures(); }
+async function uploadStatus(){ const r=await call("upload_status"); if(r.success && r.data){ const act=Number(r.data.active)||0, pend=Number(r.data.pending)||0; el("sweepState").textContent=`上传中:${act}, 待处理:${pend}`; updateCancelTaskBtn(act, pend); } refreshUploadFailures(); }
 // 上传失败清单（1.2.1）：失败文件可单条/全部重试
 async function refreshUploadFailures(){
   const box = el("uploadFailuresBox"); if(!box) return;
   const r = await call("upload_failures");
   if(!r.success || !r.data) return;
-  const items = r.data.items || [];
-  el("upFailCount").textContent = r.data.count;
+  const items = Array.isArray(r.data.items) ? r.data.items.filter(it => it && typeof it === "object") : [];
+  el("upFailCount").textContent = (r.data.count != null) ? r.data.count : items.length;
   const list = el("upFailList");
   if(!items.length){ box.style.display="none"; list.innerHTML=""; return; }
   box.style.display="";
-  list.innerHTML = items.map((it) => `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border,#333)">
+  list.innerHTML = items.map((it) => {
+    const ts = new Date(it.ts || Date.now());
+    const time = isNaN(ts.getTime()) ? "" : ts.toLocaleTimeString();
+    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border,#333)">
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(it.path)}">${esc(it.name)} <span class="muted">(${esc(it.mapping || "")}·${esc(it.error || "")})</span></span>
-    <span class="muted" style="flex:none;font-size:11px">${esc(new Date(it.ts || Date.now()).toLocaleTimeString())}</span>
-    <button class="btn" style="flex:none;font-size:12px;padding:2px 8px" onclick="retryUploadFailure('${escAttr(it.path)}')">重试</button>
-  </div>`).join("");
+    <span class="muted" style="flex:none;font-size:11px">${esc(time)}</span>
+    <button class="btn" style="flex:none;font-size:12px;padding:2px 8px" data-retry="${escAttr(it.path)}">重试</button>
+  </div>`;
+  }).join("");
 }
+// 失败重试按钮：事件委托读 data-retry（属性 HTML 转义，杜绝内联 JS 引号逃逸/XSS）
+(function () {
+  const list = document.getElementById("upFailList");
+  if (!list || list.dataset.retryDelegated) return;
+  list.dataset.retryDelegated = "1";
+  list.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-retry]");
+    if (!btn) return;
+    retryUploadFailure(btn.dataset.retry || "");
+  });
+})();
 async function retryUploadFailure(filePath){
   const r = await call("upload_failures_retry","POST",{filePath});
   if(r.success){ refreshUploadFailures(); uploadStatus(); } else { alert(r.message || "重试失败"); }
 }
 async function retryAllFailures(){
   const r = await call("upload_failures");
-  const items = (r.data && r.data.items) || [];
+  const items = (r.data && Array.isArray(r.data.items)) ? r.data.items.filter(it => it && typeof it === "object") : [];
   for (const it of items) await call("upload_failures_retry","POST",{filePath:it.path});
   refreshUploadFailures(); uploadStatus();
 }
@@ -3821,7 +3843,7 @@ async function refreshWatchStatus(){
   if(st){
     if(d.running){
       const w=d.watch||{};
-      const pending = w.mappings&&w.mappings.length ? w.mappings.reduce((a,m)=>a+(m.pending||0),0) : 0;
+      const pending = Array.isArray(w.mappings) ? w.mappings.reduce((a,m)=>a+(Number(m&&m.pending)||0),0) : 0;
       st.textContent=`● 监听中${pending?" · "+pending+" 个待稳定":""}`;
       st.hidden=false;
     }else{
@@ -3867,11 +3889,11 @@ async function loadSrcDirs(rel){
   const url = rel ? "browse_local?path="+encodeURIComponent(rel) : "browse_local";
   const r = await call(url);
   el("srcEmpty").hidden = true;
-  if(!r.success){ el("srcEmpty").textContent = r.message || "加载失败"; el("srcEmpty").hidden=false; return; }
+  if(!r.success || !r.data){ el("srcEmpty").textContent = (r && r.message) || "加载失败"; el("srcEmpty").hidden=false; return; }
   if(!srcBase) srcBase = r.data.base;
   srcRelPath = r.data.current || "";
   el("srcUpBtn").disabled = !srcStack.length;
-  const items = r.data.items || [];
+  const items = Array.isArray(r.data.items) ? r.data.items : [];
   if(!items.length && srcStack.length){
     // 空子目录：保留当前路径可选
     el("srcEmpty").textContent = "此目录下没有子目录（可确认选择）";
@@ -3883,6 +3905,7 @@ async function loadSrcDirs(rel){
   if(!items.length){ el("srcEmpty").textContent = "无可用目录"; el("srcEmpty").hidden=false; return; }
   el("srcTable").hidden = false;
   for(const it of items){
+    if (!it || typeof it !== "object") continue;
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
     tr.innerHTML = `<td><span class="glyph">${ICON_DIR}</span><span class="name">${esc(it.name)}</span></td>`;
@@ -3942,11 +3965,12 @@ async function loadTargetDirs(cid){
   const r = await call("dirs_only?cid="+encodeURIComponent(cid));
   el("targetEmpty").hidden = true;
   el("targetUpBtn").disabled = !targetCidStack.length;
-  if(!r.success){ el("targetEmpty").textContent = r.message || "加载失败"; el("targetEmpty").hidden=false; return; }
-  const items = r.data.items || [];
+  if(!r.success || !r.data){ el("targetEmpty").textContent = (r && r.message) || "加载失败"; el("targetEmpty").hidden=false; return; }
+  const items = Array.isArray(r.data.items) ? r.data.items : [];
   if(!items.length){ el("targetEmpty").textContent = "此目录下没有子目录"; el("targetEmpty").hidden=false; return; }
   el("targetTable").hidden = false;
   for(const it of items){
+    if (!it || typeof it !== "object") continue;
     const tr=document.createElement("tr");
     tr.style.cursor="pointer";
     tr.innerHTML=`<td><span class="glyph">${ICON_DIR}</span><span class="name">${esc(it.name)}</span></td>`;
@@ -4057,7 +4081,11 @@ async function loadStrmMappings(){
   const box = el("strmList");
   box.innerHTML = "";
   el("strmEmpty").hidden = strmCards.length > 0;
-  for (const m of strmCards) box.appendChild(strmCardEl(m));
+  for (const m of strmCards){
+    if (!m || typeof m !== "object") continue;
+    try { box.appendChild(strmCardEl(m)); }
+    catch (e) { console.error("STRM 映射卡渲染失败，已跳过：", e); }
+  }
 }
 function strmCardEl(m){
   const wrap = document.createElement("div");
@@ -4149,7 +4177,7 @@ async function runStrmSync(){
 /* ---- 设置（配置项已迁移至应用中心「运行设置」，此处仅展示版本） ---- */
 async function loadSettings(){
   const r=await call("get_config");
-  if(!r.success)return;
+  if(!r.success || !r.data)return;
   const d=r.data;
   // 侧边栏底部版本徽标动态跟随实际版本（不再硬编码；2026-09-17 修复 1.1.0 残留）
   if (el("appVersion")) el("appVersion").textContent = "v" + (d.function_version || d.version || "1.0.0");
@@ -4159,7 +4187,7 @@ async function loadSettings(){
 function setCfgCheck(id, v){ const e=el(id); if (e) e.checked = v === true || v === "true"; }
 function setCfgSelect(id, v){ const e=el(id); if (e) e.value = String(v === undefined || v === null ? "" : v); }
 async function loadAppSettings(d){
-  if(!d){ const r=await call("get_config"); if(!r.success)return; d=r.data; }
+  if(!d){ const r=await call("get_config"); if(!r.success || !r.data)return; d=r.data; }
   setCfgCheck("cfgEnabled", d.enabled);
   setCfgCheck("cfgFeishuEnabled", d.feishu_enabled);
   setCfgCheck("upGenStrm", d.upload_generate_strm);
@@ -4204,7 +4232,7 @@ async function hotfixMiniCheck(){
     setTimeout(() => { if (st && !hotfixState.has_update) st.hidden = true; }, 4000);
     return;
   }
-  if (st) st.textContent = "发现功能更新 v" + d.version + "（" + (d.changed || []).length + " 个文件）";
+  if (st) st.textContent = "发现功能更新 v" + d.version + "（" + (Array.isArray(d.changed) ? d.changed.length : 0) + " 个文件）";
   if (btn){ btn.textContent = "应用功能更新"; btn.disabled = false; }
 }
 async function hotfixMiniApply(){
@@ -4223,6 +4251,7 @@ let lastLogOffset=0, lastLogText="";
 let logFilter = { level: "ALL", type: "ALL" };
 const TYPE_LABELS = { UPLOAD:"上传", STRM:"STRM", WATCH:"监听", CHECKIN:"签到", RISK:"风控", CONFIG:"配置", LINK:"取链", SYSTEM:"系统" };
 function logLineHtml(item){
+  if (!item || typeof item !== "object") return "";
   const lv = String(item.l || "INFO");
   const color = lv === "ERROR" ? "#f85149" : lv === "WARN" ? "#d29922" : "#7ee787";
   const typ = TYPE_LABELS[String(item.y || "SYSTEM")] || String(item.y || "SYSTEM");
@@ -4234,7 +4263,7 @@ function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt
 async function pollLog(){
   const r=await call("log_tail?limit=300");
   if(!r.success) return;
-  const items = r.data.lines || [];
+  const items = Array.isArray(r.data.lines) ? r.data.lines.filter(it => it && typeof it === "object") : [];
   const shown = items.filter(it => (logFilter.level==="ALL" || String(it.l||"INFO")===logFilter.level) && (logFilter.type==="ALL" || String(it.y||"SYSTEM")===logFilter.type));
   const txt = shown.map(logLineHtml).join("\n");
   if(txt===lastLogText) return;
@@ -4269,7 +4298,7 @@ async function refreshConflicts(){
   const tb = el("conflictTable").querySelector("tbody");
   tb.innerHTML="";
   const r = await call("upload_conflicts");
-  const items = (r.data && r.data.items) || [];
+  const items = (r.data && Array.isArray(r.data.items)) ? r.data.items.filter(c => c && typeof c === "object") : [];
   const block = el("conflictBlock"), table = el("conflictTable"), empty = el("conflictEmpty");
   block.hidden = table.hidden = empty.hidden = true;
   if (!r.success || !items.length) { if (items.length===0) return; return; }
@@ -4324,7 +4353,7 @@ async function refreshHistory(){
     historyAll = [];
     return;
   }
-  const items = r.data.items || [];
+  const items = Array.isArray(r.data.items) ? r.data.items : [];
   historyAll = items;
   historyIdx = 0;
   empty.hidden = items.length > 0;
@@ -4339,6 +4368,7 @@ function renderHistoryPage(){
   const more = el("historyMoreBtn");
   if (more) more.hidden = historyIdx >= historyAll.length;
   for (const it of slice){
+    if (!it || typeof it !== "object") continue;
     const tr = document.createElement("tr");
     const d = new Date(Number(it.ts) || 0);
     const time = isNaN(d.getTime()) ? "—" : d.toLocaleString("zh-CN", { hour12: false });
@@ -4410,7 +4440,7 @@ async function runStrmOnce(){
 /* ---- 工具 ---- */
 function fmtSize(n){ n=Number(n||0); if(n<1024)return n+"B"; const u=["KB","MB","GB","TB"]; let i=-1; do{n/=1024;i++;}while(n>=1024&&i<3); return n.toFixed(1)+u[i]; }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-function escjs(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,'\\"'); }
+function escjs(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 
 window.addEventListener("load", boot);
 </script>
