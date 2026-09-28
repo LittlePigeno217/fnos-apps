@@ -437,6 +437,13 @@ class Server {
       consecutiveFailures: 0,  // 连续失败计数（非风控）
     };
     this._logTail = [];
+    // 运行日志持久化（1.3.7）：结构化日志环除内存外落盘到 <data>/run-log.ndjson，
+    // 每条 recordLog 追加一行 JSON，重启时读回 _logTail —— 对齐 checkin「落盘 + 启动读回」，
+    // 使运行日志不因应用重启/热更而清空。上限与内存环一致（_logMax），追加累计到阈值压实一次界定文件大小。
+    this._logMax = 2000;
+    this._logFile = path.join(store.dir, "run-log.ndjson");
+    this._logAppendCount = 0;   // 自上次压实以来的追加条数（达 _logMax 触发压实）
+    this._logPersistErr = false; // 落盘失败仅静默记一次标记，绝不经 console 输出（会递归回 recordLog）
     this._strmBusy = false;          // STRM 生成的并发闸（同步与一次性任务共用）
     this._uploadStrmSyncTimer = null; // 「上传后生成 STRM」防抖定时器（上传空闲回调触发）
     this._redirectUrlCache = new Map();   // 匿名 302 取链 URL 缓存（pickcode|ua → {url, expireAt}）
@@ -453,6 +460,8 @@ class Server {
       console.warn = (...args) => { self.recordLog(`⚠ ${args.map(String).join(" ")}`, "WARN"); originals.warn(...args); };
       console.error = (...args) => { self.recordLog(`✗ ${args.map(String).join(" ")}`, "ERROR"); originals.error(...args); };
     }
+    // 启动读回：把上次运行的持久化日志载入内存环（须在 console hook 之后，读回本身不产生日志）。
+    this._loadPersistedLog();
   }
 
   // ── 风控预设（参考 115 轻量助手插件：请求级限速 + 任务级 abort + 冷却恢复）──
@@ -2618,14 +2627,74 @@ class Server {
     const typ = /^(UPLOAD|STRM|WATCH|CHECKIN|RISK|CONFIG|LINK|SYSTEM)$/.test(type)
       ? type
       : this._inferType(text);
-    this._logTail.push({
+    const entry = {
       t: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
       l: lvl,
       y: typ,
       x: String(text),
-    });
-    if (this._logTail.length > 2000) {
-      this._logTail = this._logTail.slice(-2000);
+    };
+    this._logTail.push(entry);
+    if (this._logTail.length > this._logMax) {
+      this._logTail = this._logTail.slice(-this._logMax);
+    }
+    this._persistLog(entry);
+  }
+
+  // ── 运行日志持久化（1.3.7）──────────────────────────────
+  // 落盘：每条 recordLog 追加一行 NDJSON；累计到 _logMax 条压实一次（用内存环整体重写，界定文件大小）。
+  // 读回：启动时解析 NDJSON，取末尾 _logMax 条载入 _logTail，坏行跳过。
+  // 失败一律静默（绝不经 console 输出，否则递归回 recordLog）；持久化异常不影响内存日志与服务。
+  _persistLog(entry) {
+    if (!this._logFile) return;
+    try {
+      fs.appendFileSync(this._logFile, JSON.stringify(entry) + "\n");
+      if (++this._logAppendCount >= this._logMax) this._compactLog();
+    } catch {
+      this._logPersistErr = true; // 仅记标记，静默降级为纯内存日志
+    }
+  }
+
+  _compactLog() {
+    if (!this._logFile) return;
+    try {
+      const body = this._logTail.map((e) => JSON.stringify(e)).join("\n");
+      const tmp = this._logFile + ".tmp";
+      fs.writeFileSync(tmp, body ? body + "\n" : "");
+      fs.renameSync(tmp, this._logFile);
+      this._logAppendCount = 0;
+    } catch {
+      /* 压实失败下次达阈值再试，不影响运行 */
+    }
+  }
+
+  _loadPersistedLog() {
+    if (!this._logFile) return;
+    try {
+      if (!fs.existsSync(this._logFile)) return;
+      const raw = fs.readFileSync(this._logFile, "utf8");
+      const out = [];
+      for (const ln of raw.split("\n")) {
+        const s = ln.trim();
+        if (!s) continue;
+        try {
+          const e = JSON.parse(s);
+          if (e && typeof e === "object" && typeof e.x === "string") {
+            out.push({
+              t: String(e.t || ""),
+              l: /^(INFO|WARN|ERROR)$/.test(e.l) ? e.l : "INFO",
+              y: /^(UPLOAD|STRM|WATCH|CHECKIN|RISK|CONFIG|LINK|SYSTEM)$/.test(e.y) ? e.y : "SYSTEM",
+              x: String(e.x),
+            });
+          }
+        } catch {
+          /* 跳过坏行 */
+        }
+      }
+      this._logTail = out.slice(-this._logMax);
+      // 读回后压实一次：清掉坏行与超限历史，界定文件大小
+      if (this._logTail.length) this._compactLog();
+    } catch {
+      /* 读回失败按空日志启动，不影响服务 */
     }
   }
 

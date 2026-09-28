@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.3.6",
+  version: "1.3.7",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -145,6 +145,11 @@ class Store {
     this._dir = dataDir || TRIM_PKGVAR;
     fs.mkdirSync(this._dir, { recursive: true });
     this._encryptionKeyCache = null;
+  }
+
+  /** 数据目录（应用持久目录）：供运行日志等落盘持久化定位路径。 */
+  get dir() {
+    return this._dir;
   }
 
   // ---- 通用 JSON 读写 ----
