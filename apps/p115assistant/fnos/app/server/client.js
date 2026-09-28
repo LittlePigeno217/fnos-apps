@@ -1064,7 +1064,7 @@ class U115Client {
     const initCode = parseInt(initResult.code, 10) || 0;
     if ((initCode === 700 || initCode === 701) && initResult.sign_check) {
       const firstInitResult = Object.assign({}, initResult);
-      Object.assign(initData, this._buildSignCheckData(localPath, initResult));
+      Object.assign(initData, await this._buildSignCheckData(localPath, initResult));
       payload = await this._request("POST", "/open/upload/init", {
         rateLimitRoute: "upload_control",
         form: true,
@@ -1122,11 +1122,13 @@ class U115Client {
     return merged;
   }
 
-  _buildSignCheckData(localPath, initResult) {
+  async _buildSignCheckData(localPath, initResult) {
     const [startText, endText] = String(initResult.sign_check).split("-", 2);
     const start = parseInt(startText, 10);
     const end = parseInt(endText, 10);
-    const fd = fs.openSync(localPath, "r");
+    // 假死修复（1.3.5）：签名区段读取改用 fs.promises.read 异步循环填满，避免同步 readSync
+    // 在事件循环上阻塞（区段虽通常较小，但与整文件哈希同属同步 IO，统一异步化让出）。
+    const fh = await fs.promises.open(localPath, "r");
     try {
       // sign_check 为「闭区间字节偏移」（HTTP Range 风格，如 0-131071 表示
       // 第 0～131071 字节共 131072 字节）。参考实现按 `end - start + 1` 读取：
@@ -1134,14 +1136,14 @@ class U115Client {
       // p115client 以 `range="bytes="+sign_check` 请求（服务端闭区间返回）。
       const length = end - start + 1;
       const buf = Buffer.alloc(length);
-      // fs.readSync 单次可能读不满 length（POSIX 允许短读），未读满部分若按零
+      // FileHandle.read 单次可能读不满 length（POSIX 允许短读），未读满部分若按零
       // 参与 SHA1 会算错 sign_val（→ 115 二次认证 code=702）；循环读满，且只对
       // 实际读入字节计算摘要（对齐参考实现的精确区间读）。
       let total = 0;
       while (total < length) {
-        const read = fs.readSync(fd, buf, total, length - total, start + total);
-        if (read <= 0) break;
-        total += read;
+        const { bytesRead } = await fh.read(buf, total, length - total, start + total);
+        if (bytesRead <= 0) break;
+        total += bytesRead;
       }
       // sign_val 必须为大写 hex（115 侧大小写敏感比对）。对齐参考实现：
       // p115liteassistant client.py `sha1(区段).hexdigest().upper()` 与上游
@@ -1158,32 +1160,36 @@ class U115Client {
         sign_val: signValue,
       };
     } finally {
-      fs.closeSync(fd);
+      await fh.close();
     }
   }
 
   async _calcSha1(localPath, limit) {
+    // 假死修复（1.3.5）：整文件 SHA1 曾用 fs.readSync 在同步 while 循环里一次读完，
+    // 大文件（数 GB）会把 Node 单线程事件循环独占数秒~数分钟——期间 HTTP（UI/API/302
+    // 取链）完全无响应（「打不开」）。改用 fs.promises.FileHandle.read + await：每读一块
+    // （1MB）就让出事件循环，HTTP 请求得以在分块间被处理。缓冲区复用（hash.update 会拷贝）。
     const hash = crypto.createHash("sha1");
-    const fd = fs.openSync(localPath, "r");
+    const fh = await fs.promises.open(localPath, "r");
     try {
       let remaining = limit === null ? null : limit;
       let offset = 0;
       const CHUNK = 1024 * 1024;
+      const buf = Buffer.allocUnsafe(CHUNK);
       while (true) {
         const size = remaining === null ? CHUNK : Math.min(CHUNK, remaining);
         if (size <= 0) break;
-        const buf = Buffer.alloc(size);
-        const read = fs.readSync(fd, buf, 0, size, offset);
-        if (read <= 0) break;
-        hash.update(buf.subarray(0, read));
-        offset += read;
+        const { bytesRead } = await fh.read(buf, 0, size, offset);
+        if (bytesRead <= 0) break;
+        hash.update(buf.subarray(0, bytesRead));
+        offset += bytesRead;
         if (remaining !== null) {
-          remaining -= read;
+          remaining -= bytesRead;
           if (remaining <= 0) break;
         }
       }
     } finally {
-      fs.closeSync(fd);
+      await fh.close();
     }
     return hash.digest("hex");
   }
@@ -1288,14 +1294,22 @@ class U115Client {
   }
 
   async _uploadPart(objectName, uploadId, partNumber, localPath, offset, size, token, bucketName) {
-    const fd = fs.openSync(localPath, "r");
+    // 假死修复（1.3.5）：分片读取曾用 fs.readSync 一次同步读完整片（10~20MB），
+    // 且 EPIPE/连接重置触发 _retryWithDelay 重试时会对同一分片反复同步读——每次都独占
+    // 事件循环。改为 fs.promises.read 异步分块填满，读取期间让出事件循环，HTTP 保持响应。
+    const fh = await fs.promises.open(localPath, "r");
     let buf;
     try {
-      buf = Buffer.alloc(size);
-      const read = fs.readSync(fd, buf, 0, size, offset);
-      if (read !== size) throw new U115ApiError(`分片 ${partNumber} 读取不完整`);
+      buf = Buffer.allocUnsafe(size);
+      let total = 0;
+      while (total < size) {
+        const { bytesRead } = await fh.read(buf, total, size - total, offset + total);
+        if (bytesRead <= 0) break;
+        total += bytesRead;
+      }
+      if (total !== size) throw new U115ApiError(`分片 ${partNumber} 读取不完整`);
     } finally {
-      fs.closeSync(fd);
+      await fh.close();
     }
     const params = { partNumber: String(partNumber), uploadId };
     const headers = {
@@ -1396,7 +1410,12 @@ class U115Client {
       } catch (err) {
         lastError = err;
         if (attempt < attempts) {
-          await sleep(this.uploadPartRetryDelay * Math.pow(2, Math.max(0, attempt - 1)));
+          // 指数退避 + 上限（1.3.5）：EPIPE/连接重置等瞬时错误退避重试，退避封顶 30s，
+          // 且 attempts 有界（uploadPartAttempts=3），超限即向上抛出——由上层扫描循环记入
+          // 失败队列（_recordUploadFailure），绝不在事件循环上无限热重试。退避用 await sleep
+          // 让出事件循环，重试间隙 HTTP 保持响应。
+          const backoff = this.uploadPartRetryDelay * Math.pow(2, Math.max(0, attempt - 1));
+          await sleep(Math.min(backoff, 30));
         }
       }
     }
