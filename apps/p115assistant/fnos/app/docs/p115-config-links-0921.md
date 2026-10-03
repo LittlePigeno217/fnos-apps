@@ -28,7 +28,7 @@
 | 15 | upload_sidecar_extensions | (附属列表) | 上传 | `upSidecarExt` | PUB/EDIT | server.js:199,1149 | ✅ |
 | 16 | strm_mappings | [] | STRM | 映射编辑器 | PUB/EDIT | server.js:1630,1752,2145… | ✅ |
 | 17 | strm_incremental | true | STRM | `strmIncremental` | PUB/EDIT | server.js:1687,1760 | ✅ |
-| 18 | strm_add_subtitles | true | STRM | `strmSubs` | PUB/EDIT | server.js:1901 | ✅ |
+| 18 | strm_copy_sidecar | true | STRM | `strmAddSubtitles`（复制刮削及字幕） | PUB/EDIT | server.js:2161 | ✅（兼容旧键 strm_add_subtitles） |
 | 19 | strm_base_url | "" | STRM | `strmBaseUrl` | PUB/EDIT | server.js:1690,1692,1721 | ✅ |
 | 20 | relay_port | 3667 | STRM | `relayPort` | PUB/EDIT | server.js:601,646,1689,1707;main.js:564 | ✅ |
 | 21 | checkin_enabled | false | 签到 | `checkinEnabled` | PUB/EDIT | server.js:2411 | ✅ |
@@ -67,7 +67,7 @@ strm_incremental → 已存在同内容跳过/更新计数(1760,1895)
                                       ├→ strmSync / _runStrmMapping → 写 .strm
 strm_base_url(host) + relay_port(port) → _resolveStrmBaseUrl ⇒ base_url
                                           → .strm 内容 = base_url + /redirect?pickcode&sign
-strm_add_subtitles → 同名字幕(.srt/.ass/.ssa/.sup/.vtt)下载到 .strm 同目录(1901)
+strm_copy_sidecar → 同目录同名字幕(.srt/.ass/.ssa/.sup/.vtt) + 刮削元数据(nfo/海报/背景，含 movie.nfo、poster.jpg 等固定名)下载到 .strm 同目录(2161)；旧键 strm_add_subtitles 读取兼容
 relay_port → 独立 302 中转监听(main.js:564)；save_config 改动即 _relistener 动态重绑(server.js:646)
 ```
 

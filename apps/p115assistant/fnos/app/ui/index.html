@@ -474,6 +474,7 @@
                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hist-item-detail { font-size: 11px; color: var(--muted); margin-top: 1px;
                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-item-detail.multiline { white-space: normal; word-break: break-all; line-height: 1.45; }
   .hist-item-detail.fail { color: var(--err); }
   .hist-item-side { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; }
   .hist-item-time { font-size: 11px; color: var(--muted); font-family: var(--font-mono); white-space: nowrap; }
@@ -543,7 +544,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.3.7</span>
+      <span class="ver" id="appVersion">v1.3.8</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -892,10 +893,11 @@
               </label>
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="strmAddSubtitles" onchange="markDirty('strm')">
-                <span class="muted" style="font-size:13px">附带云端同名字幕</span>
+                <span class="muted" style="font-size:13px">复制刮削及字幕</span>
               </label>
             </div>
             <div class="field-row" style="margin-top:4px">
+              <span class="muted" style="font-size:12px">同步时复制同目录同名字幕（srt/ass/ssa/sup/vtt）及刮削元数据（同名的 nfo/海报/背景图与 movie.nfo、poster.jpg 等固定刮削名），供播放器自动加载。</span>
               <span class="muted" style="font-size:12px">提示：增量适合长期同步；首次使用建议先全量生成一次，再开启增量。</span>
             </div>
           </div>
@@ -3681,7 +3683,7 @@ async function saveStrmCfg(){
     strm_base_url: el("strmBaseUrl").value.trim(),
     relay_port: port,
     strm_incremental: el("strmIncremental").checked === true,
-    strm_add_subtitles: el("strmAddSubtitles").checked === true,
+    strm_copy_sidecar: el("strmAddSubtitles").checked === true,
   };
   const r = await call("save_config", "POST", updates);
   if (r.success){ clearDirty("strm"); saveStrmBase && saveStrmBase(); return; }
@@ -4134,16 +4136,18 @@ async function loadStrmMappings(){
       const d = rc.data;
       const inc = d.incremental !== false;
       el("strmIncremental").checked = inc;
-      // 云端同名字幕开关状态（strm_add_subtitles）
+      // 复制刮削及字幕开关状态（strm_copy_sidecar，兼容旧键 strm_add_subtitles）
       const rc2 = await call("get_config");
       if (rc2.success && rc2.data) {
-        el("strmAddSubtitles").checked = rc2.data.strm_add_subtitles !== false;
+        const cfg = rc2.data;
+        const v = cfg.strm_copy_sidecar ?? cfg.strm_add_subtitles;
+        el("strmAddSubtitles").checked = v !== false;
       }
     }
     return r;
   }
   // 增量生成开关：即时保存到配置（save_config 白名单含 strm_incremental）
-  // 附带云端同名字幕开关：由页级「保存设置」统一提交（strm_add_subtitles）
+  // 复制刮削及字幕开关：由页级「保存设置」统一提交（strm_copy_sidecar，读取兼容旧键 strm_add_subtitles）
   function renderStrmCards(){
   const box = el("strmList");
   box.innerHTML = "";
@@ -4495,8 +4499,9 @@ function histItemHtml(it, inEarlier){
   const title = esc(it.title || typeName);
   const detail = String(it.detail || "");
   const timeTxt = inEarlier ? histMdHm(it.ts) : histHm(it.ts);
+  const isStrm = it.type === "strm";
   const detailLine = detail
-    ? '<div class="hist-item-detail' + (ok ? "" : " fail") + '" title="' + escAttr(detail) + '">' + esc(detail) + '</div>'
+    ? '<div class="hist-item-detail' + (ok ? "" : " fail") + (isStrm ? " multiline" : "") + '" title="' + escAttr(detail) + '">' + esc(detail) + '</div>'
     : "";
   return '<div class="hist-item">' +
     histTypeTag(it.type) +

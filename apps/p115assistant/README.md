@@ -1,6 +1,21 @@
 # 115网盘助手（p115assistant）— fnOS 应用
 
-本地自研 fnOS 应用：115 网盘上传、STRM 生成、签到、302 中转播放、飞书通知。
+本地自研 fnOS 应用：115 网盘上传、STRM 生成（含刮削与字幕复制）、签到、302 中转播放、飞书通知。
+
+## STRM 同步
+
+STRM 同步除生成 `.strm` 外，会把云端同目录的**字幕与刮削元数据**实体复制到本地
+STRM 同目录（开关「复制刮削及字幕」，配置项 `strm_copy_sidecar`，默认开）：
+
+- **字幕**：与媒体文件同目录同名的 `.srt/.ass/.ssa/.sup/.vtt`（播放器自动加载）。
+- **刮削**：
+  - 与媒体文件去扩展同名（大小写不敏感）的 `.nfo/.jpg/.png/.webp`；
+  - Kodi/Emby/Jellyfin 风格固定刮削名：`movie.nfo`、`tvshow.nfo`、
+    `poster.jpg/png`、`fanart.jpg/png`、`backdrop.jpg/png`、`folder.jpg/png`、
+    `season*.jpg/png`、`season*-poster.jpg`、`season*-fanart.jpg`。
+- 既有本地文件且大小一致时跳过；映射停用/删除时随 `.strm` 一并清理。
+
+旧配置键 `strm_add_subtitles` 仍兼容读取（`true`/未设置均视为开启）。
 
 仓库路径：`apps/p115assistant/`（打包内容在 `fnos/` 下）。由统一更新引擎 `scripts/update.sh` 维护构建与热更清单，结构权威文档见 `docs/architecture.md`。
 

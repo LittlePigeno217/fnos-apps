@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.3.7",
+  version: "1.3.8",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -37,7 +37,7 @@ const DEFAULT_CONFIG = {
   upload_sidecar_extensions: ".nfo,.jpg,.jpeg,.png,.webp,.srt,.ass,.ssa,.sup",
   strm_mappings: [],
   strm_incremental: true,
-  strm_add_subtitles: true,
+  strm_copy_sidecar: true,
   strm_base_url: "",
   relay_port: 3667,
   checkin_enabled: false,
@@ -252,6 +252,12 @@ class Store {
         // version 不参与持久化合并：版本始终反映当前代码常量（DEFAULT_CONFIG.version），
         // 避免升级后 config.json 中旧版本号覆盖实际运行版本（2026-09-17 修复）
         if (key in DEFAULT_CONFIG && key !== "version") config[key] = value;
+      }
+      // 兼容迁移（1.3.8）：strm_copy_sidecar 取代 strm_add_subtitles。
+      // 旧配置只有 strm_add_subtitles 时，用其值初始化新键（true/缺省=开，false=关），
+      // 避免 DEFAULT 默认 true 覆盖「用户已关闭」的旧设置。仅读兼容，不强制回写迁移。
+      if (!("strm_copy_sidecar" in saved) && "strm_add_subtitles" in saved) {
+        config.strm_copy_sidecar = saved.strm_add_subtitles !== false;
       }
     }
     return this._decryptConfig(config);

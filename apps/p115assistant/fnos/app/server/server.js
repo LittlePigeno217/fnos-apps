@@ -62,6 +62,34 @@ function strmOutName(sanRel, keepExt) {
   return sanRel.replace(/\.[^.]+$/, "") + ".strm";
 }
 
+/** STRM 附带云端字幕（播放器自动加载）的扩展名白名单。 */
+const SUBTITLE_EXT = new Set([".srt", ".ass", ".ssa", ".sup", ".vtt"]);
+
+/** 是否为 Kodi/Emby/Jellyfin 风格固定刮削名（有界白名单，避免误复制截图等无关图片）。
+ *  `season*` 系列支持任意前缀数字（如 season1.jpg / season01-poster.jpg）。 */
+const FIXED_SCRAPE_NAMES = [
+  /^movie\.nfo$/i,
+  /^tvshow\.nfo$/i,
+  /^poster\.(jpg|png)$/i,
+  /^fanart\.(jpg|png)$/i,
+  /^backdrop\.(jpg|png)$/i,
+  /^folder\.(jpg|png)$/i,
+  /^season\d*\.(jpg|png)$/i,
+  /^season\d*-(poster|fanart)\.(jpg|png)$/i,
+];
+
+/** 判断云端同目录下的附件是否属于「刮削元数据」：满足任一条件即可——
+ *  1) 固定刮削名（movie.nfo / poster.jpg 等）；
+ *  2) 与媒体文件去扩展同名（大小写不敏感）的 .nfo/.jpg/.png/.webp。 */
+function isScrapeSidecar(cloudName, mediaBaseLower) {
+  const name = String(cloudName || "").trim();
+  if (!name) return false;
+  if (FIXED_SCRAPE_NAMES.some((re) => re.test(name))) return true;
+  const suffix = path.extname(name).toLowerCase();
+  if (![".nfo", ".jpg", ".png", ".webp"].includes(suffix)) return false;
+  return path.basename(name).replace(/\.[^.]+$/, "").toLowerCase() === mediaBaseLower;
+}
+
 function ok(data, message) {
   return { success: true, message: message || "", data: data === undefined ? {} : data };
 }
@@ -96,7 +124,7 @@ const PUBLIC_CONFIG_FIELDS = new Set([
   "watch_enabled",
   "strm_mappings",
   "strm_incremental",
-  "strm_add_subtitles",
+  "strm_copy_sidecar",
   "strm_base_url",
   "relay_port",
   "checkin_enabled",
@@ -125,7 +153,7 @@ const EDITABLE_CONFIG_FIELDS = new Set([
   "upload_risk_profile",
   "strm_mappings",
   "strm_incremental",
-  "strm_add_subtitles",
+  "strm_copy_sidecar",
   "strm_base_url",
   "relay_port",
   "trusted_origins",
@@ -1924,7 +1952,7 @@ class Server {
     if (this._strmBusy) return error("已有 STRM 任务在执行中，请稍候");
     const incremental = config.strm_incremental !== false;
     const mediaExts = extensionSet(config.upload_media_extensions);
-    const totals = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0 };
+    const totals = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0, subtitles: 0, subtitles_skipped: 0, subtitles_errors: 0, scrapes: 0, scrapes_skipped: 0, scrapes_errors: 0 };
     this._strmBusy = true;
     try {
       const client = this._getClient();
@@ -1946,6 +1974,12 @@ class Server {
           totals.removed += result.removed;
           totals.skipped += result.skipped;
           totals.errors += result.errors;
+          totals.subtitles += result.subtitles;
+          totals.subtitles_skipped += result.subtitles_skipped;
+          totals.subtitles_errors += result.subtitles_errors;
+          totals.scrapes += result.scrapes;
+          totals.scrapes_skipped += result.scrapes_skipped;
+          totals.scrapes_errors += result.scrapes_errors;
         } catch (err) {
           if (err instanceof U115AccessLimitError) {
             this._riskPause(err.message);
@@ -1955,13 +1989,17 @@ class Server {
           console.warn(`[STRM] 映射 ${mapping.name} 同步异常：${err.message}`);
         }
       }
+      const sideSummary =
+        `字幕 ${totals.subtitles}/${totals.subtitles_skipped}/${totals.subtitles_errors}，` +
+        `刮削 ${totals.scrapes}/${totals.scrapes_skipped}/${totals.scrapes_errors}`;
+      const detail = `新增 ${totals.added}，更新 ${totals.updated}，删除 ${totals.removed}，跳过 ${totals.skipped}，错误 ${totals.errors}；${sideSummary}`;
       this.store.appendHistory({
         ts: Date.now(), type: "strm", title: "STRM 同步",
-        detail: `新增 ${totals.added}，更新 ${totals.updated}，删除 ${totals.removed}，跳过 ${totals.skipped}，错误 ${totals.errors}`,
+        detail,
         ok: totals.errors === 0,
       });
-      this.recordLog(`STRM 同步完成：新增 ${totals.added}，更新 ${totals.updated}，删除 ${totals.removed}，跳过 ${totals.skipped}，错误 ${totals.errors}`, totals.errors === 0 ? "INFO" : "WARN", "STRM");
-      return ok(totals, `STRM 同步完成：新增 ${totals.added}，更新 ${totals.updated}，删除 ${totals.removed}，跳过 ${totals.skipped}，错误 ${totals.errors}`);
+      this.recordLog(`STRM 同步完成：${detail}`, totals.errors === 0 ? "INFO" : "WARN", "STRM");
+      return ok(totals, `STRM 同步完成：${detail}`);
     } catch (err) {
       console.error(`STRM 同步异常：${err.message}`);
       return error(`STRM 同步异常: ${err.message}`);
@@ -1971,14 +2009,15 @@ class Server {
   }
 
   async _runStrmMapping(client, mapping, sourceCid, targetDir, baseUrl, incremental, mediaExts) {
-    const counts = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0, subtitles: 0, subtitles_skipped: 0, subtitles_errors: 0 };
+    const counts = { added: 0, updated: 0, removed: 0, skipped: 0, errors: 0, subtitles: 0, subtitles_skipped: 0, subtitles_errors: 0, scrapes: 0, scrapes_skipped: 0, scrapes_errors: 0 };
     const mappingId = String(mapping.id || sourceCid || "default");
     // 源目录的云路径：账本核对要靠它把本地 .strm 对回云上的目录
     const sourcePath = await this._resolveSourcePath(client, mapping, sourceCid);
     // 1) 递归收集 115 目录树中的媒体文件（不依赖 cache，直接走 getDirList）
     const cloudFiles = [];   // { relPath, pickcode, name, size, mtime, cloudPath, cloudDir }
-    const subtitleMap = new Map(); // dirPrefix -> [{ name, pickcode, size }]
-    const SUBTITLE_EXT = new Set([".srt", ".ass", ".ssa", ".sup", ".vtt"]);
+    // 云端同目录附件收集（dirPrefix -> [{ name, pickcode, size }]）：字幕 → 播放器自动加载；
+    // 刮削元数据（nfo/海报/背景等）→ 供播放器建立媒体库封面与简介。写 .strm 后按需下载。
+    const sidecarMap = new Map(); // dirPrefix -> [{ name, pickcode, size, kind: "subtitle"|"scrape" }]
     const seenDirs = new Set();
     const stack = [{ cid: sourceCid, prefix: "" }];
     seenDirs.add(String(sourceCid));
@@ -2001,15 +2040,38 @@ class Server {
         const pickcode = String(raw.pc || raw.pickcode || raw.pick_code || "").trim();
         if (!pickcode) continue;
         const suffix = path.extname(name).toLowerCase();
-        // 字幕文件单独收集：生成 STRM 时按同目录同名匹配，下载到本地供播放器加载
+        // 字幕/刮削附件单独收集：生成 STRM 时按同目录匹配，下载到本地供播放器加载
         if (SUBTITLE_EXT.has(suffix)) {
           const dirKey = current.prefix || "";
-          if (!subtitleMap.has(dirKey)) subtitleMap.set(dirKey, []);
-          subtitleMap.get(dirKey).push({
+          if (!sidecarMap.has(dirKey)) sidecarMap.set(dirKey, []);
+          sidecarMap.get(dirKey).push({
             name,
             pickcode,
             size: parseInt(U115Client._itemSize(raw) || 0, 10) || 0,
+            kind: "subtitle",
           });
+          continue;
+        }
+        // 刮削附件按「当前目录内已出现的媒体文件名」匹配（isScrapeSidecar），
+        // 与媒体收集同轮完成：见到媒体时把同目录刮削附件一并记入 sidecarMap。
+        if ([".nfo", ".jpg", ".png", ".webp"].includes(suffix)) {
+          const dirKey = current.prefix || "";
+          const dirFiles = cloudFiles.filter((f) => {
+            const d = f.relPath.includes("/") ? f.relPath.slice(0, f.relPath.lastIndexOf("/")) : "";
+            return d === dirKey;
+          });
+          const matched = dirFiles.some((f) =>
+            isScrapeSidecar(name, path.basename(f.name).replace(/\.[^.]+$/, "").toLowerCase())
+          );
+          if (matched) {
+            if (!sidecarMap.has(dirKey)) sidecarMap.set(dirKey, []);
+            sidecarMap.get(dirKey).push({
+              name,
+              pickcode,
+              size: parseInt(U115Client._itemSize(raw) || 0, 10) || 0,
+              kind: "scrape",
+            });
+          }
           continue;
         }
         if (!suffix || !mediaExts.has(suffix)) continue;
@@ -2087,39 +2149,31 @@ class Server {
         } catch { /* 不存在 */ }
         if (current === target.content) {
           counts.skipped += 1;
-          continue;
+        } else {
+          if (incremental && current) counts.updated += 1;
+          else if (!current) counts.added += 1;
+          const tmp = `${target.outputPath}.${process.pid}.tmp`;
+          fs.writeFileSync(tmp, target.content);
+          fs.renameSync(tmp, target.outputPath);
         }
-        if (incremental && current) counts.updated += 1;
-        else if (!current) counts.added += 1;
-        const tmp = `${target.outputPath}.${process.pid}.tmp`;
-        fs.writeFileSync(tmp, target.content);
-        fs.renameSync(tmp, target.outputPath);
-        // 附带同名字幕：云端同目录同名 .srt/.ass/.ssa/.sup/.vtt → 下载到 STRM 同目录（播放器自动加载）
-        if (this.store.getConfig().strm_add_subtitles !== false) {
+        // 附带云端 sidecar（字幕 + 刮削）：同目录匹配 → 下载/跳过/计数，播放器自动加载。
+        // 无论 .strm 本次是否重写（内容一致跳过）都会检查 sidecar 自身状态：
+        // 既有的 size 一致 → 跳过计数；缺失/不同 → 补下载（覆盖上次失败或后添加的附件）。
+        const copySidecar =
+          this.store.getConfig().strm_copy_sidecar ??
+          this.store.getConfig().strm_add_subtitles !== false;
+        if (copySidecar) {
           const relOut = String(outName).replace(/\\/g, "/");
           const dirKey = path.posix.dirname(relOut);
-          const subs = subtitleMap.get(dirKey === "." ? "" : dirKey) || [];
-          if (subs.length) {
+          const sidecars = sidecarMap.get(dirKey === "." ? "" : dirKey) || [];
+          if (sidecars.length) {
             const base = path.basename(relOut).replace(/\.strm$/i, "").toLowerCase();
-            for (const sub of subs) {
-              if (path.basename(sub.name).replace(/\.[^.]+$/, "").toLowerCase() !== base) continue;
-              const subOut = path.join(path.dirname(target.outputPath), sub.name);
-              let skip = false;
-              try {
-                const st = fs.statSync(subOut);
-                if (st.isFile() && st.size === sub.size) skip = true;
-              } catch { /* 不存在则下载 */ }
-              if (skip) {
-                counts.subtitles_skipped += 1;
-                continue;
-              }
-              try {
-                // 下载后核对字节数（sub.size 来自云端目录树），截断下载会被拒绝
-                await client.downloadFile(sub.pickcode, subOut, true, sub.size);
-                counts.subtitles += 1;
-              } catch (err) {
-                counts.subtitles_errors += 1;
-                console.warn(`[STRM] 字幕下载失败 ${sub.name}: ${err.message}`);
+            for (const sidecar of sidecars) {
+              if (sidecar.kind === "subtitle") {
+                if (path.basename(sidecar.name).replace(/\.[^.]+$/, "").toLowerCase() !== base) continue;
+                counts.subtitles_skipped += await this._copySidecarFile(client, sidecar, path.dirname(target.outputPath), counts, "字幕");
+              } else {
+                counts.scrapes_skipped += await this._copySidecarFile(client, sidecar, path.dirname(target.outputPath), counts, "刮削");
               }
             }
           }
@@ -2203,6 +2257,32 @@ class Server {
     }
     this._saveStrmRecords(records);
     return counts;
+  }
+
+  /**
+   * 下载一个 sidecar 实体（字幕/刮削）到 STRM 同目录。
+   * 跳过判定沿用「本地存在且 size 一致」；下载后核对字节数（截断下载会被拒绝）。
+   * 返回 1 表示「跳过」（计入 skipped 计数），0 表示成功或失败（失败计入 errors）。
+   */
+  async _copySidecarFile(client, sidecar, outDir, counts, label) {
+    const outPath = path.join(outDir, sidecar.name);
+    let skip = false;
+    try {
+      const st = fs.statSync(outPath);
+      if (st.isFile() && st.size === sidecar.size) skip = true;
+    } catch { /* 不存在则下载 */ }
+    if (skip) return 1;
+    try {
+      await client.downloadFile(sidecar.pickcode, outPath, true, sidecar.size);
+      if (sidecar.kind === "subtitle") counts.subtitles += 1;
+      else counts.scrapes += 1;
+      return 0;
+    } catch (err) {
+      if (sidecar.kind === "subtitle") counts.subtitles_errors += 1;
+      else counts.scrapes_errors += 1;
+      console.warn(`[STRM] ${label}下载失败 ${sidecar.name}: ${err.message}`);
+      return 0;
+    }
   }
 
   /**
