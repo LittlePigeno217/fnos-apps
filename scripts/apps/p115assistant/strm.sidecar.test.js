@@ -274,6 +274,79 @@ test("子目录刮削先于媒体列出 → 子目录内刮削/字幕仍全部�
   }
 });
 
+// ── 成人库刮削命名兼容（1.4.0）─────────────────────────────────
+// 成人库（JavBus/Emby 成人刮削）：刮削文件为「影片名-poster.jpg / -fanart.jpg / -thumb.jpg」
+// （媒体名前缀 + 刮削后缀），与固定名、完全同名规则并存。
+const ADULT_DIR = [
+  file("JUR-705 abc.mp4", "a1", 1000, "pc-adult"),
+  file("JUR-705 abc.nfo", "a2", 300, "pc-adult-nfo"),
+  file("JUR-705 abc-poster.jpg", "a3", 400, "pc-adult-poster"),
+  file("JUR-705 abc-fanart.jpg", "a4", 500, "pc-adult-fanart"),
+  file("JUR-705 abc-thumb.jpg", "a5", 600, "pc-adult-thumb"),
+  // 无关图：-screenshot.jpg 不在刮削后缀白名单 → 不复制
+  file("JUR-705 abc-screenshot.jpg", "a6", 700, "pc-adult-shot"),
+];
+
+test("成人库后缀刮削：影片名-poster/fanart/thumb 匹配复制，-screenshot 不复制", async () => {
+  const out = tmpDir();
+  try {
+    const { counts } = await runSync({ c0: ADULT_DIR }, out, {});
+    // STRM + 同名 nfo + 3 张成人库后缀图全部落盘
+    for (const name of [
+      "JUR-705 abc.strm",
+      "JUR-705 abc.nfo",
+      "JUR-705 abc-poster.jpg",
+      "JUR-705 abc-fanart.jpg",
+      "JUR-705 abc-thumb.jpg",
+    ]) {
+      assert.ok(fs.existsSync(path.join(out, name)), `应落盘：${name}`);
+    }
+    // 无关图（-screenshot.jpg）不复制
+    assert.ok(!fs.existsSync(path.join(out, "JUR-705 abc-screenshot.jpg")), "-screenshot.jpg 不得复制");
+    // 计数：1 STRM、刮削 4（nfo + poster + fanart + thumb）、无错误
+    assert.strictEqual(counts.added, 1);
+    assert.strictEqual(counts.scrapes, 4);
+    assert.strictEqual(counts.scrapes_skipped, 0);
+    assert.strictEqual(counts.errors, 0);
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("成人库大小写不敏感：-POSTER.JPG 等大写后缀也匹配；backdrop/landscape/cover/banner/boxart 同规则", async () => {
+  const out = tmpDir();
+  try {
+    // 覆盖 .webp 扩展与剩余后缀枚举（大写混合）
+    const MIXED = [
+      file("JUR-888 例.mp4", "m1", 1000, "pc-mix"),
+      file("JUR-888 例-BACKDROP.WEBP", "m2", 400, "pc-backdrop"),
+      file("JUR-888 例-landscape.png", "m3", 500, "pc-landscape"),
+      file("JUR-888 例-Cover.jpg", "m4", 600, "pc-cover"),
+      file("JUR-888 例-banner.jpg", "m5", 700, "pc-banner"),
+      file("JUR-888 例-boxart.jpg", "m6", 800, "pc-boxart"),
+      file("JUR-888 例-剧照.png", "m7", 900, "pc-still"),
+    ];
+    const { counts } = await runSync({ c0: MIXED }, out, {});
+    for (const name of [
+      "JUR-888 例.strm",
+      "JUR-888 例-BACKDROP.WEBP",
+      "JUR-888 例-landscape.png",
+      "JUR-888 例-Cover.jpg",
+      "JUR-888 例-banner.jpg",
+      "JUR-888 例-boxart.jpg",
+    ]) {
+      assert.ok(fs.existsSync(path.join(out, name)), `应落盘：${name}`);
+    }
+    // 中文无关后缀不匹配
+    assert.ok(!fs.existsSync(path.join(out, "JUR-888 例-剧照.png")), "非白名单后缀不得复制");
+    // 刮削 5：BACKDROP + landscape + Cover + banner + boxart
+    assert.strictEqual(counts.scrapes, 5);
+    assert.strictEqual(counts.errors, 0);
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
 // ── 诊断探针（如实记录行为，不判定通过/失败）──────────────────────────
 test("多文件目录探针：scrape 附件下载阶段不按 base 过滤，同目录附件会随每个 STRM 复制", async () => {
   const out = tmpDir();

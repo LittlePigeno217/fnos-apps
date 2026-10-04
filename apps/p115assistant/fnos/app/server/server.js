@@ -78,16 +78,37 @@ const FIXED_SCRAPE_NAMES = [
   /^season\d*-(poster|fanart)\.(jpg|png)$/i,
 ];
 
+/** 成人库（JavBus/Emby 成人刮削）刮削后缀白名单（有界枚举，不无限放宽）。
+ *  命名模式：媒体名去扩展 + `-<后缀>` + .jpg/.png/.webp（如 JUR-705 abc-poster.jpg）。 */
+const SCRAPE_SUFFIXES = [
+  "poster",
+  "fanart",
+  "thumb",
+  "backdrop",
+  "landscape",
+  "cover",
+  "banner",
+  "boxart",
+];
+
 /** 判断云端同目录下的附件是否属于「刮削元数据」：满足任一条件即可——
  *  1) 固定刮削名（movie.nfo / poster.jpg 等）；
- *  2) 与媒体文件去扩展同名（大小写不敏感）的 .nfo/.jpg/.png/.webp。 */
+ *  2) 与媒体文件去扩展同名（大小写不敏感）的 .nfo/.jpg/.png/.webp；
+ *  3) 媒体名去扩展 + 成人库刮削后缀（-poster/-fanart/-thumb 等，大小写不敏感，
+ *     .jpg/.png/.webp）——兼容成人库刮削命名「影片名-poster.jpg」。 */
 function isScrapeSidecar(cloudName, mediaBaseLower) {
   const name = String(cloudName || "").trim();
   if (!name) return false;
   if (FIXED_SCRAPE_NAMES.some((re) => re.test(name))) return true;
   const suffix = path.extname(name).toLowerCase();
   if (![".nfo", ".jpg", ".png", ".webp"].includes(suffix)) return false;
-  return path.basename(name).replace(/\.[^.]+$/, "").toLowerCase() === mediaBaseLower;
+  const base = path.basename(name, path.extname(name)).toLowerCase();
+  if (base === mediaBaseLower) return true;
+  if (!mediaBaseLower) return false;
+  // 成人库「影片名-后缀」模式（字符串比较，避免媒体名含正则特殊字符问题）
+  const prefix = `${mediaBaseLower}-`;
+  if (!base.startsWith(prefix)) return false;
+  return SCRAPE_SUFFIXES.includes(base.slice(prefix.length));
 }
 
 function ok(data, message) {
