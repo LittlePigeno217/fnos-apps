@@ -2052,26 +2052,17 @@ class Server {
           });
           continue;
         }
-        // 刮削附件按「当前目录内已出现的媒体文件名」匹配（isScrapeSidecar），
-        // 与媒体收集同轮完成：见到媒体时把同目录刮削附件一并记入 sidecarMap。
+        // 刮削附件无条件收集为候选（不做匹配），待 cloudFiles 收集完成后统一过滤，
+        // 消除对 getDirList 返回顺序的依赖（刮削先于媒体列出也不漏收集）。
         if ([".nfo", ".jpg", ".png", ".webp"].includes(suffix)) {
           const dirKey = current.prefix || "";
-          const dirFiles = cloudFiles.filter((f) => {
-            const d = f.relPath.includes("/") ? f.relPath.slice(0, f.relPath.lastIndexOf("/")) : "";
-            return d === dirKey;
+          if (!sidecarMap.has(dirKey)) sidecarMap.set(dirKey, []);
+          sidecarMap.get(dirKey).push({
+            name,
+            pickcode,
+            size: parseInt(U115Client._itemSize(raw) || 0, 10) || 0,
+            kind: "scrape",
           });
-          const matched = dirFiles.some((f) =>
-            isScrapeSidecar(name, path.basename(f.name).replace(/\.[^.]+$/, "").toLowerCase())
-          );
-          if (matched) {
-            if (!sidecarMap.has(dirKey)) sidecarMap.set(dirKey, []);
-            sidecarMap.get(dirKey).push({
-              name,
-              pickcode,
-              size: parseInt(U115Client._itemSize(raw) || 0, 10) || 0,
-              kind: "scrape",
-            });
-          }
           continue;
         }
         if (!suffix || !mediaExts.has(suffix)) continue;
@@ -2089,6 +2080,24 @@ class Server {
           cloudDir: cloudPath ? posixDirname(cloudPath) : "",
         });
       }
+    }
+
+    // 刮削候选统一过滤：cloudFiles 已收集完毕，按同目录媒体 base 匹配（isScrapeSidecar），
+    // 任一媒体命中即保留，全不匹配则移除。dirKey 语义：空字符串 = 根目录。
+    const mediaBaseByDir = new Map();
+    for (const f of cloudFiles) {
+      const d = f.relPath.includes("/") ? f.relPath.slice(0, f.relPath.lastIndexOf("/")) : "";
+      const base = path.basename(f.name).replace(/\.[^.]+$/, "").toLowerCase();
+      if (!mediaBaseByDir.has(d)) mediaBaseByDir.set(d, new Set());
+      mediaBaseByDir.get(d).add(base);
+    }
+    for (const [dirKey, candidates] of sidecarMap) {
+      const kept = candidates.filter((candidate) => {
+        if (candidate.kind !== "scrape") return true;
+        const bases = mediaBaseByDir.get(dirKey) || new Set();
+        return Array.from(bases).some((base) => isScrapeSidecar(candidate.name, base));
+      });
+      if (kept.length !== candidates.length) sidecarMap.set(dirKey, kept);
     }
 
     // 2) 生成 STRM 内容并写入目标目录（保持相对路径、.iso 特例对齐插件）

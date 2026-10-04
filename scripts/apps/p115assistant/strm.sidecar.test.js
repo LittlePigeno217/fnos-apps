@@ -10,8 +10,8 @@
 //   6) strm_copy_sidecar=false → 不复制任何 sidecar
 //   7) 旧键 strm_add_subtitles 读取兼容（true/false/缺省）
 //   8) store.js 迁移：strm_add_subtitles → strm_copy_sidecar（真 Store 实例）
-//   9) 收集顺序诊断：115 getDirList 按 user_utime 降序返回，媒体与刮削附件相对顺序
-//      影响同名刮削命中（探针，如实记录行为）
+//   9) 收集顺序回归：收集与匹配分离（先收集全部刮削候选、再按同目录媒体过滤），
+//      刮削附件先于媒体列出仍全部收集复制，顺序无关
 //   10) 多文件目录诊断：scrape 附件下载阶段不按 base 过滤（探针）
 //
 // 用法：node --test scripts/apps/p115assistant/strm.sidecar.test.js
@@ -25,7 +25,7 @@ const path = require("node:path");
 const SERVER_PATH = path.join(__dirname, "../../../apps/p115assistant/fnos/app/server/server.js");
 const STORE_PATH = path.join(__dirname, "../../../apps/p115assistant/fnos/app/server/store.js");
 const { Server } = require(SERVER_PATH);
-const { Store } = require(STORE_PATH);
+const { Store, DEFAULT_CONFIG } = require(STORE_PATH);
 
 // 与 DEFAULT_CONFIG.upload_media_extensions 一致
 const MEDIA_EXTS = new Set(
@@ -207,18 +207,18 @@ test("store.js 迁移：strm_add_subtitles → strm_copy_sidecar（真 Store 实
     // 两键皆缺 → DEFAULT true
     store.saveConfig({});
     assert.strictEqual(store.getConfig().strm_copy_sidecar, true, "缺省应为 DEFAULT true");
-    // 版本恒定 1.3.8（不随旧配置回写覆盖）
-    assert.strictEqual(store.getConfig().version, "1.3.8", "version 始终反映当前代码常量");
+    // 版本恒定（不随旧配置回写覆盖），始终反映当前代码常量 DEFAULT_CONFIG.version
+    assert.strictEqual(store.getConfig().version, DEFAULT_CONFIG.version, "version 始终反映当前代码常量");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-// ── 诊断探针（如实记录行为，不判定通过/失败）──────────────────────────
-test("收集顺序探针：刮削附件先于媒体列出（nfo mtime 更新）→ 同名/固定刮削均漏收集", async () => {
+// ── 顺序无关回归（收集与匹配分离）──────────────────────────
+test("刮削附件先于媒体列出 → 刮削仍全部收集并复制（顺序无关）", async () => {
   const out = tmpDir();
   try {
-    // 模拟 115 user_utime 降序：nfo/jpg/poster 比媒体更晚修改，排在前面
+    // 模拟 115 user_utime 降序：刮削（nfo/jpg/poster/movie.nfo）排最前、字幕居中、媒体最后
     const SCRAPE_FIRST = [
       file("媒体.nfo", "f3", 300, "pc-nfo"),
       file("媒体.jpg", "f4", 400, "pc-jpg"),
@@ -229,19 +229,52 @@ test("收集顺序探针：刮削附件先于媒体列出（nfo mtime 更新）�
       file("x.jpg", "f7", 700, "pc-x"),
     ];
     const { counts } = await runSync({ c0: SCRAPE_FIRST }, out, {});
-    assert.ok(fs.existsSync(path.join(out, "媒体.strm")), "STRM 应生成");
-    assert.ok(fs.existsSync(path.join(out, "媒体.srt")), "字幕独立收集，不受顺序影响");
-    // 探针记录：刮削附件全部漏收集（dirFiles 在碰到媒体前为空）
-    const scrapedNow = ["媒体.nfo", "媒体.jpg", "poster.jpg", "movie.nfo"].filter((n) => fs.existsSync(path.join(out, n)));
-    assert.ok(!fs.existsSync(path.join(out, "x.jpg")), "无关图不复制（与顺序无关）");
-    // eslint-disable-next-line no-console
-    console.log(`[探针] 刮削先列出时实际落盘刮削数=${scrapedNow.length}/4（预期若收集顺序无关则 4）`);
-    assert.strictEqual(counts.scrapes, 0);
+    // 媒体 + 字幕 + 全部刮削均落盘
+    for (const name of ["媒体.strm", "媒体.srt", "媒体.nfo", "媒体.jpg", "poster.jpg", "movie.nfo"]) {
+      assert.ok(fs.existsSync(path.join(out, name)), `应落盘：${name}`);
+    }
+    // 无关图不复制
+    assert.ok(!fs.existsSync(path.join(out, "x.jpg")), "无关图 x.jpg 不得复制");
+    // 计数：1 字幕、4 刮削、0 跳过/错误
+    assert.strictEqual(counts.subtitles, 1);
+    assert.strictEqual(counts.scrapes, 4);
+    assert.strictEqual(counts.scrapes_skipped, 0);
+    assert.strictEqual(counts.errors, 0);
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }
 });
 
+test("子目录刮削先于媒体列出 → 子目录内刮削/字幕仍全部复制（顺序无关）", async () => {
+  const out = tmpDir();
+  try {
+    // c0 只含目录条目「电影」；c1 内刮削在前、字幕居中、媒体最后
+    const cidItems = {
+      c0: [{ n: "电影", cid: "c1", fc: "0", fid: "d1", size: 0, t: 1720000000 }],
+      c1: [
+        file("电影.nfo", "g1", 300, "pc-gnfo"),
+        file("电影.jpg", "g2", 400, "pc-gjpg"),
+        file("电影.srt", "g3", 200, "pc-gsrt"),
+        file("电影.mkv", "g4", 1000, "pc-gmkv"),
+        file("无关.png", "g5", 500, "pc-gpng"),
+      ],
+    };
+    const { counts } = await runSync(cidItems, out, {});
+    for (const rel of ["电影/电影.strm", "电影/电影.nfo", "电影/电影.jpg", "电影/电影.srt"]) {
+      assert.ok(fs.existsSync(path.join(out, rel)), `应落盘：${rel}`);
+    }
+    // 无关图不复制
+    assert.ok(!fs.existsSync(path.join(out, "电影/无关.png")), "无关.png 不得复制");
+    // 计数：1 字幕、2 刮削（电影.nfo + 电影.jpg）、无错误
+    assert.strictEqual(counts.subtitles, 1);
+    assert.strictEqual(counts.scrapes, 2);
+    assert.strictEqual(counts.errors, 0);
+  } finally {
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+});
+
+// ── 诊断探针（如实记录行为，不判定通过/失败）──────────────────────────
 test("多文件目录探针：scrape 附件下载阶段不按 base 过滤，同目录附件会随每个 STRM 复制", async () => {
   const out = tmpDir();
   try {
