@@ -74,17 +74,17 @@ test("2) redirect 模式：302 Location = 115 CDN 直链（https），不指向�
   assert.equal(body.url, cdn);
 });
 
-test("3) stream 模式：302 Location = https://<host>:3668/.../stream?<同参>", async () => {
+test("3) stream 模式：302 Location = http://<host>:<relay_port>/.../stream?<同参>（1.4.4 http 中继）", async () => {
   const cdn = "https://cdnfhnfile.115cdn.net/movie/movie.mp4?t=9999999999";
   const handler = makeHandler("stream", cdn);
   const cap = await callRedirect(handler, "10.10.10.3:3667");
   assert.equal(cap.status, 302);
   const expectLocation =
-    `https://10.10.10.3:${HTTPS_STREAM_PORT}/api/v1/plugin/P115LiteAssistant/stream` +
+    `http://10.10.10.3:3667/api/v1/plugin/P115LiteAssistant/stream` +
     "?pickcode=pk1&file_name=a.mp4&expires=9999999999&sign=abc";
   assert.equal(cap.headers.Location, expectLocation);
-  assert.ok(cap.headers.Location.startsWith("https://"), "stream 模式 Location 必须是 https");
-  assert.ok(!cap.headers.Location.includes("http://"), "stream 模式 JSON body 也应为 https");
+  assert.ok(cap.headers.Location.startsWith("http://"), "stream 模式 Location 应为 http 中继（服务端 ffmpeg 无自签问题）");
+  assert.ok(!cap.headers.Location.includes(`:${HTTPS_STREAM_PORT}`), "1.4.4 不再指向 https 3668");
   assert.equal(JSON.parse(cap.body).url, expectLocation);
 });
 
@@ -97,7 +97,7 @@ test("4) HEAD：两种模式 302 Location 与 body 一致，body 为空", async 
 
   const stream = await callRedirect(makeHandler("stream", cdn), "10.10.10.3:3667", "HEAD");
   assert.equal(stream.status, 302);
-  assert.ok(stream.headers.Location.startsWith(`https://10.10.10.3:${HTTPS_STREAM_PORT}/`));
+  assert.ok(stream.headers.Location.startsWith(`http://10.10.10.3:3667/`), "1.4.4 stream 为 http 中继");;
   assert.equal(stream.body, "", "HEAD 不应有 body");
 });
 

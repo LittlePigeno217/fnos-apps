@@ -434,7 +434,13 @@ class TrimHandler {
           streamQuery.set("file_name", file_name || "");
           streamQuery.set("expires", expires || "");
           streamQuery.set("sign", sign || "");
-          location = `https://${hostname}:${HTTPS_STREAM_PORT}/api/v1/plugin/P115LiteAssistant/stream?${streamQuery.toString()}`;
+          // 1.4.4：stream 302 改指 HTTP 中继（relay 端口，同 strm_base_url 端口）。
+          // 3667 与 3668 共用同一套 /stream 路由；飞牛影视（trim-media）服务端 ffmpeg
+          // 打开 strm 并跟随 302——跟随 https://3668 会因自签证书被 Go x509 / ffmpeg
+          // 默认校验拒绝（EIO，局域网同样失败）；HTTP 中继无证书问题，服务端可直达。
+          const relayPort =
+            Number((this.server.api.store.getConfig() || {}).relay_port) || 3667;
+          location = `http://${hostname}:${relayPort}/api/v1/plugin/P115LiteAssistant/stream?${streamQuery.toString()}`;
           bodyUrl = location;
         } else {
           location = result.url;
