@@ -421,7 +421,11 @@ class TrimHandler {
         //     GET 单次有效 → 飞牛影视首次播放 403」。验签参数原样透传（同一套 HMAC）。
         let location;
         let bodyUrl;
-        if (playMode === "stream") {
+        // 1.4.3：远程来源（fnconnect/转发网关，Host 域名或来源 IP 公网）即使配置了 stream
+        // 也自动退回 redirect 直链——stream 指向 https://<内网IP>:3668 在远程必败（fnconnect
+        // 不转发 3668 + 自签证书播放器 TLS 拒绝）；redirect（302→公网 https CDN）远程正常。
+        const privateSource = this._isPrivateSource(headers);
+        if (playMode === "stream" && privateSource) {
           const hostname = hostnameFromRelayHost(
             headers["x-forwarded-host"] || headers["host"] || ""
           );
@@ -456,6 +460,19 @@ class TrimHandler {
       console.warn(`匿名取链异常：${err.message}`);
       this._respond(502, _error(`取链失败: ${err.message}`));
     });
+  }
+
+  // 1.4.3：来源内网判定。Host 为非 IP 形式、非 *.local 的域名（fnconnect 等转发网关）→ 远程；
+  // 否则看来源 IP（x-forwarded-for 首项 / x-real-ip / socket.remoteAddress，去 ::ffff: 前缀）
+  // 是否公网。host/来源 IP 二选一命中「远程」即判远程；两者均未知时保守视为内网（不回归 stream 直连）。
+  _isPrivateSource(headers) {
+    const host = String(headers["x-forwarded-host"] || headers["host"] || "").trim();
+    if (host && !isLocalHostname(host)) return false;
+    const source = String(headers["x-forwarded-for"] || "").split(",")[0].trim()
+      || String(headers["x-real-ip"] || "").trim()
+      || String(this.req && this.req.socket && this.req.socket.remoteAddress || "").replace(/^::ffff:/, "").trim();
+    if (source && !isPrivateIp(source)) return false;
+    return true;
   }
 
   // 1.4.1 stream 本地流代理：验签后由 server.js streamProxy 动态取链并向 115 转发。
@@ -651,6 +668,41 @@ function hostnameFromRelayHost(host) {
   } catch {
     return cleaned.split(":")[0] || "127.0.0.1";
   }
+}
+
+/** 1.4.3：IPv4/IPv6 是否为内网地址（10/8、172.16/12、192.168/16、127/8、169.254/16、::1、fc00::/7、fe80::/10）。 */
+function isPrivateIp(ip) {
+  const v = String(ip || "").trim().toLowerCase();
+  const m = v.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+  }
+  if (v === "::1" || v === "::") return true;
+  if (v.startsWith("fc") || v.startsWith("fd")) return true; // fc00::/7
+  if (v.startsWith("fe8") || v.startsWith("fe9") || v.startsWith("fea") || v.startsWith("feb")) return true; // fe80::/10
+  return false;
+}
+
+/** 1.4.3：Host 是否为「内网形态」——裸 IP（内网/回环）或 *.local。域名（fnconnect 等）→ false（远程）。 */
+function isLocalHostname(host) {
+  const raw = hostnameFromRelayHost(host);
+  if (!raw) return true; // 无 Host → 不据此判远程
+  if (raw.endsWith(".local") || raw.endsWith(".lan") || raw.endsWith(".localdomain")) return true;
+  const m = raw.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    return isPrivateIp(raw);
+  }
+  if (raw.includes(":")) {
+    return isPrivateIp(raw);
+  }
+  return false; // 其他域名 → 远程
 }
 
 /** stream https（3668）自签证书：确保 <data>/patches/certs/server.{key,crt} 存在并返回 TLS 选项。
@@ -915,4 +967,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, TrimHandler, ACTIONS, maskValue, configureLogging, startServer, startRedirectPort, startHttpsRedirectPort, ensureTlsCerts, hostnameFromRelayHost, createRedirectServer, createHttpsRedirectServer, HTTPS_STREAM_PORT, sameOriginOk, matchTrustedOrigin, csrfDenyMessage };
+module.exports = { main, TrimHandler, ACTIONS, maskValue, configureLogging, startServer, startRedirectPort, startHttpsRedirectPort, ensureTlsCerts, hostnameFromRelayHost, isPrivateIp, isLocalHostname, createRedirectServer, createHttpsRedirectServer, HTTPS_STREAM_PORT, sameOriginOk, matchTrustedOrigin, csrfDenyMessage };

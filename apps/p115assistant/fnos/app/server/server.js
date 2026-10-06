@@ -2610,9 +2610,13 @@ class Server {
       return { code: 403, message: expires ? "播放签名已过期或无效" : "无效播放签名" };
     }
     const ua = String(userAgent || "").trim();
+    // 1.4.3：播放器类 UA 不缓存直链（115 直链「完整 GET 单次有效」，缓存复用会令
+    // 播放器探测+播放的二次完整 GET 命中同一 URL → 403）。播放器每次都取新链 →
+    // 探测链 A + 播放链 B 不同 → 首播即成功。浏览器/curl 类维持缓存（少取链防风控）。
+    const playerUA = isPlayerUA(ua);
     const cacheKey = `${normalized}|${ua}`;
-    // 1) 缓存命中
-    const cached = this._redirectUrlCache && this._redirectUrlCache.get(cacheKey);
+    // 1) 缓存命中（播放器跳过）
+    const cached = !playerUA && this._redirectUrlCache && this._redirectUrlCache.get(cacheKey);
     if (cached && cached.expireAt > Date.now()) {
       return { code: 302, url: cached.url, file_name: String(file_name || "").trim() };
     }
@@ -2627,7 +2631,7 @@ class Server {
     }
     const inflightPromise = this._fetchRedirectUrlWithRetry(normalized, ua)
       .then((url) => {
-        if (url && this._redirectUrlCache) {
+        if (url && this._redirectUrlCache && !playerUA) {
           const ttlMs = this._redirectUrlTtlMs(url);
           this._redirectUrlCache.set(cacheKey, { url, expireAt: Date.now() + ttlMs });
           // 容量裁剪：清过期 + 超上限删最旧
@@ -3009,9 +3013,18 @@ function inCheckinWindow(text) {
   }
 }
 
+/** 1.4.3：UA 是否为播放器类（浏览器/常见抓取工具之外的 UA → 视为播放器，不缓存直链）。 */
+function isPlayerUA(ua) {
+  const s = String(ua || "").trim();
+  if (!s) return false; // 空 UA / 未知 → 不算播放器（走缓存，避免未知 UA 高频取链）
+  if (/(mozilla|chrome|safari|firefox|edge|opera|curl|wget|python|node|postman|axios|insomnia)/i.test(s)) return false;
+  return true; // 其余（VLC/ffmpeg/Lavf/ExoPlayer/okhttp/mpv/Kodi/Infuse 等）→ 播放器
+}
+
 module.exports = {
   Server,
   UploadWorker,
+  isPlayerUA,
   PUBLIC_CONFIG_FIELDS,
   EDITABLE_CONFIG_FIELDS,
   ok,
