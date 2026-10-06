@@ -17,6 +17,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const http = require("node:http");
+const https = require("node:https");
 
 const { U115Client, U115AccessLimitError, U115AuthError, sleep } = require("./client");
 const { Notifier } = require("./notify");
@@ -498,6 +500,8 @@ class Server {
     this._redirectUrlCache = new Map();   // 匿名 302 取链 URL 缓存（pickcode|ua → {url, expireAt}）
     this._redirectInflight = new Map();   // 匿名 302 singleflight 并发去重（同 key 共享一次取链）
     this._redirectCacheMax = 2048;        // 缓存容量上限（超限裁剪最旧）
+    this._streamUrlCache = new Map();     // stream 代理取链缓存（pickcode → {url, expireAt}，TTL 12s）
+    this._streamCacheMax = 512;           // stream 缓存上限（超限裁剪最旧）
     // 统一日志管道：console 输出（上传/STRM/监听/风控/签到等执行日志）同步写入
     // 内存日志环（前端「日志」面板读取），2026-09-18。只包装一次。
     // 级别映射：log→INFO、warn→WARN、error→ERROR；类型由文本关键字推断（_inferType）。
@@ -2682,6 +2686,81 @@ class Server {
       }
     } catch { /* 非 URL 或解析失败，走兜底 */ }
     return 15 * 60 * 1000;
+  }
+
+  // ── stream 本地流代理（1.4.1）──
+  // 根治「飞牛影视首次播放 403」：115 直链的完整 GET（无 Range）同一 URL 只允许成功一次，
+  // 二次完整 GET 必 403 invalid signature；Range/HEAD 可无限复用（206）。
+  // 策略：完整 GET → 每次强制取新直链（绝不复用/共享）；Range/HEAD → 复用缓存直链（TTL 12s）。
+  async streamProxy(pickcode, sign, file_name, userAgent, expires, rangeHeader, isHead) {
+    const normalized = String(pickcode || "").trim();
+    if (!normalized || !sign) return { code: 400, message: "缺少 pickcode 或签名" };
+    if (!this.verifyRedirectSignature(normalized, sign, expires)) {
+      return { code: 403, message: expires ? "播放签名已过期或无效" : "无效播放签名" };
+    }
+    const ua = String(userAgent || "").trim();
+    const hasRange = Boolean(rangeHeader) || Boolean(isHead);
+    let url = "";
+    let linkErr = null;
+    try {
+      if (hasRange) {
+        // Range/HEAD：缓存命中复用；未命中取链并缓存（TTL 12s）
+        const cached = this._streamUrlCache && this._streamUrlCache.get(normalized);
+        if (cached && cached.expireAt > Date.now()) {
+          url = cached.url;
+        } else {
+          url = await this._fetchRedirectUrlWithRetry(normalized, ua);
+          if (url && this._streamUrlCache) {
+            this._streamUrlCache.set(normalized, { url, expireAt: Date.now() + 12000 });
+            if (this._streamUrlCache.size > (this._streamCacheMax || 512)) {
+              const now = Date.now();
+              for (const [k, v] of this._streamUrlCache) {
+                if (v.expireAt <= now) this._streamUrlCache.delete(k);
+              }
+              while (this._streamUrlCache.size > (this._streamCacheMax || 512)) {
+                const oldestKey = this._streamUrlCache.keys().next().value;
+                this._streamUrlCache.delete(oldestKey);
+              }
+            }
+          }
+        }
+      } else {
+        // 完整 GET：强制新直链（115 完整 GET 单次有效，缓存直链二次完整 GET 必 403）
+        url = await this._fetchRedirectUrlWithRetry(normalized, ua);
+      }
+    } catch (err) {
+      linkErr = err;
+    }
+    if (!url) return { code: 502, message: linkErr ? `取链失败: ${linkErr.message}` : "取链失败，115 未返回下载地址" };
+    try {
+      const proxyRes = await this._proxyHttpRequest(url, rangeHeader, ua);
+      const outHeaders = {};
+      for (const k of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
+        const v = proxyRes.headers[k];
+        if (v !== undefined) outHeaders[k] = v;
+      }
+      return { code: 200, status: proxyRes.statusCode || 200, headers: outHeaders, body: proxyRes };
+    } catch (err) {
+      console.error(`stream 代理转发失败：${err.message}`);
+      return { code: 502, message: `代理转发失败: ${err.message}` };
+    }
+  }
+
+  // stream 代理向 115 发起的 HTTP 请求（http/https 自适应，透传 Range/UA）
+  _proxyHttpRequest(url, rangeHeader, ua) {
+    return new Promise((resolve, reject) => {
+      let parsed;
+      try { parsed = new URL(url); } catch { reject(new Error("非法下载地址")); return; }
+      const mod = parsed.protocol === "https:" ? https : http;
+      const headers = {
+        "User-Agent": ua || "curl/8.0",
+        Connection: "close",
+      };
+      if (rangeHeader) headers.Range = rangeHeader;
+      const req = mod.get(parsed, { headers }, (res) => resolve(res));
+      req.setTimeout(20000, () => { req.destroy(new Error("115 响应超时")); });
+      req.on("error", (err) => reject(err));
+    });
   }
 
   // ── 执行历史 ──

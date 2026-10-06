@@ -263,6 +263,15 @@ class TrimHandler {
     ) {
       return this._handleRedirect(parsed, headers, method);
     }
+    // 1.4.1 本地流代理：播放器跟随 redirect 302 后落到 stream 端点，由应用代理 115 流。
+    // 根治「115 直链完整 GET 单次有效 → 飞牛影视首次播放 403」。
+    if (
+      pathname === "/stream" ||
+      pathname === "/action/stream" ||
+      pathname === "/api/v1/plugin/P115LiteAssistant/stream"
+    ) {
+      return this._handleStream(parsed, headers, method);
+    }
     if (pathname.includes("/action/")) {
       actionName = pathname.split("/action/", 2)[1].split("/", 1)[0];
     } else {
@@ -394,12 +403,19 @@ class TrimHandler {
     }
     return this.server.api.redirectTarget(pickcode, sign, file_name, userAgent, expires).then((result) => {
       if (result.code === 302) {
-        // 播放器 302 播放：不设置 Content-Disposition（下载场景才需要，且
-        // 中文/特殊字符文件名会触发 Node writeHead Invalid character 校验失败，
-        // 导致播放器请求 400 无法跳转）。播放器按 Content-Type/Location 处理即可。
-        // Location 全量百分号编码（仿 DDSRem encode_url_fully）：CDN 路径段含
-        // 空格/非 ASCII/括号等特殊字符时，严格客户端需编码后的 Location 才能跳转。
-        const encodedUrl = result.url.split("#")[0].replace(/[^0-9A-Za-z\-._~:/?#@!$&'()*+,;=%]/g, (c) =>
+        // 1.4.1：302 目标改为本地 stream 代理端点（根治 115 直链完整 GET 单次有效导致的
+        // 飞牛影视首次播放 403）。播放器跟随后由 stream 代理动态取链转发，完整 GET 每次
+        // 新直链、Range/HEAD 复用缓存，永远 200/206。验签参数原样透传（同一套 HMAC）。
+        const host = String(headers["x-forwarded-host"] || headers["host"] || "")
+          .split(",")[0].trim()
+          .replace(/^https?:\/\//i, "");
+        const streamQuery = new URLSearchParams();
+        streamQuery.set("pickcode", pickcode);
+        streamQuery.set("file_name", file_name || "");
+        streamQuery.set("expires", expires || "");
+        streamQuery.set("sign", sign || "");
+        const streamUrl = `http://${host}/api/v1/plugin/P115LiteAssistant/stream?${streamQuery.toString()}`;
+        const encodedUrl = streamUrl.split("#")[0].replace(/[^0-9A-Za-z\-._~:/?#@!$&'()*+,;=%]/g, (c) =>
           encodeURIComponent(c)
         );
         const headersOut = { Location: encodedUrl, Connection: "close", "Cache-Control": "no-store" };
@@ -408,7 +424,7 @@ class TrimHandler {
           this.res.end();
         } else {
           // 302 带 JSON body（与 DDSRem 一致），便于 curl/日志排障
-          this.res.end(JSON.stringify({ status: "redirecting", url: result.url }));
+          this.res.end(JSON.stringify({ status: "redirecting", url: streamUrl }));
         }
         return;
       }
@@ -416,6 +432,68 @@ class TrimHandler {
     }, (err) => {
       console.warn(`匿名取链异常：${err.message}`);
       this._respond(502, _error(`取链失败: ${err.message}`));
+    });
+  }
+
+  // 1.4.1 stream 本地流代理：验签后由 server.js streamProxy 动态取链并向 115 转发。
+  // 限流与 redirect 共用 60 req/60s 滑动窗口桶（同真实 IP 分桶）。
+  _handleStream(parsed, headers, method) {
+    const isHead = method === "HEAD";
+    if (method !== "GET" && !isHead) {
+      this._respond(405, _error("方法不允许"));
+      return Promise.resolve();
+    }
+    const pickcode = parsed.searchParams.get("pickcode") || "";
+    const sign = parsed.searchParams.get("sign") || "";
+    const file_name = parsed.searchParams.get("file_name") || "";
+    const expires = parsed.searchParams.get("expires") || "";
+    const userAgent = String(headers["user-agent"] || "");
+    const rangeHeader = String(headers["range"] || "");
+    const source = String(headers["x-forwarded-for"] || "").split(",")[0].trim()
+      || String(headers["x-real-ip"] || "").trim()
+      || String(this.req && this.req.socket && this.req.socket.remoteAddress || "").replace(/^::ffff:/, "")
+      || "unknown";
+    const limiter = this._redirectLimiter();
+    const now = Date.now();
+    const bucket = limiter.get(source) || { n: 0, start: now };
+    if (now - bucket.start > 60000) {
+      bucket.n = 0;
+      bucket.start = now;
+    }
+    if (bucket.n >= 60) {
+      this._respond(429, _error("请求过于频繁，请稍后再试"));
+      return Promise.resolve();
+    }
+    bucket.n += 1;
+    limiter.set(source, bucket);
+    if (limiter.size > 4096) {
+      for (const [key, b] of limiter) {
+        if (now - b.start > 120000) limiter.delete(key);
+      }
+    }
+    return this.server.api.streamProxy(pickcode, sign, file_name, userAgent, expires, rangeHeader, isHead).then((result) => {
+      if (result.code === 200) {
+        const outHeaders = { Connection: "close", "Cache-Control": "no-store" };
+        if (result.headers) Object.assign(outHeaders, result.headers);
+        this.res.writeHead(result.status || 200, outHeaders);
+        if (isHead) {
+          this.res.end();
+          return;
+        }
+        if (result.body && typeof result.body.pipe === "function") {
+          result.body.on("error", () => {
+            try { this.res.destroy(); } catch { /* 忽略 */ }
+          });
+          result.body.pipe(this.res);
+        } else {
+          this.res.end();
+        }
+        return;
+      }
+      this._respond(result.code || 502, _error(result.message || "取链失败"));
+    }, (err) => {
+      console.warn(`stream 代理异常：${err.message}`);
+      this._respond(502, _error(`stream 代理失败: ${err.message}`));
     });
   }
 
@@ -510,7 +588,10 @@ function createRedirectServer(api) {
     const isRedirectPath =
       pathname === "/redirect" ||
       pathname === "/action/redirect" ||
-      pathname === "/api/v1/plugin/P115LiteAssistant/redirect";
+      pathname === "/api/v1/plugin/P115LiteAssistant/redirect" ||
+      pathname === "/stream" ||
+      pathname === "/action/stream" ||
+      pathname === "/api/v1/plugin/P115LiteAssistant/stream";
     if (!isRedirectPath) {
       res.writeHead(404, { "Content-Type": "application/json; charset=utf-8", Connection: "close" });
       res.end(JSON.stringify({ success: false, message: "未知动作", data: {} }));
