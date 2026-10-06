@@ -544,7 +544,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.1</span>
+      <span class="ver" id="appVersion">v1.4.2</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -880,6 +880,16 @@
             </div>
             <div class="field-row" style="margin-top:6px">
               <span class="muted" id="strmRelayHint" style="font-size:12px"></span>
+            </div>
+            <div class="field-row" style="align-items:center;gap:8px;margin-top:8px">
+              <span class="muted" style="width:66px;flex:none">播放模式</span>
+              <select class="input" id="strmPlayMode" onchange="markDirty('strm')" title="redirect=302 直链（115 CDN，默认，可用保底）；stream=应用本地流代理（https:3668）转发 115 流，根治「115 直链完整 GET 单次有效 → 首次播放 403」（实验性，客户端需信任自签证书）">
+                <option value="redirect">redirect 直链（115 CDN）</option>
+                <option value="stream">stream 本地代理（https）</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <span class="muted" style="font-size:12px">redirect 为默认（等价 1.4.0）；stream 由应用代理 115 流，首播不 403，但客户端需用 https 访问 3668 端口自签证书（实验方案）。</span>
             </div>
             <div class="field-row">
               <span class="muted" id="strmOutboundHint" style="font-size:12px"></span>
@@ -3684,6 +3694,7 @@ async function saveStrmCfg(){
     relay_port: port,
     strm_incremental: el("strmIncremental").checked === true,
     strm_copy_sidecar: el("strmAddSubtitles").checked === true,
+    strm_play_mode: el("strmPlayMode").value,
   };
   const r = await call("save_config", "POST", updates);
   if (r.success){ clearDirty("strm"); saveStrmBase && saveStrmBase(); return; }
@@ -4142,6 +4153,8 @@ async function loadStrmMappings(){
         const cfg = rc2.data;
         const v = cfg.strm_copy_sidecar ?? cfg.strm_add_subtitles;
         el("strmAddSubtitles").checked = v !== false;
+        // STRM 播放模式（1.4.2）：redirect 直链（默认）/ stream 本地代理（https）
+        el("strmPlayMode").value = cfg.strm_play_mode === "stream" ? "stream" : "redirect";
       }
     }
     return r;

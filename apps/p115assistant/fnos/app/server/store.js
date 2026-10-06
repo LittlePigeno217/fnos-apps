@@ -20,7 +20,7 @@ const TRIM_PKGVAR = process.env.TRIM_PKGVAR || "/tmp/p115assistant_data";
 // 与插件同源的默认配置骨架；更新时只接受 DEFAULT_CONFIG 里已存在的键。
 const DEFAULT_CONFIG = {
   enabled: false,
-  version: "1.4.1",
+  version: "1.4.2",
   rate_limit_profile: "balanced",
   cookie: "",
   tokens: {},
@@ -39,6 +39,9 @@ const DEFAULT_CONFIG = {
   strm_incremental: true,
   strm_copy_sidecar: true,
   strm_base_url: "",
+  // STRM 播放模式（1.4.2）：redirect=302 直链（115 CDN，默认，等价 1.4.0）；
+  // stream=由应用本地流代理（3668 https）转发 115 流，消除「115 直链完整 GET 单次有效 → 首播 403」。
+  strm_play_mode: "redirect",
   relay_port: 3667,
   checkin_enabled: false,
   checkin_time_range: "06:00-09:00",

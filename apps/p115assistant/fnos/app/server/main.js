@@ -18,7 +18,10 @@
 
 const fs = require("node:fs");
 const http = require("node:http");
+const https = require("node:https");
+const os = require("node:os");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { URL } = require("node:url");
 
 const { Server, ok, error, gatewayError } = require("./server");
@@ -32,6 +35,10 @@ require("./notify");
 require("./records");
 
 const APP_NAME = "p115assistant";
+
+// stream 模式的 https 流代理端口（固定）：redirect 模式走 http relay_port（3667，默认），
+// stream 模式 302 Location 指向本端口（TLS 终止，消除「intranet http 明文流被播放器拒绝」）。
+const HTTPS_STREAM_PORT = 3668;
 
 /** 网关层错误信封（与 Server 方法返回结构一致）。 */
 const _error = gatewayError;
@@ -403,19 +410,35 @@ class TrimHandler {
     }
     return this.server.api.redirectTarget(pickcode, sign, file_name, userAgent, expires).then((result) => {
       if (result.code === 302) {
-        // 1.4.1：302 目标改为本地 stream 代理端点（根治 115 直链完整 GET 单次有效导致的
-        // 飞牛影视首次播放 403）。播放器跟随后由 stream 代理动态取链转发，完整 GET 每次
-        // 新直链、Range/HEAD 复用缓存，永远 200/206。验签参数原样透传（同一套 HMAC）。
-        const host = String(headers["x-forwarded-host"] || headers["host"] || "")
-          .split(",")[0].trim()
-          .replace(/^https?:\/\//i, "");
-        const streamQuery = new URLSearchParams();
-        streamQuery.set("pickcode", pickcode);
-        streamQuery.set("file_name", file_name || "");
-        streamQuery.set("expires", expires || "");
-        streamQuery.set("sign", sign || "");
-        const streamUrl = `http://${host}/api/v1/plugin/P115LiteAssistant/stream?${streamQuery.toString()}`;
-        const encodedUrl = streamUrl.split("#")[0].replace(/[^0-9A-Za-z\-._~:/?#@!$&'()*+,;=%]/g, (c) =>
+        const playMode = String(
+          (this.server.api.store.getConfig() || {}).strm_play_mode || "redirect"
+        );
+        // 1.4.2 双模式：
+        //  redirect（默认，等价 1.4.0）：302 Location = 115 CDN 直链（result.url），播放器直连
+        //     115，行为与 1.4.0 完全一致（可用保底，零回归）。
+        //  stream：302 Location = https://<host>:3668/.../stream，由应用本地流代理转发 115 流
+        //     （完整 GET 每次新直链、Range/HEAD 复用缓存，永远 200/206），根治「115 直链完整
+        //     GET 单次有效 → 飞牛影视首次播放 403」。验签参数原样透传（同一套 HMAC）。
+        let location;
+        let bodyUrl;
+        if (playMode === "stream") {
+          const hostname = hostnameFromRelayHost(
+            headers["x-forwarded-host"] || headers["host"] || ""
+          );
+          const streamQuery = new URLSearchParams();
+          streamQuery.set("pickcode", pickcode);
+          streamQuery.set("file_name", file_name || "");
+          streamQuery.set("expires", expires || "");
+          streamQuery.set("sign", sign || "");
+          location = `https://${hostname}:${HTTPS_STREAM_PORT}/api/v1/plugin/P115LiteAssistant/stream?${streamQuery.toString()}`;
+          bodyUrl = location;
+        } else {
+          location = result.url;
+          bodyUrl = result.url;
+        }
+        // Location 全量百分号编码（仿 DDSRem encode_url_fully）：CDN 路径段含空格/非 ASCII/
+        // 括号等特殊字符时，严格客户端需编码后的 Location 才能跳转。
+        const encodedUrl = location.split("#")[0].replace(/[^0-9A-Za-z\-._~:/?#@!$&'()*+,;=%]/g, (c) =>
           encodeURIComponent(c)
         );
         const headersOut = { Location: encodedUrl, Connection: "close", "Cache-Control": "no-store" };
@@ -424,7 +447,7 @@ class TrimHandler {
           this.res.end();
         } else {
           // 302 带 JSON body（与 DDSRem 一致），便于 curl/日志排障
-          this.res.end(JSON.stringify({ status: "redirecting", url: streamUrl }));
+          this.res.end(JSON.stringify({ status: "redirecting", url: bodyUrl }));
         }
         return;
       }
@@ -580,7 +603,19 @@ function createRedirectServer(api) {
   // 独立 302 播放中转端口：绕开 fnOS 网关对 /app/* 的强制认证，
   // 播放器直连本端口即可匿名取链（HMAC 验签 + IP 限流仍生效）。
   // 只放行 redirect 路径，其余一律 404，不暴露 UI/API。
-  return http.createServer((req, res) => {
+  return http.createServer(makeRedirectRequestHandler(api));
+}
+
+function createHttpsRedirectServer(api, tlsOptions) {
+  // stream 模式的 https 流代理端口（TLS 终止）：与 http 中转共用同一路由/处理器，
+  // 仅监听与传输层不同（自签证书，供 curl -k / 客户端实验；客户端若拒绝自签则退回
+  // redirect 模式——这是实验方案）。
+  return https.createServer(tlsOptions, makeRedirectRequestHandler(api));
+}
+
+/** redirect/stream 路径共用的中转请求处理器（http / https 复用同一套路由）。 */
+function makeRedirectRequestHandler(api) {
+  return (req, res) => {
     let pathname = "/";
     try {
       pathname = new URL(req.url, "http://localhost").pathname.replace(/\/+$/, "") || "/";
@@ -605,7 +640,44 @@ function createRedirectServer(api) {
         res.end(JSON.stringify({ success: false, message: "请求格式错误", data: {} }));
       } catch { /* 忽略 */ }
     });
-  });
+  };
+}
+
+/** 从中转 Host 头（如 "10.10.10.3:3667" 或 "nas.local:3667"）提取裸主机名。 */
+function hostnameFromRelayHost(host) {
+  const cleaned = String(host || "").split(",")[0].trim().replace(/^https?:\/\//i, "");
+  try {
+    return new URL("http://" + cleaned).hostname;
+  } catch {
+    return cleaned.split(":")[0] || "127.0.0.1";
+  }
+}
+
+/** stream https（3668）自签证书：确保 <data>/patches/certs/server.{key,crt} 存在并返回 TLS 选项。
+ *  首次缺失时优先用系统 openssl 生成自签证书（CN=fnOS，SAN 覆盖本机 IP + 回环，有效期 825 天）；
+ *  openssl 不可用/失败则启动告警并返回 null（stream 模式不可用，仅 redirect 保底）。 */
+function ensureTlsCerts(store) {
+  const certDir = path.join(store.dir, "patches", "certs");
+  const keyPath = path.join(certDir, "server.key");
+  const certPath = path.join(certDir, "server.crt");
+  try {
+    if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+      return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
+    }
+    fs.mkdirSync(certDir, { recursive: true });
+    execFileSync("openssl", [
+      "req", "-x509", "-newkey", "rsa:2048",
+      "-keyout", keyPath, "-out", certPath,
+      "-days", "825", "-nodes",
+      "-subj", "/CN=fnOS",
+      "-addext", "subjectAltName=IP:10.10.10.3,IP:127.0.0.1",
+    ], { stdio: "ignore" });
+    console.log(`已为 stream https 生成自签证书（${certDir}）`);
+    return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
+  } catch (err) {
+    console.warn(`stream https 自签证书不可用：${err.message}（stream 模式仅 redirect 保底）`);
+    return null;
+  }
 }
 
 function listenRedirectServer(server, port) {
@@ -621,6 +693,18 @@ function listenRedirectServer(server, port) {
 
 function startRedirectPort(api, port) {
   return listenRedirectServer(createRedirectServer(api), port);
+}
+
+function startHttpsRedirectPort(api, tlsOptions) {
+  const server = createHttpsRedirectServer(api, tlsOptions);
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(HTTPS_STREAM_PORT, "0.0.0.0", () => {
+      server.removeListener("error", reject);
+      console.log(`stream https 流代理端口已启动：0.0.0.0:${HTTPS_STREAM_PORT}`);
+      resolve(server);
+    });
+  });
 }
 
 function configureLogging(logFile) {
@@ -749,6 +833,16 @@ async function main(argv) {
   } catch (err) {
     console.warn(`302 中转端口启动失败（不影响主服务）：${err.message}`);
   }
+  // stream 模式 https 流代理端口（3668，TLS 终止）：证书可取自签生成则监听，否则仅 redirect 保底。
+  let httpsRedirectServer = null;
+  try {
+    const tls = ensureTlsCerts(store);
+    if (tls) {
+      httpsRedirectServer = await startHttpsRedirectPort(api, tls);
+    }
+  } catch (err) {
+    console.warn(`stream https 流代理端口（${HTTPS_STREAM_PORT}）启动失败：${err.message}（仅 redirect 模式可用）`);
+  }
   // save_config 改动 relay_port → 立即重绑 302 监听；新端口绑定失败则回退「重启生效」提示。
   api._relistener = async (port) => {
     const p = parseInt(port, 10);
@@ -821,4 +915,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, TrimHandler, ACTIONS, maskValue, configureLogging, startServer, startRedirectPort, sameOriginOk, matchTrustedOrigin, csrfDenyMessage };
+module.exports = { main, TrimHandler, ACTIONS, maskValue, configureLogging, startServer, startRedirectPort, startHttpsRedirectPort, ensureTlsCerts, hostnameFromRelayHost, createRedirectServer, createHttpsRedirectServer, HTTPS_STREAM_PORT, sameOriginOk, matchTrustedOrigin, csrfDenyMessage };
