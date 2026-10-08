@@ -1915,56 +1915,11 @@ class Server {
 
   // ── STRM 基础地址：独立 302 播放中转端口（2026-09-18）──
   // 绕开 fnOS 网关对 /app/* 的强制认证；播放器直连本端口匿名取链。
-  // 基础地址（strm_base_url）可由用户手动填写，支持两种形态：
-  //   1) 完整 URL（含 ://，1.4.5）：按用户填写的 scheme/端口/路径原样生成，可用于
-  //      https 反代、自定义端口、网关子路径（如 https://nas.example.com/p115）。
-  //   2) 裸 host（不含 ://）：仅取 host，端口自动补充 relay_port（兼容历史行为）。
-  // 任何校验失败回退裸 host 逻辑，不抛异常。
+  // 基础地址（strm_base_url）可由用户手动填写，仅取 host；端口自动补充 relay_port。
   _resolveStrmBaseUrl() {
-    const configured = String(this.store.getConfig().strm_base_url || "").trim();
-    const parsed = this._parseStrmBase(configured);
-    if (parsed.full) return parsed.base;
     const host = this._relayHost();
     const port = this._relayPort();
     return `http://${host}:${port}`;
-  }
-
-  // 解析 strm_base_url 成 STRM 基础地址前缀；只关心 scheme/端口/路径，不校验路径本身。
-  // 返回 { full: true, base }：完整 URL（按用户原样生成），或 { full: false }：回退裸 host 逻辑。
-  _parseStrmBase(configValue) {
-    const raw = String(configValue || "").trim();
-    if (!raw) return { full: false };
-
-    // 不含 :// → 裸 host（历史行为），交由 _relayHost + _relayPort。
-    const schemeEnd = raw.indexOf("://");
-    if (schemeEnd < 0) return { full: false };
-
-    const scheme = raw.slice(0, schemeEnd).toLowerCase();
-    if (scheme !== "http" && scheme !== "https") {
-      console.warn(`[strm] strm_base_url scheme 不支持：${scheme}（仅 http/https），回退裸 host 逻辑`);
-      return { full: false };
-    }
-    try {
-      const u = new URL(raw);
-      const host = u.hostname;
-      if (!host) {
-        console.warn(`[strm] strm_base_url 无法解析主机名：${raw}，回退裸 host 逻辑`);
-        return { full: false };
-      }
-      // 端口：仅当显式且非 scheme 默认端口才附加（80/443 省略）。
-      let portStr = "";
-      const explicitPort = u.port ? parseInt(u.port, 10) : NaN;
-      if (Number.isInteger(explicitPort) && explicitPort > 0 && explicitPort < 65536) {
-        const defaultPort = scheme === "https" ? 443 : 80;
-        if (explicitPort !== defaultPort) portStr = `:${explicitPort}`;
-      }
-      // 保留 pathname，去除结尾斜杠（含根路径 "/" 也去除）防 base+路径双斜杠；内部路径原样保留。
-      let path = (u.pathname || "").replace(/\/+$/, "");
-      return { full: true, base: `${scheme}://${host}${portStr}${path}` };
-    } catch (e) {
-      console.warn(`[strm] strm_base_url 解析失败：${raw}（${e.message}），回退裸 host 逻辑`);
-      return { full: false };
-    }
   }
 
   _relayPort() {
@@ -2655,13 +2610,9 @@ class Server {
       return { code: 403, message: expires ? "播放签名已过期或无效" : "无效播放签名" };
     }
     const ua = String(userAgent || "").trim();
-    // 1.4.3：播放器类 UA 不缓存直链（115 直链「完整 GET 单次有效」，缓存复用会令
-    // 播放器探测+播放的二次完整 GET 命中同一 URL → 403）。播放器每次都取新链 →
-    // 探测链 A + 播放链 B 不同 → 首播即成功。浏览器/curl 类维持缓存（少取链防风控）。
-    const playerUA = isPlayerUA(ua);
     const cacheKey = `${normalized}|${ua}`;
-    // 1) 缓存命中（播放器跳过）
-    const cached = !playerUA && this._redirectUrlCache && this._redirectUrlCache.get(cacheKey);
+    // 1) 缓存命中
+    const cached = this._redirectUrlCache && this._redirectUrlCache.get(cacheKey);
     if (cached && cached.expireAt > Date.now()) {
       return { code: 302, url: cached.url, file_name: String(file_name || "").trim() };
     }
@@ -2676,7 +2627,7 @@ class Server {
     }
     const inflightPromise = this._fetchRedirectUrlWithRetry(normalized, ua)
       .then((url) => {
-        if (url && this._redirectUrlCache && !playerUA) {
+        if (url && this._redirectUrlCache) {
           const ttlMs = this._redirectUrlTtlMs(url);
           this._redirectUrlCache.set(cacheKey, { url, expireAt: Date.now() + ttlMs });
           // 容量裁剪：清过期 + 超上限删最旧
@@ -3058,18 +3009,9 @@ function inCheckinWindow(text) {
   }
 }
 
-/** 1.4.3：UA 是否为播放器类（浏览器/常见抓取工具之外的 UA → 视为播放器，不缓存直链）。 */
-function isPlayerUA(ua) {
-  const s = String(ua || "").trim();
-  if (!s) return false; // 空 UA / 未知 → 不算播放器（走缓存，避免未知 UA 高频取链）
-  if (/(mozilla|chrome|safari|firefox|edge|opera|curl|wget|python|node|postman|axios|insomnia)/i.test(s)) return false;
-  return true; // 其余（VLC/ffmpeg/Lavf/ExoPlayer/okhttp/mpv/Kodi/Infuse 等）→ 播放器
-}
-
 module.exports = {
   Server,
   UploadWorker,
-  isPlayerUA,
   PUBLIC_CONFIG_FIELDS,
   EDITABLE_CONFIG_FIELDS,
   ok,

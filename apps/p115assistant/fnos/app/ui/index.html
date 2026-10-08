@@ -544,7 +544,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.5</span>
+      <span class="ver" id="appVersion">v1.4.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -880,16 +880,6 @@
             </div>
             <div class="field-row" style="margin-top:6px">
               <span class="muted" id="strmRelayHint" style="font-size:12px"></span>
-            </div>
-            <div class="field-row" style="align-items:center;gap:8px;margin-top:8px">
-              <span class="muted" style="width:66px;flex:none">播放模式</span>
-              <select class="input" id="strmPlayMode" onchange="markDirty('strm')" title="直链模式（默认）：播放器直接连接 115 视频源，兼容性最好；本地代理模式：应用代为转发视频，可避免部分播放器首播失败">
-                <option value="redirect">直链模式（默认）</option>
-                <option value="stream">本地代理模式</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <span class="muted" style="font-size:12px">提示：本地代理模式仅内网直连有效，远程访问会自动使用直链模式。</span>
             </div>
             <div class="field-row">
               <span class="muted" id="strmOutboundHint" style="font-size:12px"></span>
@@ -3694,7 +3684,6 @@ async function saveStrmCfg(){
     relay_port: port,
     strm_incremental: el("strmIncremental").checked === true,
     strm_copy_sidecar: el("strmAddSubtitles").checked === true,
-    strm_play_mode: el("strmPlayMode").value,
   };
   const r = await call("save_config", "POST", updates);
   if (r.success){ clearDirty("strm"); saveStrmBase && saveStrmBase(); return; }
@@ -4153,8 +4142,6 @@ async function loadStrmMappings(){
         const cfg = rc2.data;
         const v = cfg.strm_copy_sidecar ?? cfg.strm_add_subtitles;
         el("strmAddSubtitles").checked = v !== false;
-        // STRM 播放模式（1.4.2）：redirect 直链（默认）/ stream 本地代理（https）
-        el("strmPlayMode").value = cfg.strm_play_mode === "stream" ? "stream" : "redirect";
       }
     }
     return r;
