@@ -544,7 +544,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v1.4.4</span>
+      <span class="ver" id="appVersion">v1.4.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -718,7 +718,7 @@
           <div id="upFailList" style="margin-top:6px;max-height:160px;overflow:auto;font-size:12px"></div>
         </div>
         <div id="mappingList"></div>
-        <p class="empty" id="uploadEmpty">暂无上传映射，点击「添加映射」创建源目录 → 目标目录配对（无映射目录时监听自动关闭，不轮询）</p>
+        <p class="empty" id="uploadEmpty">暂无上传映射。点击「添加映射」创建「本地源目录 → 115 目标目录」配对，放入的文件会自动上传。</p>
         <div class="risk-bar" id="riskBar" hidden style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 12px;border-radius:6px;background:var(--surface);"></div>
         <details class="adv-block" id="advUploadExt" style="margin-top:10px;font-size:13px">
           <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">高级：上传扩展名 <span class="muted">（可选）</span></summary>
@@ -726,13 +726,13 @@
             <div class="field-row" style="align-items:center;gap:8px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="uploadIncludeSidecars" onchange="markDirty('upload')">
-                <span class="muted">上传附属文件（nfo/jpg/srt/ass 等随主文件一起上传）</span>
+                <span class="muted">同步上传附属文件（nfo、srt、ass 等随媒体一起上传）</span>
               </label>
             </div>
             <div class="field-row" style="margin-top:8px;align-items:center;gap:8px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="upGenStrm" onchange="markDirty('upload')">
-                <span class="muted">上传后生成 STRM（单个媒体上传完成即生成对应 .strm 到各 STRM 映射输出目录）</span>
+                <span class="muted">上传完成后自动生成 STRM（在每个映射的输出目录生成占位文件）</span>
               </label>
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="upDelSrc" onchange="markDirty('upload')">
@@ -748,12 +748,12 @@
               </select>
               <span class="muted" style="width:96px;flex:none" title="上传节奏：文件间隔 / 批大小 / 批间暂停（防账号风控）">上传节奏风控</span>
               <select id="upRisk" onchange="markDirty('upload')" title="上传节奏：文件间隔 / 批大小 / 批间暂停（防账号风控）">
-                <option value="conservative">保守（每文件6s/每批5个）</option>
-                <option value="balanced">平衡（每文件3s/每批10个）</option>
-                <option value="aggressive">激进（每文件1.5s/每批20个）</option>
+                <option value="conservative">保守（6s/个 · 5 个/批）</option>
+                <option value="balanced">平衡（3s/个 · 10 个/批）</option>
+                <option value="aggressive">激进（1.5s/个 · 20 个/批）</option>
               </select>
-              <span class="muted" style="width:96px;flex:none" title="115 接口节流：OpenAPI 请求 QPS 档位（请求级）；与上方上传节奏独立">115 接口节流</span>
-              <select id="rateLimit" onchange="markDirty('upload')" title="115 接口节流：OpenAPI 请求 QPS 档位（请求级）；与上方上传节奏独立">
+              <span class="muted" style="width:96px;flex:none" title="115 接口访问频率档位（与上方上传节奏相互独立）">115 接口频率</span>
+              <select id="rateLimit" onchange="markDirty('upload')" title="115 接口访问频率档位（与上方上传节奏相互独立）">
                 <option value="conservative">保守（慢但稳）</option>
                 <option value="balanced">均衡（推荐）</option>
                 <option value="fast">激进（更快）</option>
@@ -829,7 +829,7 @@
 
       <!-- STRM -->
       <section id="tab-link" class="pane" hidden>
-        <p class="muted" style="font-size:13px;margin-bottom:10px">STRM：媒体文件留在 115 云端，本地只生成轻量占位 .strm，播放时经中转端口 302 拉流。</p>
+        <p class="muted" style="font-size:13px;margin-bottom:10px">STRM：媒体文件留在 115 云端，本地只生成轻量占位 .strm，播放时自动拉取视频流。</p>
         
         <div class="toolbar">
           <button class="btn" onclick="addStrmCard()">
@@ -849,7 +849,7 @@
           </button>
         </div>
         <div class="pane" id="strmOnceCard" hidden style="padding:14px 16px;margin-bottom:12px">
-          <p class="muted" style="font-size:12px;margin-bottom:8px">临时生成：把某个 115 目录的媒体一次性生成为 STRM 到指定本地目录（不进映射、不增量）。</p>
+          <p class="muted" style="font-size:12px;margin-bottom:8px">临时生成：将 115 目录的媒体一次性生成到指定本地目录（不保存为映射，仅本次生效）。</p>
           <div class="field-row" style="align-items:center;gap:8px">
             <span class="muted" style="width:76px;flex:none">115 源目录</span>
             <button class="btn" onclick="pickOnce('strm','src115')">选择 115 目录</button>
@@ -870,12 +870,12 @@
         <p class="empty" id="strmEmpty">暂无 STRM 映射。
 第一步：点击「添加映射」→ 选 115 源目录 → 选本地输出目录 → 点「立即同步」。</p>
         <details class="adv-block" style="margin-bottom:12px;font-size:13px">
-          <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">STRM 设置 <span class="muted">（播放地址/中转端口/生成选项）</span></summary>
+          <summary style="cursor:pointer;padding:8px 12px;border-radius:6px;background:var(--surface);">STRM 设置 <span class="muted">（播放地址/代理端口/生成选项）</span></summary>
           <div class="pane" style="padding:12px 16px;margin-top:6px">
             <div class="field-row" style="align-items:center;gap:8px">
               <span class="muted" style="width:66px;flex:none">播放地址</span>
-              <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测" title="留空自动检测宿主机 IP；或填公网可达地址并在路由器映射中转端口" autofocus onchange="markDirty('strm')">
-              <span class="muted" style="flex:none;font-size:12px">中转端口</span>
+              <input class="input mono grow" type="text" id="strmBaseUrl" placeholder="留空自动检测" title="默认自动检测；公网播放请填外网可访问地址，示例：https://nas.example.com" autofocus onchange="markDirty('strm')">
+              <span class="muted" style="flex:none;font-size:12px">代理端口</span>
               <input class="input mono" type="text" id="relayPortInput" placeholder="3667" style="max-width:88px" autofocus onchange="markDirty('strm')">
             </div>
             <div class="field-row" style="margin-top:6px">
@@ -883,13 +883,13 @@
             </div>
             <div class="field-row" style="align-items:center;gap:8px;margin-top:8px">
               <span class="muted" style="width:66px;flex:none">播放模式</span>
-              <select class="input" id="strmPlayMode" onchange="markDirty('strm')" title="redirect=302 直链（115 CDN，默认，可用保底）；stream=应用本地流代理（https:3668）转发 115 流，根治「115 直链完整 GET 单次有效 → 首次播放 403」（仅内网直连生效；远程/fnconnect 自动切回直链；客户端需信任 3668 自签证书）">
-                <option value="redirect">redirect 直链（115 CDN）</option>
-                <option value="stream">stream 本地代理（https）</option>
+              <select class="input" id="strmPlayMode" onchange="markDirty('strm')" title="直链模式（默认）：播放器直接连接 115 视频源，兼容性最好；本地代理模式：应用代为转发视频，可避免部分播放器首播失败">
+                <option value="redirect">直链模式（默认）</option>
+                <option value="stream">本地代理模式</option>
               </select>
             </div>
             <div class="field-row">
-              <span class="muted" style="font-size:12px">redirect 为默认（等价 1.4.0）；stream 由应用代理 115 流，首播不 403（播放器探测/播放每次新直链），但仅限内网直连——远程（fnconnect/外网域名）连接自动切换直链模式。</span>
+              <span class="muted" style="font-size:12px">提示：本地代理模式仅内网直连有效，远程访问会自动使用直链模式。</span>
             </div>
             <div class="field-row">
               <span class="muted" id="strmOutboundHint" style="font-size:12px"></span>
@@ -907,7 +907,7 @@
               </label>
             </div>
             <div class="field-row" style="margin-top:4px">
-              <span class="muted" style="font-size:12px">同步时复制同目录同名字幕（srt/ass/ssa/sup/vtt）及刮削元数据（同名的 nfo/海报/背景图与 movie.nfo、poster.jpg 等固定刮削名），供播放器自动加载。</span>
+              <span class="muted" style="font-size:12px">同步时复制同名的字幕（srt、ass 等）与封面海报、简介（nfo 等），供播放器自动识别。</span>
               <span class="muted" style="font-size:12px">提示：增量适合长期同步；首次使用建议先全量生成一次，再开启增量。</span>
             </div>
           </div>
@@ -3399,7 +3399,7 @@ function renderAccount(d){
 }
 function acctLogin(){ closeAcct(); openQr(); }
 async function acctLogout(){
-  if(!confirmDanger("确定退出登录？\n将清除 115 登录 Cookie/令牌，上传与 STRM 需要重新登录。")) return;
+  if(!confirmDanger("确定退出登录？\n将清除 115 登录信息，上传与 STRM 需要重新登录。")) return;
   const r=await call("logout","POST",{});
   alert(r.message || (r.success ? "已退出登录" : "退出失败"));
   closeAcct(); renderAccount(null); refreshDrive();
@@ -3688,7 +3688,7 @@ async function saveSigninCfg(){
 }
 async function saveStrmCfg(){
   const port = el("relayPortInput").value.trim();
-  if (port && !/^\d{2,5}$/.test(port)) { alert("中转端口应为数字（如 3667）"); return; }
+  if (port && !/^\d{2,5}$/.test(port)) { alert("代理端口应为数字（如 3667）"); return; }
   const updates = {
     strm_base_url: el("strmBaseUrl").value.trim(),
     relay_port: port,
@@ -3903,7 +3903,7 @@ function updateCancelTaskBtn(active, pending){
   btn.hidden = (Number(active)||0)+(Number(pending)||0) <= 0;
 }
 async function cancelTask(){
-  if(!confirmDanger("取消当前上传任务？\n已在途的文件会在下一个安全检查点停止，已上传内容不受影响。")) return;
+  if(!confirmDanger("取消当前上传任务？\n正在上传的文件会尽快停止，已上传内容不受影响。")) return;
   const btn=el("cancelTaskBtn"); if(btn){ btn.disabled=true; btn.textContent="取消中…"; }
   const r=await call("task_cancel","POST",{kind:"upload"});
   if(btn){ btn.disabled=false; btn.textContent="取消任务"; }
@@ -3940,7 +3940,7 @@ async function refreshWatchStatus(){
     risk.textContent=`🛡️ 风控暂停：${rk.message||"115 访问上限"}，剩余约 ${min} 分钟恢复（${rk.profile_name} 档）`;
   }else if(rk.profile_name && rk.profile_name!=="conservative"){
     risk.hidden=false; risk.style.color="var(--muted,#8a919c)";
-    risk.textContent=`风控策略：${rk.profile_name}（每文件 ${Math.round((rk.profile&&rk.profile.fileIntervalMs||6000)/1000)}s / 每批 ${rk.profile&&rk.profile.batchSize||5} 个）`;
+    risk.textContent=`风控策略：${rk.profile_name}（${Math.round((rk.profile&&rk.profile.fileIntervalMs||6000)/1000)}s/个 · ${rk.profile&&rk.profile.batchSize||5} 个/批）`;
   }else{
     risk.hidden=true;
   }
@@ -4117,14 +4117,14 @@ async function saveStrmBase(){
   // 回填输入框：手动配置过则显示配置原值，否则显示自动推导的基础地址
   el("strmBaseUrl").value = d.manual_base_url || d.base_url || "";
   el("strmRelayHint").textContent =
-    `实际 STRM 地址：${d.base_url || "未确定"}（中转端口 ${d.relay_port}）`;
-  // 外网提示：手动填写公网可达地址 + 路由器映射中转端口，否则外网播放器无法访问
+    `实际 STRM 地址：${d.base_url || "未确定"}（代理端口 ${d.relay_port}）`;
+  // 外网提示：手动填写公网可达地址 + 路由器映射代理端口，否则外网播放器无法访问
   const extHint = el("strmOutboundHint");
   if (extHint) {
     const manual = d.manual_base_url || "";
     extHint.textContent = manual
-      ? "外网播放：请确认该地址公网可达，且路由器已把中转端口映射到本机。"
-      : "外网播放：请在下方填写公网可达地址（如 http://公网IP 或域名），并在路由器映射中转端口。";
+      ? "外网播放：请确认该地址公网可达，且路由器已把代理端口映射到本机。"
+      : "外网播放：请在下方填写公网可达地址（如 http://公网IP 或域名），并在路由器映射代理端口。";
   }
 }
 function bindStrmBaseEdit(){
