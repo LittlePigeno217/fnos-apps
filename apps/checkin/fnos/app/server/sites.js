@@ -7,6 +7,9 @@
  */
 const crypto = require("crypto");
 const { Session, parseJson, cleanText, extractFormhash } = require("./httpc");
+// 2.1.4：WorkBuddy 每日自动化引擎（成长任务/猫猫旅行/连登能量/国际版打卡）——
+// 移植自 workbuddy2api-hub（wb_tasks / wb_fingerprint / wb_activity），本文件仅编排挂接
+const WBTasks = require("./workbuddy_tasks");
 
 /* ── 通用识别 ─────────────────────────────────────────────── */
 
@@ -1692,6 +1695,7 @@ const WORKBUDDY = {
   key: "workbuddy",
   name: "WorkBuddy",
   short: "W",
+  _wbLog: () => {}, // 运行日志回调（server 构造时经 setLogger 注入；[workbuddy] 前缀在 _runDailyExtras 拼）
   mode: "Token",
   // 微信扫码优先；手填 access/refresh token 表单作为高级 fallback（cookie tab 承载）
   login_caps: ["qr", "cookie"],
@@ -1702,6 +1706,10 @@ const WORKBUDDY = {
     { key: "uid", label: "UID（可选）", type: "text", ph: "账号用户 ID，仅用于展示" },
     { key: "enterprise_id", label: "Enterprise ID（可选）", type: "text", ph: "企业 / 租户 ID" },
     { key: "domain", label: "Domain（可选）", type: "text", ph: "部门域名" },
+    // 2.1.4：每日自动化开关（默认开；关闭后对应步骤不执行，不影响扫码/签到/历史）
+    { key: "run_tasks", label: "每日成长任务", type: "switch", def: true, group: "advanced", ph: "成长任务批量接取/点亮/领奖 + 连登能量汇报" },
+    { key: "run_travel", label: "猫猫旅行", type: "switch", def: true, group: "advanced", ph: "自动派出 / 到期领奖" },
+    { key: "run_intl", label: "国际版打卡", type: "switch", def: true, group: "advanced", ph: "workbuddy.ai 每日活跃对话" },
   ],
   base: "https://www.codebuddy.cn",
   authBase: "https://copilot.tencent.com",
@@ -1925,30 +1933,74 @@ const WORKBUDDY = {
     const r = await this._billingDo(cfg, this.checkinPath);
     const j = parseJson(r.text);
     const text = this._msg(j);
+    // 2.1.4：签到结果先定型（成功/已签到/失败），随后再跑每日自动化——
+    // 已签到当天也会执行每日任务（手动重签/补签路径），失败不改变签到结论
+    let result;
     // 上游对「已签到」常回 HTTP 400（body code=10001 今天已签到）
     if (r.status < 200 || r.status > 299) {
       if (this._hasMarker(text || r.text, this.ALREADY_MARKERS)) {
-        return this._ok("今日已签到", text || "今天已签到", cfg);
+        result = this._ok("今日已签到", text || "今天已签到", cfg);
+      } else {
+        throw new Error(text || `WorkBuddy 签到失败（HTTP ${r.status}）`);
       }
-      throw new Error(text || `WorkBuddy 签到失败（HTTP ${r.status}）`);
+    } else if (!this._okCode(j)) {
+      if (this._hasMarker(text, this.ALREADY_MARKERS)) result = this._ok("今日已签到", text, cfg);
+      else if (this._hasMarker(text, this.CREDIT_MARKERS)) throw new Error(text);
+      else throw new Error(text || "WorkBuddy 签到请求失败");
+    } else {
+      const data = (j && j.data) || {};
+      if (data.checked_in === true || data.checked === true) {
+        result = this._ok("今日已签到", text || "今天已签到", cfg);
+      } else if (this._hasMarker(text, this.ALREADY_MARKERS)) {
+        result = this._ok("今日已签到", text, cfg);
+      } else {
+        // 尝试附带积分（不致命）
+        let reward = "-";
+        try {
+          const credits = await this._queryCredits(cfg);
+          if (credits.credits != null) reward = String(credits.credits);
+        } catch { /* 积分取不到不影响签到结果 */ }
+        result = this._ok("签到成功", text || "签到成功", cfg, reward);
+      }
     }
-    if (!this._okCode(j)) {
-      if (this._hasMarker(text, this.ALREADY_MARKERS)) return this._ok("今日已签到", text, cfg);
-      if (this._hasMarker(text, this.CREDIT_MARKERS)) throw new Error(text);
-      throw new Error(text || "WorkBuddy 签到请求失败");
-    }
-    const data = (j && j.data) || {};
-    if (data.checked_in === true || data.checked === true) {
-      return this._ok("今日已签到", text || "今天已签到", cfg);
-    }
-    if (this._hasMarker(text, this.ALREADY_MARKERS)) return this._ok("今日已签到", text, cfg);
-    // 尝试附带积分（不致命）
-    let reward = "-";
+    // 每日自动化：成长任务 → 猫猫旅行 → 国际版打卡（任一步失败不阻塞后续与签到结果）
+    await this._runDailyExtras(cfg);
+    return result;
+  },
+
+  /** 2.1.4：每日自动化编排（签到之后顺序执行，失败不阻塞）。开关默认开（旧账号无字段 = 开）。 */
+  async _runDailyExtras(cfg) {
+    if (!cfg) return;
+    const deps = {
+      access: () => this._pickAccess(cfg),
+      useProxy: !!cfg.use_proxy,
+      log: (line) => { (this._wbLog || (() => {}))(`[workbuddy] ${line}`); },
+      refresh: async () => {
+        const fresh = await this._refresh(cfg);
+        cfg.session = { access_token: fresh.access_token, refresh_token: fresh.refresh_token };
+        cfg.session_ts = Date.now();
+        return fresh.access_token;
+      },
+    };
     try {
-      const credits = await this._queryCredits(cfg);
-      if (credits.credits != null) reward = String(credits.credits);
-    } catch { /* 积分取不到不影响签到结果 */ }
-    return this._ok("签到成功", text || "签到成功", cfg, reward);
+      if (cfg.run_tasks !== false && typeof WBTasks.runGrowthTasks === "function") {
+        await WBTasks.runGrowthTasks(cfg, deps);
+      }
+      if (cfg.run_travel !== false && typeof WBTasks.runBuddyTravel === "function") {
+        await WBTasks.runBuddyTravel(cfg, deps);
+      }
+      if (cfg.run_intl !== false && typeof WBTasks.runIntlDaily === "function") {
+        await WBTasks.runIntlDaily(cfg, deps);
+      }
+    } catch (e) {
+      // 兜底：自动化异常绝不影响签到结果（模块内部已逐处收敛，这里是最后一层保险）
+      (this._wbLog || (() => {}))(`[workbuddy] 每日自动化异常 ${(e && e.message) || e}`);
+    }
+  },
+
+  /** 注入运行日志回调（server 构造时挂接；每日自动化日志统一走 [workbuddy] 前缀） */
+  setLogger(fn) {
+    this._wbLog = typeof fn === "function" ? fn : (() => {});
   },
 
   /** 查询积分（get-user-resource），宽容解析剩余/总量 */

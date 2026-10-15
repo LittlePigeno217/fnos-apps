@@ -123,6 +123,10 @@ class Server {
     this._store = store;
     this._notifier = notifier || null;
     this._log = log || (() => {});
+    // 2.1.4：注入站点运行日志回调（WorkBuddy 每日自动化 [workbuddy] 日志统一走运行日志）
+    for (const k of Object.keys(ADAPTERS)) {
+      if (ADAPTERS[k] && typeof ADAPTERS[k].setLogger === "function") ADAPTERS[k].setLogger(this._log);
+    }
     this._running = false; // 防并发执行
     this._loginSessions = new Map(); // 扫码登录会话：token → { site, account_id, sess, expires_at }（进程内，重启即失效）
     this._injectedProxy = new Set(); // 站点级 use_proxy 注入的账号对象（save 前还原，不落盘）
@@ -175,6 +179,7 @@ class Server {
       feishu_configured: !!(cfg.feishu_webhook),
       proxy_enabled: !!cfg.proxy_enabled,   // 全局代理开关
       proxy_url: maskProxyUrl(cfg.proxy_url), // 回显脱敏（B17：userinfo 密码掩码）；save 值完整保留于 config
+      wb_enabled: !!((cfg.wb || {}).enabled), // 2.1.4：WorkBuddy 网关开关（前端导航徽标）
       sites: {},
     };
     for (const key of Object.keys(ADAPTERS)) {
@@ -992,6 +997,8 @@ class Server {
     if (!Array.isArray(cfg.sites[site].accounts)) cfg.sites[site].accounts = [];
     const cur = cfg.sites[site].accounts;
     const fieldKeys = adapter.fields.map((f) => f.key);
+    // 2.1.4：switch 字段布尔落盘（导入 JSON 可能带 true/false，避免 String(false) 字符化）
+    const fieldType = Object.fromEntries(adapter.fields.map((f) => [f.key, f.type]));
     const usedIds = new Set(cur.map((a) => String(a.id)));
     const allocId = () => {
       let max = 0;
@@ -1009,7 +1016,11 @@ class Server {
       const acc = { id: allocId(), enabled: it.enabled !== false, remark: String(it.remark || "").trim() };
       acc.session = (it.session && typeof it.session === "object") ? it.session : null;
       acc.session_ts = acc.session ? (Number(it.session_ts) || Date.now()) : 0;
-      for (const f of fieldKeys) acc[f] = it[f] !== undefined ? String(it[f]) : "";
+      for (const f of fieldKeys) {
+        acc[f] = (fieldType[f] === "switch" && it[f] !== undefined)
+          ? it[f] === true || it[f] === "true" || it[f] === 1 || it[f] === "1"
+          : (it[f] !== undefined ? String(it[f]) : "");
+      }
       cur.push(acc);
       added += 1;
     }
@@ -1026,12 +1037,15 @@ class Server {
     const accs = Array.isArray(cfg.sites[site].accounts) ? cfg.sites[site].accounts : [];
     const fieldKeys = adapter.fields.map((f) => f.key);
     const secretKeys = new Set(adapter.fields.filter((f) => f.type === "password").map((f) => f.key));
+    // 2.1.4：switch 字段导出布尔原值（避免 false 被 `|| ""` 抹成空串，重新导入丢开关）
+    const fieldType = Object.fromEntries(adapter.fields.map((f) => [f.key, f.type]));
     const withSecrets = include_secrets === true;
     const accounts = accs.map((a) => {
       const out = { id: a.id, enabled: a.enabled !== false, remark: a.remark || "" };
       for (const f of fieldKeys) {
         const v = a[f] || "";
-        out[f] = (secretKeys.has(f) && !withSecrets && v) ? "***" : v;
+        out[f] = (secretKeys.has(f) && !withSecrets && v) ? "***"
+          : (fieldType[f] === "switch" ? a[f] === true || a[f] === "true" || a[f] === 1 || a[f] === "1" : v);
       }
       if (withSecrets) {
         out.session = a.session || null;

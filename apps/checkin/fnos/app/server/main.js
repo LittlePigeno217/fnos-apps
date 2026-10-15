@@ -10,6 +10,7 @@ const { Server, ADAPTERS } = require("./server");
 const notify = require("./notify");
 const { checkHotfix, applyHotfix } = require("./hotfix");
 const { ROUTES } = require("./router");
+const wbGatewayLib = require("./wb_gateway");
 
 const DATA_DIR = process.env.CHECKIN_DATA_DIR || path.join(__dirname, "..", "..", "..", "@appdata", "checkin");
 const SOCKET_PATH = process.env.CHECKIN_SOCKET || path.join(__dirname, "..", "app.sock");
@@ -18,6 +19,12 @@ const APP_DIR = path.join(__dirname, "..");
 const store = new Store(DATA_DIR);
 const api = new Server(store, notify, (msg) => {
   console.log(`${new Date().toISOString()} ${msg}`);
+});
+
+// 2.1.4：WorkBuddy OpenAI 兼容网关（/v1/* 三协议 + /api/wb/* 管理端）
+const wbGateway = wbGatewayLib.create({
+  store,
+  log: (msg) => api._log(`[wb] ${msg}`),
 });
 
 /* ── 调度：每日定时首跑 + 30 分钟漏签补跑 ─────────────────────── */
@@ -343,6 +350,23 @@ const ACTION_HANDLERS = {
       return { success: false, message: "清空日志失败：" + e.message };
     }
   },
+  // 2.1.4：WorkBuddy 网关管理端（/api/wb/*；读端点开放，写端点进敏感名单）
+  wbStatus: () => wbGateway.status(),
+  wbConfig: () => wbGateway.getConfig(),
+  wbSaveConfig: (body) => wbGateway.saveConfig(body),
+  wbKeys: (body) => wbGateway.keysManage(body),
+  wbUsage: () => wbGateway.usage(),
+  wbTest: (body) => wbGateway.test(body),
+  wbModels: () => {
+    const { MODEL_CATALOG } = wbGatewayLib;
+    return {
+      models: Object.entries(MODEL_CATALOG).map(([id, m]) => ({
+        id, name: m.n, realm: m.realm, credits: m.c,
+        context_length: m.in, max_tokens: m.out,
+        capabilities: { vision: m.vision, tool_calls: m.tool, reasoning: m.think },
+      })),
+    };
+  },
   checkHotfix: () => checkHotfix(APP_DIR).then((r) => ({ success: true, data: r })).catch((err) => ({ success: false, message: "检查功能更新失败: " + err.message })),
   async applyHotfix() {
     const r = await applyHotfix(APP_DIR, DATA_DIR, null);
@@ -391,6 +415,9 @@ const SENSITIVE_HANDLERS = new Set([
   "clearHistory",
   "clearLogs",
   "applyHotfix",
+  "wbSaveConfig",
+  "wbKeys",
+  "wbTest",
 ]);
 
 async function handle(req, res) {
@@ -427,6 +454,13 @@ async function handle(req, res) {
     // 静态 UI
     if (pathname === "/" || pathname === "/index.html") {
       return sendFile(path.join(APP_DIR, "www", "index.html"), req.url);
+    }
+
+    // 2.1.4：WorkBuddy 网关（OpenAI 兼容 /v1/*）——独立于 ROUTES，鉴权由网关内部
+    // 按 API Key 完成（不走 fnOS 网关 X-Trim-Userid；客户端是外部 API 使用者）。
+    // 路径兼容：/v1/chat/completions 可经 /app/checkin 前缀或裸路径进入（前缀已剥离）。
+    if (pathname.startsWith("/v1/")) {
+      return wbGateway.handleV1(req, res, pathname, method);
     }
 
     // action 提取：

@@ -37,6 +37,14 @@ const ROUTES = new Map([
   ["checkin/accounts/clear", { POST: "accountsClear" }],
   // 交互登录 checkin/{site}_login/{init|status} 为动态路由，由 main.js 正则处理
 
+  // ── 2.1.4：WorkBuddy 网关管理端（/api/wb/*；/v1/* 三协议由 main.js 直接拦截）──
+  ["checkin/wb/status", { GET: "wbStatus" }],
+  ["checkin/wb/config", { GET: "wbConfig", POST: "wbSaveConfig" }],
+  ["checkin/wb/keys", { POST: "wbKeys" }],
+  ["checkin/wb/usage", { GET: "wbUsage" }],
+  ["checkin/wb/test", { POST: "wbTest" }],
+  ["checkin/wb/models", { GET: "wbModels" }],
+
   // ── 旧扁平名兼容别名（前端零改动必须成立）─────────
   ["get_config", { GET: "getConfig" }],
   ["save_config", { POST: "saveConfig" }],

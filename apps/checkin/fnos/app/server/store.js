@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "2.1.3",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "2.1.4",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -409,6 +409,10 @@ class Store {
           // 同一次保存的多个新账号共享 id 游标：seed 自旧列表全部 id，
           // 每生成一个新 id 即登记，避免多个新账号拿到相同 id（下次编辑凭据串号）。
           const allocId = this._createIdAllocator(cur.accounts);
+          // 2.1.4：字段类型索引（switch 布尔开关需布尔落盘，避免 String(true)→"true" 字符化）
+          const fieldType = Object.fromEntries(
+            (Array.isArray(ADAPTERS[k] && ADAPTERS[k].fields) ? ADAPTERS[k].fields : [])
+              .map((f) => [f.key, f.type]));
           const next = site.accounts
             .map((a) => {
               if (!a || typeof a !== "object") return null;
@@ -490,6 +494,9 @@ class Store {
                 } else if (rawV === "") {
                   // 留空 = 保留原值（对 password/cookie 等敏感字段语义一致）
                   merged[f] = prevV;
+                } else if (fieldType[f] === "switch") {
+                  // 2.1.4：开关字段布尔落盘（后端按 cfg.xxx !== false 判开关，字符串 "false" 会误判成开）
+                  merged[f] = rawV === true || rawV === "true" || rawV === 1 || rawV === "1";
                 } else {
                   merged[f] = String(rawV).trim();
                 }
@@ -500,6 +507,21 @@ class Store {
           cur.accounts = next;
         }
       }
+    }
+    // 2.1.4：WorkBuddy 网关配置段（wb：enabled/default_realm/keys/limits/day/usage）
+    // 按段合并（keys/usage/limits/day 为数组/对象段，避免 UI 部分提交时整段被清）
+    if (patch.wb && typeof patch.wb === "object") {
+      const prevWb = (cfg.wb && typeof cfg.wb === "object") ? cfg.wb : {};
+      cfg.wb = {
+        ...prevWb,
+        ...patch.wb,
+        keys: Array.isArray(patch.wb.keys) ? patch.wb.keys : (Array.isArray(prevWb.keys) ? prevWb.keys : []),
+        usage: Array.isArray(patch.wb.usage) ? patch.wb.usage : (Array.isArray(prevWb.usage) ? prevWb.usage : []),
+        limits: (patch.wb.limits && typeof patch.wb.limits === "object")
+          ? { ...(prevWb.limits || {}), ...patch.wb.limits }
+          : (prevWb.limits || {}),
+        day: (patch.wb.day && typeof patch.wb.day === "object") ? patch.wb.day : (prevWb.day || null),
+      };
     }
     this.save();
     this._syncProxy(); // 代理配置变更即时生效（后续出站请求读到新值，无需重启）
