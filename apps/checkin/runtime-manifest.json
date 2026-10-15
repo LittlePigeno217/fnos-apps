@@ -1,6 +1,6 @@
 {
-  "version": "2.1.4",
-  "generated_at": "2026-10-15T14:17:42Z",
+  "version": "2.1.5",
+  "generated_at": "2026-10-15T16:29:06Z",
   "files": {
     "server/hotfix.js": {
       "sha256": "fa801ced81106476dfe02a528f0d54c93fbd7188fdc77632d1466c7cf7018f69",
@@ -35,24 +35,24 @@
       "size": 115026
     },
     "server/store.js": {
-      "sha256": "5b98ae5a90999c0a3844fdca75db3657c4275fdad480bd75766189ca85831417",
+      "sha256": "a660808f7033ae6e0a5bed27b25671d69914aa0997591bd9c9c57eb00ce497e6",
       "size": 33066
     },
     "server/update.js": {
-      "sha256": "ed3b12e5cbc243e6bff48517e9d79d61fe7ae377a812a41d4e76668646bbc799",
+      "sha256": "fa4ada0a8a71542bf36054c8157aebbb06275f5cc437047c9eb7b5f698994fd7",
       "size": 19825
     },
     "server/wb_gateway.js": {
-      "sha256": "ea054e60bf3a37e2ce18035c6376c67deb8e3ad6a9540ff406d35bac3e65b4a5",
-      "size": 46938
+      "sha256": "39d659ef81f7553640ded777d9b2feb75211a48b6d91be7e946ec8a3c689a66d",
+      "size": 48343
     },
     "server/workbuddy_tasks.js": {
       "sha256": "70f5e10c979fac7765704bb69ed312c2de0ece19f483d65c191df0405844c5bf",
       "size": 33843
     },
     "www/index.html": {
-      "sha256": "42094a654042e94d3f90bff7f287164aa17ea9caffe80a6fd79dd43984cfd4a2",
-      "size": 158113
+      "sha256": "063fa9514a4be792c9d4f4041847eab8dc7e7ad0fb643b3f05fe25820b795449",
+      "size": 160299
     }
   }
 }

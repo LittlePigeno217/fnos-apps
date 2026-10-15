@@ -144,6 +144,33 @@ function accountUid(acc) {
 function accountConfigured(acc) {
   return !!(acc && (accountAccess(acc) || !!(acc.session && acc.session.access_token)));
 }
+/** 账号明细列表（看板「账号」区只读联动；与 checkin 签到添加的账号单一事实源）。
+ *  绝不外泄 access_token/refresh_token/session 等敏感字段；realm 走 accountRealm，
+ *  last = 该账号最近一条签到记录（来自 checkin history，新→旧首条命中），ready = 配置完整且未停用。 */
+function accountList(deps, cfg) {
+  const accs = Array.isArray((((cfg || {}).sites || {}).workbuddy || {}).accounts) ? cfg.sites.workbuddy.accounts : [];
+  let lastByAcc = null;
+  try {
+    const hist = deps.store.getHistory(500) || [];
+    lastByAcc = new Map();
+    for (const h of hist) {
+      if (!h || h.site !== "workbuddy") continue;
+      const k = String(h.account_id || "");
+      if (k && !lastByAcc.has(k)) lastByAcc.set(k, { time: h.time, status: h.status });
+    }
+  } catch (e) { try { deps.log(`账号列表读取签到历史失败 ${(e && e.message) || e}`); } catch {} }
+  return accs.map((a) => {
+    const uid = String(accountUid(a) || "");
+    return {
+      id: a.id,
+      remark: String(a.remark || "").trim() || "WorkBuddy",
+      label: uid ? maskUid(uid) : maskUid(a.id),
+      realm: accountRealm(a),
+      last: (lastByAcc && lastByAcc.get(String(a.id))) || null,
+      ready: accountConfigured(a) && a.enabled !== false,
+    };
+  });
+}
 
 /* ── 请求头构造（对齐 hub account.headers("chat") + wb_fingerprint）── */
 function chatHeaders(acc, realm, extra = {}) {
@@ -776,6 +803,7 @@ function create(deps) {
       enabled: !!wb.enabled,
       default_realm: wb.default_realm || "intl",
       accounts: byRealm,
+      account_list: accountList(deps, cfg),
       keys: { total: keys.length, active: keys.filter((k) => k.enabled).length },
       day: { date: day.date, requests: day.requests, token_in: day.token_in, token_out: day.token_out, credits: Number(day.credits).toFixed(2), model_tokens: day.model_tokens },
       limits: wb.limits || {},
@@ -789,6 +817,7 @@ function create(deps) {
     return ok({
       enabled: !!wb.enabled,
       default_realm: wb.default_realm || "intl",
+      account_list: accountList(deps, cfg),
       limits: {
         enabled: !!(wb.limits || {}).enabled,
         reserve_credits: Number((wb.limits || {}).reserve_credits) || 0,

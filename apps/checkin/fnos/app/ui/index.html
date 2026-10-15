@@ -463,7 +463,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.1.4</span>
+      <span class="ver" id="appVersion">v2.1.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -2360,6 +2360,20 @@ async function refreshWbPanel() {
   const acc = (st && st.accounts) || { intl: { total: 0, ready: 0 }, cn: { total: 0, ready: 0 } };
   const lim = (cfg && cfg.limits) || {};
   const keys = (cfg && cfg.keys) || [];
+  // 账号区只读联动：直接展示签到页 workbuddy 添加的账号（account_list；网关侧不提供增删改，避免双轨）
+  const accList = (st && st.account_list) || [];
+  const accRows = accList.map((a) => {
+    const realmTxt = a.realm === "intl" ? "🌐 国际" : "🇨🇳 国内";
+    const lastTxt = a.last ? `最近签到 ${esc(a.last.time)} · ${esc(a.last.status)}` : '<span class="muted">暂无签到记录</span>';
+    return `
+    <div class="setting-row" style="gap:8px">
+      <div style="min-width:0;flex:1">
+        <div class="setting-label">${esc(a.remark)} <span class="mono muted" style="font-size:11px;font-weight:400">${esc(a.label)}</span>${a.ready ? "" : ' <span class="muted" style="font-size:11px">（未就绪）</span>'}</div>
+        <div class="setting-desc">${realmTxt} · ${lastTxt}</div>
+      </div>
+      <button class="btn btn-mini" onclick="goConfigWbAccounts()" title="在签到页 WorkBuddy 分组配置此账号">去配置</button>
+    </div>`;
+  }).join("") || '<div class="muted">尚未添加 WorkBuddy 账号 → <a href="javascript:goConfigWbAccounts()">去签到页添加</a></div>';
   const modelOpts = (WB_MODELS.slice(0, 30) || []).map((m) => `<option value="${esc(m.id)}">${esc(m.id)}${m.realm === "cn" ? "（国内）" : ""}${m.credits ? " " + esc(m.credits) : ""}</option>`).join("");
   const keyRows = keys.map((k) => `
     <tr>
@@ -2392,6 +2406,11 @@ async function refreshWbPanel() {
       <div class="stat-card"><div class="stat-k">今日 Token（入/出）</div><div class="stat-v" style="font-size:13px">${(day.token_in || 0).toLocaleString()} / ${(day.token_out || 0).toLocaleString()}</div></div>
       <div class="stat-card"><div class="stat-k">今日积分（估算）</div><div class="stat-v">${Number(day.credits || 0).toFixed(2)}</div></div>
       <div class="stat-card"><div class="stat-k">可用账号</div><div class="stat-v" style="font-size:13px">国际 ${acc.intl.ready}/${acc.intl.total} · 国内 ${acc.cn.ready}/${acc.cn.total}</div></div>
+    </div>
+
+    <div class="settings-group">
+      <header>账号（WorkBuddy 签到账号）<span class="muted" style="font-weight:400">只读联动 · 管理在签到页账号列表 WorkBuddy 分组</span></header>
+      <div style="padding:4px 14px 10px">${accRows}</div>
     </div>
 
     <div class="settings-group">
@@ -2526,6 +2545,21 @@ async function wbTestConnect() {
   const r = await call("checkin/wb/test", "POST", { model: ($("wbTestModel") || {}).value || "deepseek-v4.1-flash" });
   out.textContent = (r && r.success) ? "✓ " + (r.message || "正常") : "✗ " + ((r && r.message) || "失败");
   out.className = (r && r.success) ? "" : "err";
+}
+
+/** 看板账号区「去配置」→ 切到签到页并激活 WorkBuddy 分组（该分组 tab 高亮） */
+function goConfigWbAccounts() {
+  document.querySelectorAll(".nav button").forEach((x) => x.classList.remove("active"));
+  const navBtn = document.querySelector('.nav button[data-tab="sites"]');
+  if (navBtn) navBtn.classList.add("active");
+  $("pageTitle").textContent = TITLES.sites;
+  document.querySelectorAll(".content > section").forEach((s) => (s.hidden = true));
+  const sec = $("tab-sites");
+  if (sec) sec.hidden = false;
+  ACCT_TAB = Math.max(0, ACCT_GROUPS.findIndex((g) => g.keys.indexOf("workbuddy") >= 0));
+  renderAccountList();
+  const head = $("acctSection");
+  if (head) head.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ── 初始化 ── */
