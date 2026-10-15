@@ -1,6 +1,6 @@
 {
-  "version": "2.1.5",
-  "generated_at": "2026-10-15T16:29:06Z",
+  "version": "2.1.3",
+  "generated_at": "2026-09-28T13:58:01Z",
   "files": {
     "server/hotfix.js": {
       "sha256": "fa801ced81106476dfe02a528f0d54c93fbd7188fdc77632d1466c7cf7018f69",
@@ -11,8 +11,8 @@
       "size": 13083
     },
     "server/main.js": {
-      "sha256": "9ead470a9e22c32d8d9d346ed6fb1945f3590c8783d5af1fac214989f3757c2f",
-      "size": 28086
+      "sha256": "858ae20d39f5290a331f2e5a04e7747c0809ff04daa17c6c8be1f1971c6049d9",
+      "size": 26687
     },
     "server/notify.js": {
       "sha256": "fbbf8bee81cc15627a0f677f26983887089dd6538c43303e4873cb9b3a8ac2ac",
@@ -23,36 +23,28 @@
       "size": 56694
     },
     "server/router.js": {
-      "sha256": "abb341451d4942d3e9a8f10e7b00759318e830f537c83f11441bb5334231a75d",
-      "size": 3523
+      "sha256": "415ce3174b46dea949ab6afc97728d24efbd99020c95aa2cad4865493bfd7430",
+      "size": 3123
     },
     "server/server.js": {
-      "sha256": "ee64ff085d28093d3fe9ac83c4ee260fa69d48abda63973180acb8fdff560926",
-      "size": 80321
+      "sha256": "4c8e74953760f07723397ce45fa80101b1073d7521309641f8eb90379814a704",
+      "size": 79280
     },
     "server/sites.js": {
-      "sha256": "19a5766d5752a5a18ad5fb16eadd0e4b306d989bc94de62adf06292883905449",
-      "size": 115026
+      "sha256": "4522605f9983fc30a9020aceedcb7ecc26044a223c40c08d089aa1bbb0c0f5dc",
+      "size": 112054
     },
     "server/store.js": {
-      "sha256": "a660808f7033ae6e0a5bed27b25671d69914aa0997591bd9c9c57eb00ce497e6",
-      "size": 33066
+      "sha256": "5c08a912871ea87e73d75ca7e891e2824a91e4db298cb575df4ba3cc3b9660c0",
+      "size": 31582
     },
     "server/update.js": {
-      "sha256": "fa4ada0a8a71542bf36054c8157aebbb06275f5cc437047c9eb7b5f698994fd7",
+      "sha256": "f1e0719a004d6e3bb11409a446cf2e82d585f913f98b8b1ab0a61739ddb7335a",
       "size": 19825
     },
-    "server/wb_gateway.js": {
-      "sha256": "39d659ef81f7553640ded777d9b2feb75211a48b6d91be7e946ec8a3c689a66d",
-      "size": 48343
-    },
-    "server/workbuddy_tasks.js": {
-      "sha256": "70f5e10c979fac7765704bb69ed312c2de0ece19f483d65c191df0405844c5bf",
-      "size": 33843
-    },
     "www/index.html": {
-      "sha256": "063fa9514a4be792c9d4f4041847eab8dc7e7ad0fb643b3f05fe25820b795449",
-      "size": 160299
+      "sha256": "7a4be72b29af6223043f4a621f3c603408392f0fde61b40c554d982226026530",
+      "size": 143653
     }
   }
 }

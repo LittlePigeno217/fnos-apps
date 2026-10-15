@@ -456,14 +456,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 3"/></svg>
         <span>签到历史</span>
       </button>
-      <button data-tab="wb">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        <span>WorkBuddy 网关</span>
-        <span class="badge-dot" id="wbNavDot" style="display:none"></span>
-      </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.1.5</span>
+      <span class="ver" id="appVersion">v2.1.3</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -589,20 +584,6 @@
         </div>
       </section>
 
-      <!-- WorkBuddy 网关（2.1.4）：OpenAI 兼容三协议代理 + 限额护栏 + 多 Key + 用量看板 -->
-      <section id="tab-wb" hidden>
-        <div class="pane" style="padding:0;overflow:hidden">
-          <div class="toolbar" style="margin:0;padding:10px 14px 0;border-bottom:none">
-            <span style="font-weight:600;font-size:13.5px">WorkBuddy 网关</span>
-            <span class="muted" id="wbState" style="font-size:12px"></span>
-            <span style="flex:1"></span>
-            <button type="button" class="btn btn-mini" onclick="wbTestConnect()">连通性测试</button>
-            <button type="button" class="btn btn-mini" onclick="refreshWbPanel()">刷新</button>
-          </div>
-          <div id="wbBody" style="padding:12px 14px 16px"><div class="empty">正在加载网关状态…</div></div>
-        </div>
-      </section>
-
     </div>
   </div>
 </div>
@@ -707,7 +688,7 @@ async function call(action, method = "GET", body = null, timeoutMs = 15000) {
   finally { clearTimeout(timer); }
 }
 
-const TITLES = { sites: "站点签到", settings: "运行设置", log: "运行日志", history: "签到历史", wb: "WorkBuddy 网关" };
+const TITLES = { sites: "站点签到", settings: "运行设置", log: "运行日志", history: "签到历史" };
 
 /* 站点元数据单一事实源来自后端 adapter.meta（get_config 回传）；前端不再维护 SITES 字典，
  * 新增站点类型 = 后端 sites.js 注册 1 行，前端零改动（P2 扩展性目标）。 */
@@ -1573,9 +1554,7 @@ function renderAddCookiePanel(key) {
       <div class="cred-label">${esc(f.label)}</div>
       ${f.type === "select"
         ? `<select class="input mono" id="addck_${esc(f.key)}">${(f.options || []).map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")}</select>`
-        : f.type === "switch"
-          ? `<label class="switch"><input type="checkbox" id="addck_${esc(f.key)}" ${f.def !== false ? "checked" : ""}><span class="track"></span></label>`
-          : `<input class="input mono" id="addck_${esc(f.key)}" type="${f.type}" placeholder="${esc(f.ph || "")}" autocomplete="off">`}
+        : `<input class="input mono" id="addck_${esc(f.key)}" type="${f.type}" placeholder="${esc(f.ph || "")}" autocomplete="off">`}
     </div>`;
   const rows = basic.map(rowHtml).join("");
   const advRows = advancedSectionHtml(advanced.map(rowHtml).join(""));
@@ -1608,11 +1587,7 @@ async function submitAddCookie() {
   let hasVal = false;
   for (const f of siteFields(key)) {
     const inp = $("addck_" + f.key);
-    if (inp) {
-      // 2.1.4：开关字段读 checked（布尔，不参与「至少填写一个凭据字段」判定）
-      if (f.type === "switch") { acc[f.key] = inp.checked === true; continue; }
-      acc[f.key] = inp.value.trim(); if (acc[f.key]) hasVal = true;
-    }
+    if (inp) { acc[f.key] = inp.value.trim(); if (acc[f.key]) hasVal = true; }
   }
   if (!hasVal) { $("addckState").textContent = "请至少填写一个凭据字段"; $("addckState").className = "err"; return; }
   // 2.0.4：newapi 认证方式显式化——记录所选方式到账号 auth（cookie|token|password），后端只按该方式取凭据。
@@ -1817,16 +1792,6 @@ function accountEditEl(key, acc) {
   const masks = detail.field_masks || {};
   const vals = detail.field_values || {};
   const renderField = (f) => {
-    if (f.type === "switch") {
-      // 2.1.4：开关字段（workbuddy 每日自动化等）：field_values 回显布尔，未配置回退账号原值
-      const raw = vals[f.key] != null ? vals[f.key] : acc[f.key];
-      const on = raw === true || raw === "true" || raw === 1 || raw === "1";
-      return `
-      <div class="cred-row">
-        <div class="cred-label">${esc(f.label)}</div>
-        <label class="switch"><input type="checkbox" data-f="${f.key}" ${on ? "checked" : ""}><span class="track"></span></label>
-      </div>`;
-    }
     if (f.type === "password") {
       const has = !!masks[f.key]; // 已配置判定：accounts field_masks 含该 key
       const badge = has ? '<span class="secret-tag">已配置（留空不更改）</span>' : "";
@@ -1911,8 +1876,6 @@ function collectModalAccounts() {
     for (const f of siteFields(MODAL_KEY)) {
       const inp = row.querySelector('[data-f="' + f.key + '"]');
       if (!inp) continue;
-      // 2.1.4：开关字段读 checked（布尔落盘）；其余留空 → 送空串（后端保留原值）
-      if (f.type === "switch") { a[f.key] = inp.checked === true; continue; }
       // 留空 → 送空串（后端保留原值）；填写 → 覆盖。1.4.6 起敏感字段不再回填脱敏串。
       a[f.key] = inp.value.trim();
     }
@@ -2335,232 +2298,8 @@ document.querySelectorAll(".nav button").forEach((b) => {
     // 运行日志页 → 拉日志；签到历史页 → 拉历史（两页独立，互不加载对方内容）
     if (b.dataset.tab === "log") { logPoll(); }
     else if (b.dataset.tab === "history") { refreshHistoryPanel(); }
-    else if (b.dataset.tab === "wb") { refreshWbPanel(); }
   });
 });
-
-/* ── WorkBuddy 网关（2.1.4）────────────────────────────────────── */
-let WB_CFG = null;      // 网关配置缓存（含 Key 列表，key 仅掩码展示）
-let WB_MODELS = [];     // 模型目录缓存（测试 select 数据源）
-
-async function wbFetch(name) {
-  const r = await call(name);
-  return (r && r.success && r.data !== undefined) ? r.data : r;
-}
-
-async function refreshWbPanel() {
-  const [st, cfg, usg, models] = await Promise.all([
-    wbFetch("checkin/wb/status"), wbFetch("checkin/wb/config"),
-    wbFetch("checkin/wb/usage"), wbFetch("checkin/wb/models"),
-  ]);
-  WB_CFG = cfg; WB_MODELS = (models && models.models) || [];
-  const dot = $("wbNavDot");
-  if (dot) dot.style.display = st && st.enabled ? "" : "none";
-  const day = (usg && usg.day) || {};
-  const acc = (st && st.accounts) || { intl: { total: 0, ready: 0 }, cn: { total: 0, ready: 0 } };
-  const lim = (cfg && cfg.limits) || {};
-  const keys = (cfg && cfg.keys) || [];
-  // 账号区只读联动：直接展示签到页 workbuddy 添加的账号（account_list；网关侧不提供增删改，避免双轨）
-  const accList = (st && st.account_list) || [];
-  const accRows = accList.map((a) => {
-    const realmTxt = a.realm === "intl" ? "🌐 国际" : "🇨🇳 国内";
-    const lastTxt = a.last ? `最近签到 ${esc(a.last.time)} · ${esc(a.last.status)}` : '<span class="muted">暂无签到记录</span>';
-    return `
-    <div class="setting-row" style="gap:8px">
-      <div style="min-width:0;flex:1">
-        <div class="setting-label">${esc(a.remark)} <span class="mono muted" style="font-size:11px;font-weight:400">${esc(a.label)}</span>${a.ready ? "" : ' <span class="muted" style="font-size:11px">（未就绪）</span>'}</div>
-        <div class="setting-desc">${realmTxt} · ${lastTxt}</div>
-      </div>
-      <button class="btn btn-mini" onclick="goConfigWbAccounts()" title="在签到页 WorkBuddy 分组配置此账号">去配置</button>
-    </div>`;
-  }).join("") || '<div class="muted">尚未添加 WorkBuddy 账号 → <a href="javascript:goConfigWbAccounts()">去签到页添加</a></div>';
-  const modelOpts = (WB_MODELS.slice(0, 30) || []).map((m) => `<option value="${esc(m.id)}">${esc(m.id)}${m.realm === "cn" ? "（国内）" : ""}${m.credits ? " " + esc(m.credits) : ""}</option>`).join("");
-  const keyRows = keys.map((k) => `
-    <tr>
-      <td>${esc(k.name)}</td>
-      <td class="mono">${k.deleted_at ? "<span class=muted>已删除</span>" : esc(k.key_masked)}</td>
-      <td>${k.realm ? (k.realm === "intl" ? "国际" : "国内") : "不限"}</td>
-      <td class="mono">${(k.models || []).length ? esc((k.models || []).join(", ")) : "全部"}</td>
-      <td>${k.deleted_at ? "—" : (k.enabled ? "<span style=color:var(--ok,#16a34a)>启用</span>" : "<span class=muted>停用</span>")}</td>
-      <td style="white-space:nowrap">
-        ${k.deleted_at ? "" : `<button class="btn btn-mini" onclick="wbKeyAction('toggle','${k.id}')">${k.enabled ? "停用" : "启用"}</button> `}
-        <button class="btn btn-mini btn-danger" onclick="wbKeyAction('delete','${k.id}')">删除</button>
-      </td>
-    </tr>`).join("") || '<tr><td colspan="6" class="muted">暂无 Key，先在下方生成</td></tr>';
-  const usgRows = ((usg && usg.rows) || []).slice(0, 30).map((u) => `
-    <tr>
-      <td class="mono">${new Date(u.ts).toLocaleString()}</td>
-      <td class="mono">${esc(u.model || "")}</td>
-      <td>${u.realm === "cn" ? "国内" : "国际"}</td>
-      <td>${esc(u.key_name || "")}</td>
-      <td class="mono">${esc(u.account || "")}</td>
-      <td>${u.in_tokens || 0}</td>
-      <td>${u.out_tokens || 0}</td>
-      <td>${Number(u.credits || 0).toFixed(3)}</td>
-      <td>${esc(u.status || "")}</td>
-      <td>${u.ms || 0}ms</td>
-    </tr>`).join("") || '<tr><td colspan="10" class="muted">暂无请求流水（自开启网关后记录）</td></tr>';
-  $("wbBody").innerHTML = `
-    <div class="stat-grid">
-      <div class="stat-card"><div class="stat-k">今日请求</div><div class="stat-v">${day.requests || 0}</div></div>
-      <div class="stat-card"><div class="stat-k">今日 Token（入/出）</div><div class="stat-v" style="font-size:13px">${(day.token_in || 0).toLocaleString()} / ${(day.token_out || 0).toLocaleString()}</div></div>
-      <div class="stat-card"><div class="stat-k">今日积分（估算）</div><div class="stat-v">${Number(day.credits || 0).toFixed(2)}</div></div>
-      <div class="stat-card"><div class="stat-k">可用账号</div><div class="stat-v" style="font-size:13px">国际 ${acc.intl.ready}/${acc.intl.total} · 国内 ${acc.cn.ready}/${acc.cn.total}</div></div>
-    </div>
-
-    <div class="settings-group">
-      <header>账号（WorkBuddy 签到账号）<span class="muted" style="font-weight:400">只读联动 · 管理在签到页账号列表 WorkBuddy 分组</span></header>
-      <div style="padding:4px 14px 10px">${accRows}</div>
-    </div>
-
-    <div class="settings-group">
-      <header>网关配置</header>
-      <div class="setting-row">
-        <div><div class="setting-label">启用网关</div><div class="setting-desc">开启后 /app/checkin/v1/* 接受合法 Key 请求并转发上游</div></div>
-        <label class="switch"><input type="checkbox" id="wbEnabled" ${cfg && cfg.enabled ? "checked" : ""}><span class="track"></span></label>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">默认区域</div><div class="setting-desc">模型无法判定区域时的回退（x-wb-realm 请求头可覆盖）</div></div>
-        <select class="input" id="wbRealm" style="max-width:150px">
-          <option value="intl" ${cfg && cfg.default_realm === "cn" ? "" : "selected"}>国际版（workbuddy.ai）</option>
-          <option value="cn" ${cfg && cfg.default_realm === "cn" ? "selected" : ""}>国内版（copilot.tencent.com）</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">护栏开关</div><div class="setting-desc">4 组限额护栏统一开关</div></div>
-        <label class="switch"><input type="checkbox" id="wbLimitsEnabled" ${lim.enabled ? "checked" : ""}><span class="track"></span></label>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">保留积分</div><div class="setting-desc">账号余额低于该值时停止调度该账号（本地 0 点解封）</div></div>
-        <input class="input mono" id="wbReserve" type="number" min="0" value="${lim.reserve_credits || 0}" style="max-width:110px">
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">每日 Token 上限</div><div class="setting-desc">全池每日入+出总 Token，0 = 不限</div></div>
-        <input class="input mono" id="wbDailyToken" type="number" min="0" value="${lim.daily_token_limit || 0}" style="max-width:130px">
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">每日积分上限</div><div class="setting-desc">全池每日估算积分消耗，0 = 不限</div></div>
-        <input class="input mono" id="wbDailyCredit" type="number" min="0" value="${lim.daily_credit_limit || 0}" style="max-width:130px">
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">模型每日 Token 上限</div><div class="setting-desc">按单个模型每日 Token，0 = 不限</div></div>
-        <input class="input mono" id="wbModelToken" type="number" min="0" value="${lim.model_daily_token_limit || 0}" style="max-width:130px">
-      </div>
-      <div class="setting-row">
-        <span class="muted" id="wbCfgState"></span>
-        <button class="btn primary" id="wbSaveBtn" onclick="wbSaveConfig()">保存配置</button>
-      </div>
-    </div>
-
-    <div class="settings-group">
-      <header>API Key 管理</header>
-      <div class="setting-row" style="flex-wrap:wrap;gap:8px">
-        <input class="input" id="wbKeyName" placeholder="Key 名称（如 批量）" style="max-width:130px">
-        <input class="input mono" id="wbKeyInput" placeholder="自定义 Key（留空自动生成）" style="max-width:220px">
-        <select class="input" id="wbKeyRealm" style="max-width:110px">
-          <option value="">不限区域</option><option value="intl">仅国际</option><option value="cn">仅国内</option>
-        </select>
-        <input class="input mono" id="wbKeyModels" placeholder="模型限制，逗号分隔（* 通配）" style="max-width:200px">
-        <button class="btn btn-mini" onclick="wbCreateKey()">生成 Key</button>
-      </div>
-      <div id="wbNewKeyOut"></div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
-        <thead><tr style="text-align:left;color:var(--muted)"><th style="padding:4px 6px">名称</th><th style="padding:4px 6px">Key</th><th style="padding:4px 6px">区域</th><th style="padding:4px 6px">模型限制</th><th style="padding:4px 6px">状态</th><th style="padding:4px 6px">操作</th></tr></thead>
-        <tbody>${keyRows}</tbody>
-      </table>
-    </div>
-
-    <div class="settings-group">
-      <header>用量大表 <span class="muted" style="font-weight:400">（OpenRouter 价估算见模型目录；积分消耗为本地估算）</span></header>
-      <div style="overflow:auto;max-height:320px">
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="text-align:left;color:var(--muted);position:sticky;top:0;background:var(--bg,#fff)"><th style="padding:4px 6px">时间</th><th style="padding:4px 6px">模型</th><th style="padding:4px 6px">区域</th><th style="padding:4px 6px">Key</th><th style="padding:4px 6px">账号</th><th style="padding:4px 6px">入 tok</th><th style="padding:4px 6px">出 tok</th><th style="padding:4px 6px">积分</th><th style="padding:4px 6px">状态</th><th style="padding:4px 6px">耗时</th></tr></thead>
-          <tbody>${usgRows}</tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="settings-group">
-      <header>连通性测试</header>
-      <div class="setting-row">
-        <select class="input" id="wbTestModel" style="max-width:260px">${modelOpts}</select>
-        <button class="btn btn-mini" onclick="wbTestConnect()">发送最小请求验证</button>
-        <span class="muted" id="wbTestOut"></span>
-      </div>
-      <div class="muted" style="font-size:12px;margin-top:6px">
-        网关端点：基础地址 <span class="mono">/app/checkin</span> + <span class="mono">/v1/chat/completions</span>｜
-        OpenRouter-Codex/Cherry 等客户端 base_url 填 <span class="mono">https://&lt;NAS&gt;/app/checkin/v1</span>，
-        在 Key 一栏填下方生成的 Key，模型选 <span class="mono">deepseek-v4.1-flash</span>（国际）或 <span class="mono">glm-5.1</span>（国内）。
-      </div>
-    </div>`;
-}
-
-async function wbSaveConfig() {
-  const body = {
-    enabled: $("wbEnabled").checked,
-    default_realm: $("wbRealm").value,
-    limits: {
-      enabled: $("wbLimitsEnabled").checked,
-      reserve_credits: Number($("wbReserve").value) || 0,
-      daily_token_limit: Number($("wbDailyToken").value) || 0,
-      daily_credit_limit: Number($("wbDailyCredit").value) || 0,
-      model_daily_token_limit: Number($("wbModelToken").value) || 0,
-    },
-  };
-  const r = await call("checkin/wb/config", "POST", body);
-  const st = $("wbCfgState");
-  if (r && r.success) { st.textContent = "✓ 已保存"; st.className = ""; refreshWbPanel(); }
-  else { st.textContent = "保存失败：" + ((r && r.message) || "未知错误"); st.className = "err"; }
-}
-
-async function wbCreateKey() {
-  const out = $("wbNewKeyOut");
-  out.innerHTML = "";
-  const r = await call("checkin/wb/keys", "POST", {
-    action: "create",
-    name: $("wbKeyName").value,
-    key: $("wbKeyInput").value,
-    realm: $("wbKeyRealm").value,
-    models: $("wbKeyModels").value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
-  });
-  if (!(r && r.success)) { out.innerHTML = `<span class="err">创建失败：${esc((r && r.message) || "未知错误")}</span>`; return; }
-  const created = r.data.keys[0];
-  // 明文只在此刻展示一次（后端不再回吐明文）
-  const plain = created && !created.deleted_at && created.key_created_plain;
-  out.innerHTML = `${plain ? `<div class="setting-row" style="border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:6px 8px"><div><div class="setting-label">新 Key（仅本次显示，请立即复制）</div><div class="mono" style="word-break:break-all">${esc(plain)}</div></div></div>` : ""}<span class="muted" style="font-size:12px">${esc(created.name)} 已${created.deleted_at ? "无" : "创建"}（${esc(created.key_masked)}）</span>`;
-  $("wbKeyName").value = ""; $("wbKeyInput").value = "";
-  refreshWbPanel();
-}
-
-async function wbKeyAction(action, id) {
-  const r = await call("checkin/wb/keys", "POST", { action, id });
-  if (r && r.success) refreshWbPanel();
-  else toast((r && r.message) || "操作失败", "err");
-}
-
-async function wbTestConnect() {
-  const out = $("wbTestOut");
-  if (!out) return;
-  out.textContent = "测试中…";
-  const r = await call("checkin/wb/test", "POST", { model: ($("wbTestModel") || {}).value || "deepseek-v4.1-flash" });
-  out.textContent = (r && r.success) ? "✓ " + (r.message || "正常") : "✗ " + ((r && r.message) || "失败");
-  out.className = (r && r.success) ? "" : "err";
-}
-
-/** 看板账号区「去配置」→ 切到签到页并激活 WorkBuddy 分组（该分组 tab 高亮） */
-function goConfigWbAccounts() {
-  document.querySelectorAll(".nav button").forEach((x) => x.classList.remove("active"));
-  const navBtn = document.querySelector('.nav button[data-tab="sites"]');
-  if (navBtn) navBtn.classList.add("active");
-  $("pageTitle").textContent = TITLES.sites;
-  document.querySelectorAll(".content > section").forEach((s) => (s.hidden = true));
-  const sec = $("tab-sites");
-  if (sec) sec.hidden = false;
-  ACCT_TAB = Math.max(0, ACCT_GROUPS.findIndex((g) => g.keys.indexOf("workbuddy") >= 0));
-  renderAccountList();
-  const head = $("acctSection");
-  if (head) head.scrollIntoView({ behavior: "smooth", block: "start" });
-}
 
 /* ── 初始化 ── */
 ["cfgEnabled", "cfgCron", "cfgRetry", "cfgNotify", "cfgWebhook", "cfgProxyEnabled", "cfgProxyUrl"].forEach((id) => {
