@@ -116,142 +116,6 @@ function isTurnstileRequired(message) {
   const t = String(message || "").toLowerCase();
   return TURNSTILE_MARKERS.some((m) => t.includes(m.toLowerCase()));
 }
-
-/* ── FLZT ─────────────────────────────────────────────────── */
-const FLZT = {
-  key: "flzt",
-  name: "FLZT",
-  short: "FL",
-  mode: "账号密码",
-  // login_caps：登录能力声明（前端「添加账号」窗口据此动态渲染 tab；优先序 qr > password > cookie）
-  // password：账号密码直登；password_cookie：登录后自动产出会话（token/cookie）并落库，无需手填
-  login_caps: ["password", "password_cookie"],
-  desc: "flzt.club · 账号密码登录后调用签到 API",
-  fields: [
-    { key: "email", label: "账号 / 邮箱", type: "text", ph: "name@example.com" },
-    { key: "password", label: "密码", type: "password", ph: "输入新密码（留空不改）" },
-  ],
-  base: "https://flzt.club",
-  loginPath: "/api/v1/passport/auth/login",
-  checkinPath: "/api/v1/user/checkIn",
-  // 英雄大数字（当前持有量）：只读查询「可转换流量」（签到累计所得、可转换的流量，见 _queryHold），
-  // 语义与标签「可转换流量」一致；查询不可用时回落签到响应里的 total_checkin_traffic（累计签到流量）。
-  holdLabel: "可转换流量",
-  fmtHold(v) { return fmtTraffic(v); },
-
-  defaultConfig() {
-    return { enabled: false, use_proxy: false, email: "", password: "" };
-  },
-  isConfigured(cfg) {
-    return !!(cfg && cfg.email && cfg.password);
-  },
-  getAccountLabel(cfg) {
-    return maskEmail(cfg && cfg.email);
-  },
-
-  async _login(cfg) {
-    const s = new Session();
-    const r = await s.postJson(this.base + this.loginPath, { email: cfg.email, password: cfg.password }, { timeout: 15000, useProxy: cfg.use_proxy });
-    const j = parseJson(r.text);
-    if (!j || j.status !== "success" || !(j.data || {}).auth_data) {
-      throw new Error((j && j.message) || `FLZT 登录失败（HTTP ${r.status}）`);
-    }
-    return { s, token: j.data.auth_data };
-  },
-
-  /** 会话优先取 token：有效 session（type=token）直接用；否则登录 */
-  async _resolveToken(cfg) {
-    if (sessionValid(cfg) && cfg.session.type === "token" && cfg.session.token) {
-      return cfg.session.token;
-    }
-    const { token } = await this._login(cfg);
-    return token;
-  },
-
-  /**
-   * 只读查询「可转换流量」（hero 大数字源，绝不触发签到/写操作）。
-   * FLZT 为 V2Board/Xboard 面板，GET /api/v1/user/info 返回 checkin_reward_traffic
-   *（累计签到所得、可转换的流量，单位 bytes）——即前端「可转换流量：N GB」的数据源
-   *（真机只读探测校准：checkin_reward_traffic=190684557803 ≈ 177.59 GB，与页面一致）。
-   * 注意：不再用 getSubscribe 的 transfer_enable-(u+d)（那是套餐剩余总量，会算出上万 GB 的错值）。
-   * 字段缺失/非有限值 → 返回 null（hero 显示「—」）。纯 GET 只读，异常一律吞掉，
-   * 绝不影响测试连接 / 签到结果；响应内含 token 的字段（如订阅 URL）从不输出。
-   */
-  async _queryHold(cfg, token) {
-    try {
-      const s = new Session();
-      const r = await s.get(this.base + "/api/v1/user/info", {
-        headers: { authorization: token, Accept: "application/json, text/plain, */*" },
-        timeout: 15000, useProxy: cfg.use_proxy,
-      });
-      const j = parseJson(r.text);
-      const d = j && j.data ? j.data : null;
-      if (!d) return null;
-      const convertible = Number(d.checkin_reward_traffic); // 可转换流量（bytes），与 fmtHold=fmtTraffic 口径一致
-      return Number.isFinite(convertible) ? Math.max(0, convertible) : null;
-    } catch { return null; }
-  },
-
-  loginFlow: {
-    mode: "form",
-    desc: "账号密码自动登录产出会话（authorization token）",
-    async init(cfg) {
-      const { token } = await FLZT._login(cfg);
-      return {
-        mode: "form",
-        status: "ready",
-        session: { type: "token", token },
-        account_label: FLZT.getAccountLabel(cfg),
-        message: "登录成功",
-      };
-    },
-  },
-
-  async runCheckin(cfg) {
-    const token = await this._resolveToken(cfg);
-    const s = new Session();
-    const r = await s.get(this.base + this.checkinPath, {
-      headers: { authorization: token, Accept: "application/json, text/plain, */*" },
-      timeout: 15000, useProxy: cfg.use_proxy,
-    });
-    const j = parseJson(r.text);
-    if (!j || !["success", "fail"].includes(j.status)) {
-      throw new Error((j && j.message) || "FLZT 签到返回异常");
-    }
-    const message = j.message || "";
-    const data = j.data || {};
-    const reward = String(data.reward_mb || data.reward || "0");
-    // 当天奖励累计源（server 侧按 status==="签到成功" 累计）：本次签到获得的流量，单位 MB
-    const rewardVal = Number(data.reward_mb || data.reward || 0);
-    const total = fmtTraffic(data.total_checkin_traffic);
-    // 当前持有量（hero 大数字源）：优先只读查询「可转换流量」（与 testConnection 同源，语义匹配「可转换流量」）；
-    // 查询失败/字段缺失时回落累计签到流量 total_checkin_traffic（保证首签后 hero 始终有值，绝不回退到「—」）。
-    const liveHold = await this._queryHold(cfg, token);
-    const fallbackHold = Number.isFinite(Number(data.total_checkin_traffic)) ? Number(data.total_checkin_traffic) : null;
-    const holdVal = (liveHold != null) ? liveHold : fallbackHold;
-
-    if (j.status === "success") {
-      return this._ok("签到成功", message || "签到成功", reward, total, cfg, rewardVal, "MB", holdVal);
-    }
-    if (isAlreadyCheckedIn(message)) {
-      return this._ok("今日已签到", message, reward, total, cfg, rewardVal, "MB", holdVal);
-    }
-    throw new Error(message || "签到失败");
-  },
-
-  async testConnection(cfg) {
-    const token = await this._resolveToken(cfg); // 仅验证凭据可换取有效 token；不再回显 token 前缀（B11）
-    const hold = await this._queryHold(cfg, token); // 只读查询可转换流量供 hero 快照（失败/无字段 → null → 「—」）
-    return { site: this.key, site_name: this.name, message: "登录测试成功，凭据有效（token 鉴权已确认）", hold_value: hold };
-  },
-
-  // reward_value/reward_unit：结构化当天奖励（数值+单位），server 侧当天累计用；不影响 history/points（仍读 reward 字符串）
-  // hold_value：当前持有量原始值（total_checkin_traffic），server 侧快照进 acc.hold 供 hero 大数字展示
-  _ok(status, message, reward, total, cfg, rewardVal, rewardUnit, holdVal) {
-    return { site: this.key, site_name: this.name, status, message, reward, total, account: this.getAccountLabel(cfg), time: now(), reward_value: Number(rewardVal) || 0, reward_unit: rewardUnit || "", hold_value: (holdVal == null ? null : Number(holdVal)) };
-  },
-};
-
 /* ── 恩山无线论坛 ─────────────────────────────────────────── */
 const RIGHT_FORUM = {
   key: "right_forum",
@@ -781,7 +645,6 @@ const YPOJIE = {
 };
 
 module.exports = {
-  FLZT,
   RIGHT_FORUM,
   YPOJIE,
   isAlreadyCheckedIn,
@@ -789,5 +652,5 @@ module.exports = {
   maskEmail,
   maskSecret,
   // ADAPTERS 单一事实源：store.js / server.js 均从这里导入，禁止各自维护拷贝
-  ADAPTERS: { ypojie: YPOJIE, right_forum: RIGHT_FORUM, flzt: FLZT },
+  ADAPTERS: { ypojie: YPOJIE, right_forum: RIGHT_FORUM },
 };

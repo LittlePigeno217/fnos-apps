@@ -1,6 +1,6 @@
 # 自用签到（checkin）— fnOS 应用
 
-自用站点统一签到：**FLZT**（账号密码）、**恩山无线论坛**（Cookie）、**易破解**（账号密码）。
+自用站点统一签到：**恩山无线论坛**（Cookie）、**易破解**（账号密码）。
 核心能力移植自 [MoviePilot-Plugins/plugins/checkin](https://github.com/LittlePigeno217/MoviePilot-Plugins) v1.7.0 与 [anyrouter-check-in](https://github.com/LittlePigeno217/anyrouter-check-in)。
 
 仓库路径：`apps/checkin/`（结构对齐 p115assistant，热更新机制同源）。

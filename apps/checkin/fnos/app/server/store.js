@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "2.1.5",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "2.1.6",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -159,12 +159,12 @@ class Store {
         // daily_gain_date：累计所在本地日期（YYYY-MM-DD）。旧文件无此字段 → 0 / null。
         daily_gain: Number.isFinite(Number(a.daily_gain)) ? Math.max(0, Number(a.daily_gain)) : 0,
         daily_gain_date: (typeof a.daily_gain_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.daily_gain_date)) ? a.daily_gain_date : null,
-        // daily_reward：当日累计签到奖励（flzt/right_forum/ypojie，≥0，0 点归零）+ 单位 + 所在本地日期。
+        // daily_reward：当日累计签到奖励（right_forum/ypojie，≥0，0 点归零）+ 单位 + 所在本地日期。
         // 旧文件无此字段 → 0 / "" / null（1.7.7 起写入，纳入白名单避免重启/编辑后当天累计文案丢失）。
         daily_reward: Number.isFinite(Number(a.daily_reward)) ? Math.max(0, Number(a.daily_reward)) : 0,
         daily_reward_unit: typeof a.daily_reward_unit === "string" ? a.daily_reward_unit : "",
         daily_reward_date: (typeof a.daily_reward_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.daily_reward_date)) ? a.daily_reward_date : null,
-        // hold：当前持有量快照（hero 大数字，非余额系 flzt 流量 / ypojie 积分）。旧文件无此字段 → null。
+        // hold：当前持有量快照（hero 大数字，非余额系 ypojie 积分）。旧文件无此字段 → null。
         hold: (a.hold === null || a.hold === undefined || a.hold === "") ? null : Number(a.hold),
         hold_ts: Number(a.hold_ts) || 0,
         // signin_skip：站点签到需人机验证（Turnstile）标记。

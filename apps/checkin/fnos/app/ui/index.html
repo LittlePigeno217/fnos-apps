@@ -458,7 +458,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.1.5</span>
+      <span class="ver" id="appVersion">v2.1.6</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -837,9 +837,9 @@ function renderSiteCards(serverSites) {
 }
 
 /* 账号列表分组。
- * 「其他站点」显式含 flzt/right_forum(恩山)/ypojie，并兜底收纳任何未归入前两组的站点，避免账号漏显。 */
+ * 「其他站点」显式含 right_forum(恩山)/ypojie，并兜底收纳未归入的站点，避免账号漏显。 */
 const ACCT_GROUPS = [
-  { title: "其他站点", keys: ["flzt", "right_forum", "ypojie"] },
+  { title: "其他站点", keys: ["right_forum", "ypojie"] },
 ];
 
 /* 当前激活的分组标签索引（ACCT_GROUPS 下标）。切换 tab 即切换渲染，无需重新请求。 */
@@ -1956,7 +1956,7 @@ function histReward(rec) {
   }
   const rw = String(rec.reward || "");
   if (rw && rw !== "-" && rw !== "0" && rw !== "+0") {
-    return (rw[0] === "+" || rw[0] === "-" ? "" : "+") + rw + (rec.site === "flzt" ? " MB" : "");
+    return (rw[0] === "+" || rw[0] === "-" ? "" : "+") + rw;
   }
   return "";
 }

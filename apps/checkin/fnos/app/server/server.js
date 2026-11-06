@@ -359,7 +359,7 @@ class Server {
             if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
             const r = await adapter.runCheckin(acc);
             await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
-            this._accumDailyReward(adapter, acc, r); // 当天签到奖励累计（flzt/right_forum/ypojie）（0 点重置）
+            this._accumDailyReward(adapter, acc, r); // 当天签到奖励累计（right_forum/ypojie）（0 点重置）
             this._snapshotHold(adapter, acc, r); // 非余额系当前持有量快照（hero 大数字，复用响应字段不触网）
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
             this._store.schedCheckinSuccess(key, acc.id); // B18：签到成功即从今日失败集移除（补签列表翻转）
@@ -520,7 +520,7 @@ class Server {
       this._applySiteProxy(site, acc); // 站点级 use_proxy 兜底注入（内存合并，save 前还原）
       const r = await adapter.testConnection(acc);
       await this._snapshotBalance(adapter, acc); // 测试连接成功后刷新余额快照（失败不致命）
-      this._snapshotHold(adapter, acc, r); // 非余额系（flzt/ypojie）测试连接带回 hold_value 时快照进 acc.hold（hero 大数字）；此处 acc 已按 site+account_id 定位，纯平台无账号测试不会走到这里
+      this._snapshotHold(adapter, acc, r); // 非余额系（ypojie）测试连接带回 hold_value 时快照进 acc.hold（hero 大数字）；此处 acc 已按 site+account_id 定位，纯平台无账号测试不会走到这里
       // testConnection 内部 _billingDo 401 续期同样只回写内存 session；_snapshotBalance 仅在余额查询
       // 成功时 save，查询失败则续期丢失。此处补一次落盘兜底（同类缺口），save 失败不阻断测试结果。
       // 1.8.3：测试连接成功 = 人工已在浏览器过验证并更新 Cookie → 清除「需人机验证」跳过标记（复位）
@@ -575,9 +575,9 @@ class Server {
   }
 
   /**
-   * 当天签到奖励累计（flzt/right_forum/ypojie）：仿 daily_gain 的撞日归零机制。
+   * 当天签到奖励累计（right_forum/ypojie）：仿 daily_gain 的撞日归零机制。
    * 仅在本次为「签到成功」（首次成功）时累计——「今日已签到」重试不重复计（避免调度重试串账）。
-   * 累计源：adapter runCheckin 返回的 reward_value（数值）+ reward_unit（单位，如 flzt=MB）；
+   * 累计源：adapter runCheckin 返回的 reward_value（数值）+ reward_unit；
    *   无法解析（reward_value 非正数）→ 跳过。
    * 写入账号级 daily_reward（数值）+ daily_reward_unit（单位）+ daily_reward_date（撞日判定）；
    * 与后续 save() 一同落盘（调用方在 snapshotBalance 后、save 前调用）。异常吞掉，绝不影响签到结果。
@@ -585,7 +585,7 @@ class Server {
   _accumDailyReward(adapter, acc, r) {
     try {
       if (!adapter || !acc || !r) return;
-      if (!["flzt", "right_forum", "ypojie"].includes(adapter.key)) return;
+      if (!["right_forum", "ypojie"].includes(adapter.key)) return;
       if (r.status !== "签到成功") return; // 仅首次成功累计；已签到重试跳过
       const val = Number(r.reward_value);
       if (!Number.isFinite(val) || val <= 0) return; // 无结构化奖励 → 不累计
@@ -601,7 +601,7 @@ class Server {
   }
 
   /**
-   * 当前持有量快照（hero 大数字源）：非 queryBalance 系（flzt/ypojie 等声明 holdLabel 的 adapter）。
+   * 当前持有量快照（hero 大数字源）：非 queryBalance 系（right_forum/ypojie 等声明 holdLabel 的 adapter）。
    * 数据源为 runCheckin 结果里已带的 hold_value（复用签到/已签到响应已抓取字段，绝不新增触网）；
    * 有限数值 → 写入 acc.hold + acc.hold_ts；无值（null/NaN，如恩山无稳定持有量字段）→ 不写，
    * 前端 hero 大数字显示「—」。queryBalance 系走 balance 快照，此处不涉及。
@@ -849,13 +849,13 @@ class Server {
           // 昨日累计不跨天展示（今日未发生签到 → null 日期 → 0）。仅签到路径写入，数值非敏感。
           const rawDailyGain = Number.isFinite(Number(a.daily_gain)) ? Math.max(0, Number(a.daily_gain)) : 0;
           const dailyGain = (a.daily_gain_date === localDateStr()) ? rawDailyGain : 0;
-          // 当日签到奖励累计（daily_reward，0 点滚动）：flzt/right_forum/ypojie 专用，非余额系。
+          // 当日签到奖励累计（daily_reward，0 点滚动）：right_forum/ypojie 专用，非余额系。
           // daily_reward_date 非今天视为 0（昨日累计不跨天展示）。数值 + 单位（daily_reward_unit）非敏感。
           const rawDailyReward = Number.isFinite(Number(a.daily_reward)) ? Math.max(0, Number(a.daily_reward)) : 0;
           const dailyReward = (a.daily_reward_date === localDateStr()) ? rawDailyReward : 0;
           const dailyRewardUnit = a.daily_reward_unit || "";
           const fmt = (v) => (typeof adapter.fmtBalance === "function" ? adapter.fmtBalance(v) : String(v));
-          // 当前持有量（hero 大数字，非余额系）：acc.hold 由 _snapshotHold 写入（flzt 流量 / ypojie 积分）。
+          // 当前持有量（hero 大数字，非余额系）：acc.hold 由 _snapshotHold 写入（ypojie 积分）。
           // 声明 holdLabel 但无 queryBalance 的 adapter 走此路；恩山无稳定持有量字段 → hold 恒 null → 「—」。
           const hasHold = typeof adapter.holdLabel === "string" && typeof adapter.queryBalance !== "function";
           const rawHold = (a.hold === null || a.hold === undefined || a.hold === "") ? null : Number(a.hold);
@@ -897,12 +897,12 @@ class Server {
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
             daily_gain_display: "",
-            // 当天签到奖励累计展示（flzt/right_forum/ypojie）：+X 单位（如 "+50 MB"）；今日无 / 目标外站点 → 空
+            // 当天签到奖励累计展示（right_forum/ypojie）：+X 单位（如 "+50 MB"）；今日无 / 目标外站点 → 空
             daily_reward: dailyReward,
             daily_reward_unit: dailyRewardUnit,
-            daily_reward_display: (["flzt", "right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
+            daily_reward_display: (["right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
             // 统一英雄大数字（所有站点）：hero_display=当前持有量（空 → 前端「—」）；hero_delta_display=当天签到收益（>0 才有值）。
-            //   持有量系（flzt/ypojie/right_forum）：hero=hold + 当天 daily_reward。
+            //   持有量系（right_forum/ypojie）：hero=hold + 当天 daily_reward。
             ...(function () {
               if (supportsBalance) {
                 return {
@@ -915,7 +915,7 @@ class Server {
                 return {
                   hero_label: adapter.holdLabel,
                   hero_display: (rawHold != null && Number.isFinite(rawHold)) ? fmtHold(rawHold) : "",
-                  hero_delta_display: (["flzt", "right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
+                  hero_delta_display: (["right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
                 };
               }
               return { hero_label: "", hero_display: "", hero_delta_display: "" };
@@ -1033,7 +1033,7 @@ class Server {
 
   /* ── 阶段 2/4：交互登录（loginFlow）─────────────────────────────
    * 两种模式统一 {site}_login/{init,status}：
-   *   form（flzt/ypojie/anyrouter）：init 同步产出 session 写入账号，status 恒 ready（行为不回归）。
+   *   form（ypojie）：init 同步产出 session 写入账号，status 恒 ready（行为不回归）。
    *   qr（扫码站点）：init 建上游扫码会话 → 返回二维码 + token（不建账号）；
    *     前端轮询 status?token= → pending/expired/ready；ready 时自动建/更账号。tokens 绝不回吐/落日志。 */
 
@@ -1326,7 +1326,7 @@ class Server {
 /**
  * 从登录会话对象中宽容提取 cookie 串（用于账号密码登录后自动回填 cookie 字段）。
  * 命中：session.cookie（ypojie 型）/ session.headers.Cookie（anyrouter cookie 型）；
- * token 型会话（flzt/anyrouter token）无 cookie → 返回空串。
+ * token 型会话无 cookie → 返回空串。
  */
 function extractSessionCookie(session) {
   if (!session || typeof session !== "object") return "";
