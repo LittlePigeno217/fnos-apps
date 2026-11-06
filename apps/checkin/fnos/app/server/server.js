@@ -548,12 +548,12 @@ class Server {
   }
 
   /**
-   * 账号级余额快照：仅对声明了 queryBalance 的 adapter（workbuddy 积分 / anyrouter quota）生效。
+   * 账号级余额快照：仅对声明了 queryBalance 的 adapter（积分 / 余额类站点）生效。
    * 写入 acc.balance（原始数值）、acc.balance_delta（与上次快照差；无上次 → null）、acc.balance_ts。
-   * opts.from === "checkin"（签到成功路径）且 workbuddy 时累计当日新增积分 daily_gain：
+   * opts.from === "checkin"（签到成功路径）且为积分类站点时累计当日新增积分 daily_gain：
    *   先比对 daily_gain_date 与今天（本地日期，防 0 点滚动）——不同 → 归零重计；
    *   签到前后余额差值 gain = max(0, after_balance - before_balance) 累加（余额回落不冲减）。
-   * 非签到快照（test_login / 扫码建号等）不累计；非 workbuddy 站点不受影响。
+   * 非签到快照（test_login / 扫码建号等）不累计；非积分类站点不受影响。
    * 与 balance/delta 一同落盘（已有 _store.save）。任何异常都吞掉——余额取不到绝不影响签到/测试结果。
    * 凭据/token 绝不返回，仅存数值。
    */
@@ -572,8 +572,8 @@ class Server {
       acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
       acc.balance = next;
       acc.balance_ts = Date.now();
-      // 当日累计新增余额：workbuddy（积分）与 NewAPI 系（newapi 余额）签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
-      if (opts && opts.from === "checkin" && ["workbuddy", "newapi"].includes(adapter.key)) {
+      // 当日累计新增余额：积分类站点与 NewAPI 系（newapi 余额）签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
+      if (opts && opts.from === "checkin" && ["newapi"].includes(adapter.key)) {
         const today = localDateStr();
         if (acc.daily_gain_date !== today) {
           acc.daily_gain = 0;
@@ -597,7 +597,7 @@ class Server {
    * 非 NewAPI 系（flzt/right_forum/ypojie）当天签到奖励累计：仿 daily_gain 的撞日归零机制。
    * 仅在本次为「签到成功」（首次成功）时累计——「今日已签到」重试不重复计（避免调度重试串账）。
    * 累计源：adapter runCheckin 返回的 reward_value（数值）+ reward_unit（单位，如 flzt=MB）；
-   *   无法解析（reward_value 非正数）→ 跳过。workbuddy/NewAPI 系走 daily_gain（余额），此处不涉及。
+   *   无法解析（reward_value 非正数）→ 跳过。NewAPI 系走 daily_gain（余额），此处不涉及。
    * 写入账号级 daily_reward（数值）+ daily_reward_unit（单位）+ daily_reward_date（撞日判定）；
    * 与后续 save() 一同落盘（调用方在 snapshotBalance 后、save 前调用）。异常吞掉，绝不影响签到结果。
    */
@@ -623,7 +623,7 @@ class Server {
    * 当前持有量快照（hero 大数字源）：非 queryBalance 系（flzt/ypojie 等声明 holdLabel 的 adapter）。
    * 数据源为 runCheckin 结果里已带的 hold_value（复用签到/已签到响应已抓取字段，绝不新增触网）；
    * 有限数值 → 写入 acc.hold + acc.hold_ts；无值（null/NaN，如恩山无稳定持有量字段）→ 不写，
-   * 前端 hero 大数字显示「—」。queryBalance 系（workbuddy/newapi/anyrouter）走 balance 快照，此处不涉及。
+   * 前端 hero 大数字显示「—」。queryBalance 系（newapi/anyrouter）走 balance 快照，此处不涉及。
    * 与后续 save() 一同落盘。异常吞掉，绝不影响签到结果。
    */
   _snapshotHold(adapter, acc, r) {
@@ -790,7 +790,7 @@ class Server {
    * history 最新在前（Store.appendHistory 头插），每组取第一条（最新）的 site_name 与 last_time。
    * reward 单位因站而异（MB / 积分 / USD…），故 total_points 仅做粗略展示，
    * per-site 的 total_points 才是有效口径，不跨站换算。
-   * 累计口径：仅统计 workbuddy 站点（其余站点当前无真实积分），明细仍列出各站。
+   * 累计口径：全部站点 reward 合计（各站单位不同，仅粗略展示），明细仍列出各站。
    */
   points(window = 500) {
     const hist = this._store.getHistory(window) || [];
@@ -814,7 +814,7 @@ class Server {
         total_points: Number(g.sum.toFixed(4)), // 防浮点尾巴
         last_time: first.time || "",
       });
-      if (key === "workbuddy") totalPoints += g.sum; // 累计仅计 workbuddy
+      totalPoints += g.sum; // 累计全部站点
     }
     return ok({
       sites,
@@ -865,7 +865,7 @@ class Server {
           const rawBal = (a.balance == null) ? null : Number(a.balance);
           const rawDelta = (a.balance_delta == null) ? null : Number(a.balance_delta);
           // 当日累计新增积分（daily_gain，0 点滚动）：daily_gain_date 非今天视为 0——
-          // 昨日累计不跨天展示（今日未发生签到 → null 日期 → 0）。仅 workbuddy 签到路径写入，数值非敏感。
+          // 昨日累计不跨天展示（今日未发生签到 → null 日期 → 0）。仅签到路径写入，数值非敏感。
           const rawDailyGain = Number.isFinite(Number(a.daily_gain)) ? Math.max(0, Number(a.daily_gain)) : 0;
           const dailyGain = (a.daily_gain_date === localDateStr()) ? rawDailyGain : 0;
           // 当日签到奖励累计（daily_reward，0 点滚动）：flzt/right_forum/ypojie 专用，非余额系。
@@ -911,7 +911,7 @@ class Server {
             balance_display: (supportsBalance && rawBal != null) ? fmt(rawBal) : "",
             balance_delta_display: (supportsBalance && rawDelta != null && rawDelta !== 0)
               ? ((rawDelta > 0 ? "+" : "") + fmt(rawDelta)) : "",
-            // 当日累计新增余额：数值为今日生效值（日期非今天 → 0）+ workbuddy/NewAPI 系展示串（+N；0 → 空）
+            // 当日累计新增余额：数值为今日生效值（日期非今天 → 0）+ NewAPI 系展示串（+N；0 → 空）
             auth_mode: (key === "newapi" && a)
               ? (a.access_token ? "token" : ((a.cookie || a.cookies) ? "cookie" : ((a.username || a.email) ? "password" : "none")))
               : "",
@@ -919,20 +919,20 @@ class Server {
             auth: (key === "newapi") ? (a.auth || "") : "",
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
-            daily_gain_display: (supportsBalance && ["workbuddy", "newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+            daily_gain_display: (supportsBalance && ["newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
             // 当天签到奖励累计展示（flzt/right_forum/ypojie）：+X 单位（如 "+50 MB"）；今日无 / 目标外站点 → 空
             daily_reward: dailyReward,
             daily_reward_unit: dailyRewardUnit,
             daily_reward_display: (["flzt", "right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
             // 统一英雄大数字（所有站点）：hero_display=当前持有量（空 → 前端「—」）；hero_delta_display=当天签到收益（>0 才有值）。
-            //   余额系（workbuddy/newapi/anyrouter）：hero=balance + 当天 daily_gain；
+            //   余额系（newapi/anyrouter）：hero=balance + 当天 daily_gain；
             //   持有量系（flzt/ypojie/right_forum）：hero=hold + 当天 daily_reward。
             ...(function () {
               if (supportsBalance) {
                 return {
                   hero_label: adapter.balanceLabel || "余额",
                   hero_display: (rawBal != null) ? fmt(rawBal) : "",
-                  hero_delta_display: (["workbuddy", "newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+                  hero_delta_display: (["newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
                 };
               }
               if (hasHold) {
@@ -1058,7 +1058,7 @@ class Server {
   /* ── 阶段 2/4：交互登录（loginFlow）─────────────────────────────
    * 两种模式统一 {site}_login/{init,status}：
    *   form（flzt/ypojie/anyrouter）：init 同步产出 session 写入账号，status 恒 ready（行为不回归）。
-   *   qr（workbuddy）：init 建上游扫码会话 → 返回二维码 + token（不建账号）；
+   *   qr（扫码站点）：init 建上游扫码会话 → 返回二维码 + token（不建账号）；
    *     前端轮询 status?token= → pending/expired/ready；ready 时自动建/更账号。tokens 绝不回吐/落日志。 */
 
   /** 触发交互登录：form 模式写入账号 session；qr 模式建扫码会话并回二维码 */

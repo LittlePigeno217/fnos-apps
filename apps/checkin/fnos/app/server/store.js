@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "2.1.3",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "2.1.4",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -158,7 +158,7 @@ class Store {
         // session：登录产物（token/cookie），旧文件无此字段自动补 null（不强制清理）
         session: (a.session && typeof a.session === "object") ? a.session : null,
         session_ts: Number(a.session_ts) || 0,
-        // balance：账号级余额快照（workbuddy 积分 / anyrouter quota）。旧文件无此字段 → null；
+        // balance：账号级余额快照（积分 / 余额类站点）。旧文件无此字段 → null；
         // balance_delta：与上次快照的差值（无上次 → null）；balance_ts：快照时间戳（毫秒）。
         balance: (a.balance === null || a.balance === undefined || a.balance === "") ? null : Number(a.balance),
         balance_delta: (a.balance_delta === null || a.balance_delta === undefined || a.balance_delta === "") ? null : Number(a.balance_delta),
