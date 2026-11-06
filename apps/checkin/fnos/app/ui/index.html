@@ -275,7 +275,7 @@
   .acct-section-head .c { font-size: 12px; color: var(--muted); }
   .acct-grid-global { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
   @media (max-width: 900px) { .acct-grid-global { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  /* 分组账号标签栏：NewApi / 其他站点，点击切换渲染该组账号（行云胶囊，选中态品牌渐变） */
+  /* 分组账号标签栏：按站点分组切换渲染（行云胶囊，选中态品牌渐变） */
   .acct-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 2px 14px; }
   .acct-tab { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px;
               border: 1px solid var(--border); border-radius: 999px; background: var(--card);
@@ -297,15 +297,15 @@
   /* 1.9.2：站点小图标 + 极小归属标签并入标题行（不再占独立行）；站点名由图标 tooltip / .nm 承载 */
   .acct-card-top .nm { flex: none; max-width: 76px; font-size: 10px; color: var(--muted); font-weight: 600;
                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* 1.6.2 迁至 1.9.2：NewAPI 系副标题平台地址链接（点击跳转平台） */
+  /* 1.6.2 迁至 1.9.2：副标题账号标识 */
   .acct-card-title a.nm-link { color: var(--accent, #2563eb); text-decoration: none; }
   .acct-card-title a.nm-link:hover { text-decoration: underline; }
-  /* 1.7.2：认证方式标签（NewAPI 系副标题行） */
+  /* 1.7.2：认证方式标签 */
   .auth-tag { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding: 0 6px;
               border-radius: 10px; font-size: 9.5px; line-height: 1.4; color: #9aa7b8;
               background: rgba(128, 138, 158, .12); white-space: nowrap; vertical-align: middle; }
   .auth-tag.warn { color: #e5484d; background: rgba(229, 72, 77, .10); }
-  /* 2.0.3：newapi 表单分组（登录认证 / 签到行为 / 平台）—— 仅 UI 归类，字段键/保存不变 */
+  /* 2.0.3：表单分组样式 */
   .np-grp { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 4px; margin-bottom: 10px; }
   .np-grp-h { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; letter-spacing: .02em;
     display: flex; align-items: center; gap: 6px; }
@@ -458,7 +458,7 @@
       </button>
     </nav>
     <div class="sidebar-foot">
-      <span class="ver" id="appVersion">v2.1.4</span>
+      <span class="ver" id="appVersion">v2.1.5</span>
       <button class="btn btn-mini" id="hotfixMiniBtn" onclick="hotfixMiniClick()" title="检查并应用功能更新（免 fpk）">检查功能更新</button>
     </div>
     <div class="sidebar-foot-status" id="hotfixMiniStatus" hidden></div>
@@ -700,33 +700,6 @@ function siteFields(key) {
   const m = getSiteMeta(key);
   return Array.isArray(m.fields) ? m.fields : [];
 }
-/** 1.9.5：newapi 表单 provider 联动——anyrouter/agentrouter → 平台地址固定域名 + 只读；
- *  newapi/custom → 可编辑（custom 必填、newapi 可空）。provSel/baseInp 为对应 <select>/<input>
- *  元素（编辑页 data-f / 添加页 id，由调用方定位后传入）。只操作 base_url，绝不触碰高级项 domain
- *  覆盖能力：已有自定义 domain 编辑时不被清空，选 anyrouter/agentrouter 仅令 base_url 显示固定值。 */
-function bindNewapiProviderLink(provSel, baseInp) {
-  if (!provSel || !baseInp) return;
-  const apply = () => {
-    const fixed = NEWAPI_FIXED_BASE[provSel.value];
-    if (fixed) {
-      if (baseInp.dataset.prevBase == null) baseInp.dataset.prevBase = baseInp.value; // 记住用户此前自填值
-      baseInp.value = fixed;
-      baseInp.readOnly = true;
-      baseInp.classList.add("input-locked");
-      baseInp.title = "该提供商平台地址固定，无需修改";
-    } else {
-      if (baseInp.readOnly && baseInp.dataset.prevBase != null) {
-        baseInp.value = baseInp.dataset.prevBase; // 从固定→可编辑：恢复自填值，避免残留固定域名
-      }
-      delete baseInp.dataset.prevBase;
-      baseInp.readOnly = false;
-      baseInp.classList.remove("input-locked");
-      baseInp.title = "";
-    }
-  };
-  provSel.addEventListener("change", apply);
-  apply(); // 初始态（编辑=账号现值 / 添加=首项 anyrouter）
-}
 /** 拆分基础字段 / 高级字段（f.group==="advanced"）：高级项折叠进「服务商高级配置」区（1.9.0） */
 function siteFieldsSplit(key) {
   const all = siteFields(key);
@@ -753,57 +726,6 @@ function clearAdvancedConfig(btn) {
   if (!box) return;
   box.querySelectorAll("input").forEach((i) => { if (!i.readOnly) i.value = ""; });
   box.querySelectorAll("select").forEach((s) => { s.selectedIndex = 0; });
-}
-/** 2.0.7：newapi 表单引导式重构——「第一步·选平台 / 第二步·登录方式 / 第三步·签到设置 / 平台高级」。
- *  分组依据后端字段 grp/auth 元数据；fieldRow(f)=>html 由调用方提供（add: id=addck_ / edit: data-f=）。
- *  三种登录方式（cookie/token/password）单选联动，未选给引导提示；平台高级仍走折叠+清除区。
- *  纯 UI 编排：字段键、采集与保存语义完全不变（旧账号零迁移即可编辑）。 */
-function newapiGroupedFormHtml(fieldRow, advOpen) {
-  const fields = siteFields("newapi");
-  const rowsWhere = (pred) => fields.filter(pred).map(fieldRow).join("");
-  const auth = (m) => rowsWhere((f) => f.grp === "auth" && f.auth === m);
-  const step = (n, title, sub, body) =>
-    '<div class="np-grp"><div class="np-grp-h"><span class="np-step">' + n + '</span>' + title + '</div>' +
-      (sub ? '<div class="np-grp-sub">' + sub + '</div>' : '') + body + '</div>';
-  const platformGroup = step(1, "选平台", "先选你要签到的站点；AnyRouter / AgentRouter 网址已内置，其它站点请填网址。",
-    rowsWhere((f) => f.grp === "platform") +
-    advancedSectionHtml(rowsWhere((f) => f.grp === "platform-adv"), advOpen));
-  const authGroup = step(2, "登录方式", "三选一即可：网页 Cookie 最省事，账号密码要没验证码的站点，系统访问令牌最稳。",
-    '<div class="np-auth-tabs" data-np-authtabs>' +
-      '<button type="button" class="np-auth-tab" data-m="cookie">网页 Cookie</button>' +
-      '<button type="button" class="np-auth-tab" data-m="token">系统访问令牌</button>' +
-      '<button type="button" class="np-auth-tab" data-m="password">账号密码</button>' +
-    '</div>' +
-    '<div class="np-auth-hint" data-np-authhint>点上面一种方式，再填对应的凭据</div>' +
-    '<div class="np-auth-panel" data-authgrp="cookie" hidden>' + auth("cookie") + '</div>' +
-    '<div class="np-auth-panel" data-authgrp="token" hidden>' + auth("token") + '</div>' +
-    '<div class="np-auth-panel" data-authgrp="password" hidden>' + auth("password") + '</div>');
-  const signinGroup = step(3, "签到设置", "一般全默认即可，改了站点或要单独走代理时再调。",
-    rowsWhere((f) => f.grp === "signin"));
-  return platformGroup + authGroup + signinGroup;
-}
-/** 登录认证组三态联动：选中某方式 → 仅显示该组凭据字段、高亮该 tab、隐藏提示；未选 → 全隐藏并提示。
- *  隐藏用 hidden 属性（输入仍在 DOM，保存时照常采集 → 保存语义零变化）。root 为含表单的容器元素。 */
-function bindNewapiAuthGroups(root, initialMethod) {
-  if (!root) return;
-  const tabs = root.querySelector("[data-np-authtabs]");
-  if (!tabs) return;
-  const hint = root.querySelector("[data-np-authhint]");
-  const panels = Array.prototype.slice.call(root.querySelectorAll("[data-authgrp]"));
-  const btns = Array.prototype.slice.call(tabs.querySelectorAll(".np-auth-tab"));
-  const show = (m) => {
-    panels.forEach((p) => { p.hidden = p.getAttribute("data-authgrp") !== m; });
-    btns.forEach((b) => b.classList.toggle("active", b.getAttribute("data-m") === m));
-    if (hint) hint.hidden = !!m;
-    tabs.dataset.method = m || ""; // 2.0.4：记录当前所选认证方式，保存时读取写入账号 auth 字段
-  };
-  btns.forEach((b) => b.addEventListener("click", () => show(b.getAttribute("data-m"))));
-  show(initialMethod || "");
-}
-/** 2.0.4：读取容器内 newapi 认证组当前所选方式（cookie|token|password）；未选返回 ""。 */
-function newapiSelectedAuth(root) {
-  const tabs = root && root.querySelector("[data-np-authtabs]");
-  return (tabs && tabs.dataset.method) || "";
 }
 function siteShort(key) {
   const m = getSiteMeta(key);
@@ -836,7 +758,7 @@ function siteLoginCaps(key) {
   return Array.isArray(m.login_caps) ? m.login_caps : [];
 }
 
-/* ── 站点代理开关列表：固定顺序（NewApi→其他站点，兜底收纳新站点），
+/* ── 站点代理开关列表：固定顺序（其他站点，兜底收纳新站点），
  *    开启某站点 = 该站点全部连接走全局代理（写入 sites.{site}.use_proxy）。数据源 get_config.sites。 */
 function proxySiteOrder(data) {
   const order = [];
@@ -894,50 +816,6 @@ async function refreshSiteTitles() {
   }
 }
 
-/* ── 1.9.5：newapi 账号标题 = 动态探测平台品牌名 → 自动写入账号备注 ──────
- * 标题渲染零改动（1.9.2 起 acctName = remark || label || 账号N，备注名优先）：
- * 对「备注为空 + base_url 可确定」的 newapi 系账号探测一次真实品牌名，成功即写备注。
- * 节流：成功写入即不再触发（备注已非空）；失败按会话内每账号计数，达上限不再重试。 */
-const NEWAPI_FIXED_BASE = { anyrouter: "https://anyrouter.top", agentrouter: "https://agentrouter.org" };
-const BRAND_PROBE = {};           // key:id → { tries, inflight, done }
-const BRAND_PROBE_MAX = 2;        // 会话内每账号最多失败尝试次数（成功即写备注不再触发）
-/** 账号卡渲染时调用（fire-and-forget，不阻塞渲染）：满足条件则触发一次品牌探测 */
-function maybeProbeBrand(key, a, baseUrl) {
-  if (key !== "newapi" || !a) return;
-  if (a.remark) return;                                   // 已有备注（探测已写 / 用户手填）→ 不覆盖
-  if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) return; // base_url 不可确定 → 不探测
-  const pk = key + ":" + (a.id || "");
-  const s = BRAND_PROBE[pk] || (BRAND_PROBE[pk] = { tries: 0, inflight: false, done: false });
-  if (s.done || s.inflight || s.tries >= BRAND_PROBE_MAX) return;
-  s.inflight = true;
-  probeBrandNow(key, a, baseUrl, s);
-}
-async function probeBrandNow(key, a, baseUrl, s) {
-  try {
-    const r = await call("checkin/fetch_brand?url=" + encodeURIComponent(baseUrl), "GET", null, 12000);
-    const brand = (r && r.success && r.data && r.data.brand) ? String(r.data.brand).trim() : "";
-    if (!brand) { s.tries += 1; return; }                 // 无品牌/超时/非平台页 → 计数，达上限不刷屏
-    const st = SITE_DATA[key] || {};
-    const accsAll = Array.isArray(st.accounts) ? st.accounts : [];
-    if (!accsAll.some((x) => String(x.id) === String(a.id))) { s.tries += 1; return; }
-    // 写备注落点：沿用现有账号保存通道（save_config）——目标账号 {id,remark}，其余仅 {id}（后端保留原字段）
-    const accounts = accsAll.map((x) => (String(x.id) === String(a.id) ? { id: x.id, remark: brand } : { id: x.id }));
-    const body = { sites: { [key]: { enabled: st.enabled === true, use_proxy: st.use_proxy === true, accounts } } };
-    const sr = await call("save_config", "POST", body);
-    if (sr && sr.success) {
-      a.remark = brand;        // 本地即时生效（标题渲染备注名优先，重渲染不再触发本账号探测）
-      s.done = true;
-      renderAccountList();
-    } else {
-      s.tries += 1;
-    }
-  } catch (e) {
-    s.tries += 1;
-  } finally {
-    s.inflight = false;
-  }
-}
-
 let SITE_DATA = {};
 let ACCT_DATA = {};   // checkin/accounts 派生：per-account has_session/last/points（脱敏）
 let LOGIN_CAPS = {};  // site -> bool，交互登录能力（探测 {site}_login/status 得出；登录方式 tab 由 login_caps 元数据驱动）
@@ -958,10 +836,9 @@ function renderSiteCards(serverSites) {
   renderAccountList();
 }
 
-/* 账号列表分组：固定 NewApi → 其他站点。
+/* 账号列表分组。
  * 「其他站点」显式含 flzt/right_forum(恩山)/ypojie，并兜底收纳任何未归入前两组的站点，避免账号漏显。 */
 const ACCT_GROUPS = [
-  { title: "NewApi", keys: ["newapi"] },
   { title: "其他站点", keys: ["flzt", "right_forum", "ypojie"] },
 ];
 
@@ -999,8 +876,8 @@ function acctGroupCards(keys) {
   return cards;
 }
 
-/* 分组账号标签页：两个 tab（NewApi / 其他站点）+ 内容区仅渲染激活组的 3 列卡片网格。
- * 卡片内容与站点总览解耦：标题备注优先、newapi/anyrouter 显示余额、其余站点无余额行，
+/* 分组账号标签页：按 ACCT_GROUPS 渲染 tab + 内容区仅渲染激活组的 3 列卡片网格。
+ * 卡片内容与站点总览解耦：标题备注优先、其余站点无余额行，
  * 会话/最后签到状态与登录/启停/测试/删除操作保留。切换 tab 仅切换渲染（accounts 数据已全量）。 */
 function renderAccountList() {
   const tabsEl = $("acctTabs");
@@ -1010,17 +887,18 @@ function renderAccountList() {
   const groupKeys = acctGroupKeys();
   const counts = groupKeys.map((keys) => acctGroupCards(keys).length);
   const total = counts.reduce((a, b) => a + b, 0);
-  // 默认激活：当前激活组为空则回退到第一个有账号的组（全空则 NewApi=0）
+  // 默认激活：当前激活组为空则回退到第一个有账号的组（全空则 0）
   if (!(counts[ACCT_TAB] > 0)) {
     const firstNonEmpty = counts.findIndex((c) => c > 0);
     ACCT_TAB = firstNonEmpty >= 0 ? firstNonEmpty : 0;
   }
   if (tabsEl) {
-    tabsEl.innerHTML = ACCT_GROUPS.map((g, i) =>
+    // 仅一组时不渲染标签栏（单 tab 无切换意义）
+    tabsEl.innerHTML = ACCT_GROUPS.length > 1 ? ACCT_GROUPS.map((g, i) =>
       '<button type="button" class="acct-tab' + (i === ACCT_TAB ? " active" : "") +
       '" role="tab" aria-selected="' + (i === ACCT_TAB ? "true" : "false") +
       '" onclick="switchAcctTab(' + i + ')">' + esc(g.title) +
-      '<span class="acct-tab-c">' + counts[i] + "</span></button>").join("");
+      '<span class="acct-tab-c">' + counts[i] + "</span></button>").join("") : "";
   }
   const cards = acctGroupCards(groupKeys[ACCT_TAB]);
   list.innerHTML = cards.length
@@ -1039,17 +917,6 @@ function switchAcctTab(i) {
   renderAccountList();
 }
 
-/** 认证方式标签（1.7.2 卡片重设计）：NewAPI 系副标题行展示当前凭据模式 */
-function authModeTag(m) {
-  const map = {
-    token: '<span class="auth-tag" title="已配置访问令牌（Bearer 认证）">🔑 访问令牌</span>',
-    cookie: '<span class="auth-tag" title="已配置手动 Cookie">🍪 Cookie</span>',
-    password: '<span class="auth-tag" title="已配置账号密码（签到现场登录）">👤 账密</span>',
-    none: '<span class="auth-tag warn" title="未配置任何凭据，签到会失败">⚠️ 未配置</span>',
-  };
-  return map[m] || "";
-}
-
 /** 单个账号卡（全局账号列表用，1.9.2 压缩版）：站点小图标 + 标题位=账号名 + 余额/积分 + 状态 + 操作。
  *  站点名由图标 tooltip / 标题行极小归属标签（.nm）承载；副标题仅在有价值时渲染（压缩高度）。 */
 // 英雄大数字图标：持有量语义为「流量」→ 数据/流量图标；其余（积分/余额/金币）→ 金币图标。
@@ -1064,41 +931,24 @@ function heroIcon(label) {
 function renderAcctCard(key, a, cap) {
   const d = acctDetail(key, a.id);
   const hasSession = d ? !!d.has_session : false;
-  let nmAuthTag = ""; // 1.7.2：NewAPI 系认证方式标签（无凭据/非 NewAPI 系为空）
-  // 1.9.2：标题位一律=「账号名称」（备注别名 → 账号标识 label → 「账号 N」），站点名不再占标题位——
+    // 1.9.2：标题位一律=「账号名称」（备注别名 → 账号标识 label → 「账号 N」），站点名不再占标题位——
   //   站点归属由标题行极小归属标签（.nm）+ 图标 tooltip 承载（压缩卡片高度）
   const acctLabel = a.label || (d && d.label) || "";
   const acctName = a.remark || acctLabel || ("账号 " + (a.id || ""));
   const title = acctName;
-  // newapi 账号可无 base_url（provider 驱动 anyrouter/agentrouter）→ 按 provider 推导平台 URL，副标题链接才可达
-  const provVal = (d && d.field_values && d.field_values.provider) || "";
-  const baseUrl = (d && d.field_values && d.field_values.base_url)
-    || (key === "newapi"
-      ? (provVal === "agentrouter" ? "https://agentrouter.org" : provVal === "anyrouter" ? "https://anyrouter.top" : "")
-      : "")
-    || "";
+  const baseUrl = (d && d.field_values && d.field_values.base_url) || "";
   const hostOf = (u) => {
     const m = String(u || "").match(/^https?:\/\/([^/]+)/i);
     return (m ? m[1] : String(u || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).trim();
   };
   const host = hostOf(baseUrl);
-  // 1.9.5：newapi 账号「备注为空 + base_url 可确定」→ 触发一次品牌探测 → 成功写备注（标题随之显示品牌名）
-  maybeProbeBrand(key, a, baseUrl);
-  // 副标题（仅有用时渲染，压缩高度）：备注账号 → 真实账号标识；NewAPI 无备注 → 平台地址（可点击跳转平台）
+  // 副标题（仅有用时渲染，压缩高度）：备注账号 → 真实账号标识
   let subLabel = "";
   if (a.remark) {
     subLabel = (acctLabel && acctLabel !== a.remark) ? acctLabel : "";
-  } else if (key === "newapi") {
-    nmAuthTag = authModeTag(d && d.auth_mode);
-    subLabel = host;
   }
-  const subHtml = (subLabel || nmAuthTag)
-    ? '<div class="sub">' +
-        (key === "newapi" && baseUrl
-          ? '<a class="nm-link" href="' + esc(baseUrl) + '" target="_blank" rel="noopener nofollow">' + esc(subLabel) + "</a>"
-          : esc(subLabel || "")) +
-        nmAuthTag +
-      "</div>"
+  const subHtml = subLabel
+    ? '<div class="sub">' + esc(subLabel || "") + "</div>"
     : "";
   const enabled = a.enabled !== false;
   const last = d ? d.last : null;
@@ -1134,8 +984,7 @@ function renderAcctCard(key, a, cap) {
   // F7-1：登录徽标接入交互登录弹窗——未配置/凭据已配置点击 → siteLogin(key, accountId)；
   // 已登录点击仅提示（无操作，避免误开登录流覆盖会话）；站点无交互登录能力不渲染徽标。
   let loginBadge = "";
-  // 1.6.8：NewAPI 合并站点不保持登录态（每次签到现场认证）→ 不显示登录状态徽标（无「已登录/凭据已配置/未配置」）
-  if (key !== "newapi" && (cap || hasSession)) {
+  if (cap || hasSession) {
     const badgeOn = ' onclick="badgeLoginAction(\'' + key + "','" + esc(a.id || "") + '\',' + (hasSession ? "true" : "false") + ')" style="cursor:pointer"';
     if (hasSession) {
       loginBadge = '<span class="login-badge on"' + badgeOn + '><span class="dot"></span>已登录</span>';
@@ -1357,7 +1206,7 @@ function renderAddTabs(key) {
   if (caps.includes("cookie")) tabs.push({ id: "cookie", label: "手动 Cookie" });
   if (!tabs.length) tabs.push({ id: "cookie", label: "手动配置" }); // 兜底
   const first = ADD_CTX.tab && tabs.some((t) => t.id === ADD_CTX.tab) ? ADD_CTX.tab : tabs[0].id;
-  // 1.6.5：仅一种登录方式时不渲染 tab 标签栏（如通用 NewAPI 只剩「手动 Cookie」→ 标签直接隐藏，内容直显）
+  // 1.6.5：仅一种登录方式时不渲染 tab 标签栏（如只剩「手动 Cookie」→ 标签直接隐藏，内容直显）
   $("addTabs").innerHTML = tabs.length > 1 ? tabs.map((t) =>
     '<button type="button" class="add-tab' + (t.id === first ? " active" : "") +
     '" onclick="switchAddTab(\'' + t.id + '\')">' + esc(t.label) + "</button>").join("") : "";
@@ -1558,8 +1407,7 @@ function renderAddCookiePanel(key) {
   const rows = basic.map(rowHtml).join("");
   const advRows = advancedSectionHtml(advanced.map(rowHtml).join(""));
   const isEnshan = key === "right_forum";
-  // 2.0.3：newapi 走分组表单（平台 / 登录认证三态联动 / 签到行为）；其余站点保持原有基础+高级渲染。
-  const bodyHtml = key === "newapi" ? newapiGroupedFormHtml(rowHtml) : (rows + advRows);
+  const bodyHtml = rows + advRows;
   $("addPanel").innerHTML =
     '<div class="add-panel-tip">' +
       (isEnshan ? "该站点无登录接口，请在浏览器登录后复制 Cookie 粘贴到下方。"
@@ -1570,12 +1418,6 @@ function renderAddCookiePanel(key) {
       '<input class="input" id="addck_remark" placeholder="用于区分多账号"></div>' +
     '<button type="button" class="btn primary" id="addckBtn" style="width:100%;margin-top:6px" onclick="submitAddCookie()">保存账号</button>' +
     '<div id="addckState" class="muted" style="font-size:12.5px;min-height:18px;margin-top:8px"></div>';
-  // 1.9.5：newapi provider 联动（添加页 id 定位）——首项默认 anyrouter → 平台地址固定+只读
-  // 2.0.3：登录认证三态联动（添加页未选任何方式 → 显示选择提示）
-  if (key === "newapi") {
-    bindNewapiProviderLink($("addck_provider"), $("addck_base_url"));
-    bindNewapiAuthGroups($("addPanel"), "");
-  }
 }
 
 /** 保存手动配置账号：合并进现有账号集（保留其它账号）后 save_config */
@@ -1589,12 +1431,6 @@ async function submitAddCookie() {
     if (inp) { acc[f.key] = inp.value.trim(); if (acc[f.key]) hasVal = true; }
   }
   if (!hasVal) { $("addckState").textContent = "请至少填写一个凭据字段"; $("addckState").className = "err"; return; }
-  // 2.0.4：newapi 认证方式显式化——记录所选方式到账号 auth（cookie|token|password），后端只按该方式取凭据。
-  if (key === "newapi") {
-    const method = newapiSelectedAuth($("addPanel"));
-    if (!method) { $("addckState").textContent = "请先选择一种登录认证方式（Cookie / 访问令牌 / 邮箱密码）"; $("addckState").className = "err"; return; }
-    acc.auth = method;
-  }
   acc.remark = ($("addck_remark") && $("addck_remark").value.trim()) || "";
   const st = SITE_DATA[key] || {};
   const existing = (Array.isArray(st.accounts) ? st.accounts : []).map((a) => ({ id: a.id })); // 仅带 id，后端保留原字段
@@ -1810,7 +1646,7 @@ function accountEditEl(key, acc) {
         : (f.options && f.options[0] ? f.options[0].value : "");
       val = val || "";
       const opts = f.options || [];
-      // 存量值不在选项集（如 1.9.7 合并前 provider=newapi）→ 保留原值展示，避免被默认顶成首项、保存时改写语义
+      // 存量值不在选项集 → 保留原值展示，避免被默认顶成首项、保存时改写语义
       const hasVal = opts.some((o) => String(o.value) === String(val));
       const legacy = (val && !hasVal) ? `<option value="${esc(val)}" selected>${esc(val)}</option>` : "";
       return `
@@ -1833,10 +1669,7 @@ function accountEditEl(key, acc) {
   // 隐藏，确保「编辑=完全同步加载该账号已存配置」可见（非敏感文本取 field_values，敏感取 field_masks）。
   const advOpen = siteFields(key).some((f) => f.group === "advanced" && (
     (vals[f.key] != null && vals[f.key] !== "") || !!masks[f.key]));
-  // 2.0.3：newapi 走分组表单；其余站点保持原有基础+高级渲染。
-  const fields = key === "newapi"
-    ? newapiGroupedFormHtml(renderField, advOpen)
-    : (split.basic.map(renderField).join("") + advancedSectionHtml(split.advanced.map(renderField).join(""), advOpen));
+  const fields = split.basic.map(renderField).join("") + advancedSectionHtml(split.advanced.map(renderField).join(""), advOpen);
   div.innerHTML = fields +
     '<div class="cred-row">' +
       '<div class="cred-label">备注</div>' +
@@ -1846,18 +1679,6 @@ function accountEditEl(key, acc) {
       '<span class="muted" style="font-size:11px">启用</span>' +
       '<label class="switch"><input type="checkbox" data-f="enabled" ' + (acc.enabled === false ? "" : "checked") + '><span class="track"></span></label>' +
     '</div>';
-  // 1.9.5：newapi provider 联动（编辑页 data-f 定位）——anyrouter/agentrouter 平台地址固定+只读
-  // 2.0.3：登录认证三态联动——按已配置凭据推断当前方式（令牌 > Cookie > 邮箱密码），无凭据则不预选
-  // 2.0.4：优先用账号已存的显式 auth 预选；无 auth（旧账号）→ 回退按凭据推断（与后端自动判定一致）
-  if (key === "newapi") {
-    bindNewapiProviderLink(div.querySelector('[data-f="provider"]'), div.querySelector('[data-f="base_url"]'));
-    const stored = (acc.auth === "cookie" || acc.auth === "token" || acc.auth === "password") ? acc.auth : "";
-    const initMethod = stored
-      || (masks.access_token ? "token"
-        : masks.cookie ? "cookie"
-        : ((vals.username || acc.username || masks.password) ? "password" : ""));
-    bindNewapiAuthGroups(div, initMethod);
-  }
   return div;
 }
 
@@ -1877,11 +1698,6 @@ function collectModalAccounts() {
       if (!inp) continue;
       // 留空 → 送空串（后端保留原值）；填写 → 覆盖。1.4.6 起敏感字段不再回填脱敏串。
       a[f.key] = inp.value.trim();
-    }
-    // 2.0.4：newapi 记录所选认证方式到 auth（cookie|token|password）；后端只按该方式取凭据，忽略残留旧字段。
-    if (MODAL_KEY === "newapi") {
-      const method = newapiSelectedAuth(row);
-      if (method) a.auth = method;
     }
     accs.push(a);
   });

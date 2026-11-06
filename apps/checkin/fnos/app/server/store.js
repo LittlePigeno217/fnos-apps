@@ -27,7 +27,7 @@ for (const key of SITE_KEYS) {
 
 const DEFAULT_CONFIG = {
   enabled: false,          // 总开关
-  version: "2.1.4",        // 功能版本（UI 左下角显示；热更后递增）
+  version: "2.1.5",        // 功能版本（UI 左下角显示；热更后递增）
   cron: "08:10",           // 每日签到时刻 HH:MM
   notify_enabled: true,    // 飞书通知开关
   retry_count: 3,          // 站点失败重试次数
@@ -119,19 +119,11 @@ class Store {
     delete cfg.auth_enabled;
     delete cfg.auth_token;
     cfg.sites = {};
-    // anyrouter → newapi 合并迁移（一次性、幂等，09-26）：旧独立 anyrouter 站点账号并入 newapi 单站点。
-    // email→username / cookies→cookie 别名归一；内容签名去重（重复迁移不产生重复账号）；
-    // anyrouter 侧 id 重分配（保留 newapi 侧 id，避免覆写）。旧 sites.anyrouter 键不再消费，
-    // 首次保存后从 config 落地移除（SITE_KEYS 已无 anyrouter）。
-    const mergedNewapi = this._mergeAnyNew(raw);
     for (const k of SITE_KEYS) {
-      if (k === "newapi") {
-        cfg.sites[k] = { enabled: mergedNewapi.enabled, use_proxy: mergedNewapi.use_proxy, accounts: mergedNewapi.accounts };
-      } else {
-        const rawSite = (raw.sites || {})[k] || {};
-        cfg.sites[k] = { enabled: !!rawSite.enabled, use_proxy: !!rawSite.use_proxy, accounts: this._migrateAccounts(rawSite, k) };
-      }
+      const rawSite = (raw.sites || {})[k] || {};
+      cfg.sites[k] = { enabled: !!rawSite.enabled, use_proxy: !!rawSite.use_proxy, accounts: this._migrateAccounts(rawSite, k) };
     }
+    
     return cfg;
   }
 
@@ -175,19 +167,19 @@ class Store {
         // hold：当前持有量快照（hero 大数字，非余额系 flzt 流量 / ypojie 积分）。旧文件无此字段 → null。
         hold: (a.hold === null || a.hold === undefined || a.hold === "") ? null : Number(a.hold),
         hold_ts: Number(a.hold_ts) || 0,
-        // signin_skip：1.8.3 站点签到需人机验证（Turnstile）标记（仅 newapi/anyrouter 写入）。
+        // signin_skip：站点签到需人机验证（Turnstile）标记。
         // 人工在浏览器过验证并更新 Cookie 后由 testConnection 成功清除；skip_reason 为展示文案。
         // 非表单字段，旧文件无此字段 → ""（未标记）。纳入归一白名单，否则重启/编辑后标记丢失。
         signin_skip: (a.signin_skip === null || a.signin_skip === undefined) ? "" : String(a.signin_skip),
         skip_reason: (a.skip_reason === null || a.skip_reason === undefined) ? "" : String(a.skip_reason),
-        // auth：2.0.4 显式认证方式（cookie|token|password；newapi 表单三态选择落盘）。非表单字段，
+        // auth：显式认证方式（cookie|token|password）。非表单字段，
         // 旧文件无此字段 → ""（未标记 → 运行期回退历史自动判定，零破坏）。仅接受三种合法值，其余归 ""。
         auth: (typeof a.auth === "string" && (a.auth === "cookie" || a.auth === "token" || a.auth === "password")) ? a.auth : "",
       };
       // 字段按 adapter.fields 动态遍历（新站点类型新字段无需改白名单）。
-      // 1.9.0：newapi 服务商高级项（domain/login_path/sign_in_path/user_info_path/api_user_key/
+      // 服务商高级项（domain/login_path/sign_in_path/user_info_path/api_user_key/
       //   bypass_method/waf_cookie_names/use_proxy）随 adapter.fields 自动纳入白名单；空值统一落
-      //   为 ""（= 使用适配器默认，见 NEWAPI._paths/_base/_assertWafCookies），清除即回默认，零残留。
+      //   为 ""（= 使用适配器默认），清除即回默认，零残留。
       for (const f of accountFieldKeys(slug)) {
         base[f] = String(a[f] || "");
       }
@@ -195,88 +187,6 @@ class Store {
     });
   }
 
-  /* ── anyrouter → newapi 站点合并迁移 ───────────────────────── */
-
-  /** 收集某站点账号：兼容多账号数组与旧版顶层单账号凭据格式（原始克隆，保留 session/balance 等非表单字段）。 */
-  _collectSiteAccounts(rawSite) {
-    const site = rawSite || {};
-    // 吞账号根因修复：仅当 accounts 为「非空数组」时以其为准；空数组（[]）不得遮蔽同时存在的
-    // 顶层旧版凭据字段——旧行为 `Array.isArray(site.accounts)` 对空数组直接 return []，会把
-    // 顶层 legacy 单账号静默丢弃（见回归用例「空accounts数组+顶层legacy」）。空/缺失一律回落顶层扫描。
-    if (Array.isArray(site.accounts) && site.accounts.length) {
-      const arr = site.accounts.filter((a) => a && typeof a === "object").map((a) => ({ ...a }));
-      if (arr.length) return arr;
-    }
-    // 旧版顶层格式（单账号）：扫描旧统一适配器全部字段（含 anyrouter 原生 email/cookies 别名）
-    const legacy = {};
-    let has = false;
-    const OLD_FIELDS = ["provider", "base_url", "username", "password", "totp", "cookie", "cookies", "api_user", "api_user_key", "access_token", "email", "delta_ok", "remark"];
-    for (const f of OLD_FIELDS) {
-      if (site[f] !== undefined && site[f] !== "") {
-        legacy[f] = site[f];
-        has = true;
-      }
-    }
-    if (has) return [{ enabled: true, remark: String(site.remark || ""), ...legacy }];
-    return [];
-  }
-
-  /** 账号凭据内容签名（去重/幂等基准）：归一 anyrouter 别名（email→username、cookies→cookie）后，
-   *  取关键凭据字段拼接。相同签名视为同一账号，重复迁移时跳过，保证「再迁移不重复」。 */
-  _acctSignature(a) {
-    const acc = a || {};
-    const s = (v) => String(v == null ? "" : v).trim();
-    const user = s(acc.username) || s(acc.email);
-    const cookie = (acc.cookie != null && acc.cookie !== "") ? s(acc.cookie) : s(acc.cookies);
-    return [s(acc.base_url), s(acc.provider), user, cookie, s(acc.access_token), s(acc.api_user)].join("|");
-  }
-
-  /** anyrouter → newapi 合并迁移（一次性、幂等）：
-   *  把旧 sites.anyrouter 账号并入 sites.newapi。email→username / cookies→cookie 别名归一后，
-   *  按内容签名去重（已在 newapi 存在的凭据跳过，重复迁移不产生重复账号）；anyrouter 侧 id 删除交由
-   *  _migrateAccounts 统一重分配，避免与现有 newapi id 撞车（保留 newapi 侧账号原样）。
-   *  合并后 newapi 启用/代理开关继承（原 anyrouter 已启用且有账号迁入时自动启用，避免静默不签到）。
-   *  迁移结果记日志（仅数量，无凭据）。返回 newapi 站点对象 + movedCount。 */
-  _mergeAnyNew(raw) {
-    const rawSites = (raw && raw.sites) || {};
-    const anyRaw = rawSites.anyrouter || {};
-    const newRaw = rawSites.newapi || {};
-
-    const newAccs = this._collectSiteAccounts(newRaw);
-    const anyAccs = this._collectSiteAccounts(anyRaw);
-
-    const seen = new Set(newAccs.map((a) => this._acctSignature(a)));
-    const merged = newAccs.slice();
-    let movedCount = 0;
-    for (const acc of anyAccs) {
-      const a = { ...acc };
-      // 别名归一：anyrouter 原生表单用 email/cookies（复数）→ 合并站点统一 username/cookie
-      if (!String(a.username || "").trim() && String(a.email || "").trim()) a.username = String(a.email).trim();
-      if ((a.cookie == null || a.cookie === "") && a.cookies) a.cookie = a.cookies;
-      delete a.email;
-      delete a.cookies;
-      const sig = this._acctSignature(a);
-      if (seen.has(sig)) continue; // 已迁移过（幂等）→ 跳过
-      seen.add(sig);
-      delete a.id; // id 重分配（由 _migrateAccounts 统一分配，保证站内唯一、不覆写 newapi 侧）
-      merged.push(a);
-      movedCount++;
-    }
-
-    if (movedCount > 0) {
-      console.log(`[checkin] 配置迁移：anyrouter 站点 ${movedCount} 个账号已并入 newapi 单站点`);
-    }
-    return {
-      enabled: !!newRaw.enabled || (movedCount > 0 && !!anyRaw.enabled),
-      use_proxy: !!newRaw.use_proxy || (movedCount > 0 && !!anyRaw.use_proxy),
-      accounts: this._migrateAccounts({ accounts: merged }, "newapi"),
-      movedCount,
-    };
-  }
-
-  /** 批量分配账号 id 的游标：seed 为已占用的 id 列表（对象数组或字符串数组）。
-   *  返回「生成并登记一个新 id」的闭包；同一次保存的多个新账号共享同一游标，
-   *  保证 id 互不相同且递增（a1/a2/…），避免多个新账号拿到相同 id（下次编辑凭据串号）。 */
   _createIdAllocator(seed) {
     const used = new Set((seed || []).map((a) => String((a && a.id) || "")).filter(Boolean));
     return () => {

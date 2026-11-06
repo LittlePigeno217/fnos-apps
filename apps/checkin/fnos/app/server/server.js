@@ -54,7 +54,7 @@ async function fetchSiteTitleCached(url) {
     clearTimeout(timer);
     if (res.ok) {
       const html = await res.text();
-      // 1) 品牌 span 优先（NewAPI 前台侧边栏 logo 文本，如 <span class="max-w-[12rem] truncate">JustDoWork</span>）——
+      // 1) 品牌 span 优先（站点前台侧边栏 logo 文本，如 <span class="max-w-[12rem] truncate">JustDoWork</span>）——
       //    这才是真实站点名；<title> 常是框架默认「New API」
       const b = html.match(/<span[^>]*class="[^"]*max-w-\[12rem\]\s+truncate[^"]*"[^>]*>([^<]{1,40})<\/span>/i)
         || html.match(/<span[^>]*class="[^"]*truncate[^"]*"[^>]*>\s*([A-Za-z0-9][^<]{1,38})<\/span>/i);
@@ -72,7 +72,7 @@ async function fetchSiteTitleCached(url) {
 }
 /* ── 品牌名探测清洗（1.9.5：动态探测平台品牌名 → 写账号备注）──────
  * 用户明确拒绝「域名→品牌名」硬编码映射：品牌名一律从平台页面动态探测取得。
- * 站点 <title> 常带「- 登录 / | NewAPI / · 控制台」等框架通用噪声词，
+ * 站点 <title> 常带「- 登录 / | 控制台」等框架通用噪声词，
  * 这里只做「通用后缀/前缀噪声词清洗」（不含任何域名映射）：
  *   按分隔符切段 → 去纯噪声段 → 取首个非噪声段（品牌主干）→ 截断 24 字。 */
 const BRAND_NOISE = new Set([
@@ -80,7 +80,7 @@ const BRAND_NOISE = new Set([
   "后台", "管理", "管理后台", "面板", "令牌", "个人中心", "用户中心",
   "sign in", "signin", "sign up", "signup", "log in", "login", "logout",
   "register", "dashboard", "console", "home", "panel", "admin",
-  "newapi", "new api", "oneapi", "one api", "sub2api", "api",
+  "api",
 ]);
 function cleanBrandName(raw) {
   const s = String(raw || "").replace(/\s+/g, " ").trim();
@@ -135,11 +135,6 @@ class Server {
     for (const sk of Object.keys(cfg.sites || {})) {
       for (const a of ((cfg.sites[sk] || {}).accounts || [])) {
         let b = a && a.base_url;
-        // newapi 账号可无 base_url（provider 驱动 anyrouter/agentrouter）→ 按 provider 推导，标题映射/抓取才可达
-        if (sk === "newapi" && !b && a) {
-          if (a.provider === "agentrouter") b = "https://agentrouter.org";
-          else if (a.provider === "anyrouter") b = "https://anyrouter.top";
-        }
         if (b && /^https?:\/\//i.test(b)) urls.add(String(b).replace(/\/+$/, ""));
       }
     }
@@ -308,12 +303,10 @@ class Server {
     return done;
   }
 
-  /** 1.8.3：Turnstile 类「站点签到需人机验证」识别 → 为账号写入持久标记（signin_skip="turnstile"
-   *  + skip_reason 展示文案）。仅 NEWAPI 合并站点（同面板机制；FLZT/恩山等天然不涉及，
-   *  防误伤）。匹配到且未标记 → 写标记（已有同类型标记不重复写）；返回是否命中。 */
+  /** Turnstile 类「站点签到需人机验证」识别 → 为账号写入持久标记（signin_skip="turnstile"
+   *  + skip_reason 展示文案）。匹配到且未标记 → 写标记（已有同类型标记不重复写）；返回是否命中。 */
   _maybeMarkTurnstileSkip(adapter, acc, msg) {
     if (!adapter || !acc || !msg) return false;
-    if (adapter.key !== "newapi") return false;
     if (!isTurnstileRequired(msg)) return false;
     if (!acc.signin_skip) {
       acc.signin_skip = "turnstile";
@@ -366,7 +359,7 @@ class Server {
             if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
             const r = await adapter.runCheckin(acc);
             await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
-            this._accumDailyReward(adapter, acc, r); // 非 NewAPI 系（flzt/right_forum/ypojie）当天签到奖励累计（0 点重置）
+            this._accumDailyReward(adapter, acc, r); // 当天签到奖励累计（flzt/right_forum/ypojie）（0 点重置）
             this._snapshotHold(adapter, acc, r); // 非余额系当前持有量快照（hero 大数字，复用响应字段不触网）
             results.push({ site_key: key, account_id: acc.id, account: accLabel, ...r });
             this._store.schedCheckinSuccess(key, acc.id); // B18：签到成功即从今日失败集移除（补签列表翻转）
@@ -461,7 +454,7 @@ class Server {
         if (!adapter.isConfigured(acc)) throw new Error("该账号尚未配置凭据");
         const r = await adapter.runCheckin(acc);
         await this._snapshotBalance(adapter, acc, { from: "checkin" }); // 签到成功后刷新余额快照（失败不致命）
-        this._accumDailyReward(adapter, acc, r); // 非 NewAPI 系当天签到奖励累计（0 点重置）
+        this._accumDailyReward(adapter, acc, r); // 当天签到奖励累计（0 点重置）
         this._snapshotHold(adapter, acc, r); // 非余额系当前持有量快照（hero 大数字，复用响应字段不触网）
         result = { site_key: site, account_id: acc.id, account: accLabel, ...r };
         history = { time: r.time, site, site_name: r.site_name, account_id: acc.id, account: accLabel, status: r.status, message: r.message, reward: r.reward ?? "", total: r.total ?? "", error: "" };
@@ -572,18 +565,6 @@ class Server {
       acc.balance_delta = (prev == null) ? null : Number((next - prev).toFixed(6));
       acc.balance = next;
       acc.balance_ts = Date.now();
-      // 当日累计新增余额：积分类站点与 NewAPI 系（newapi 余额）签到成功路径累计；0 点滚动重置（daily_gain_date 撞日判定，防跨天串账）
-      if (opts && opts.from === "checkin" && ["newapi"].includes(adapter.key)) {
-        const today = localDateStr();
-        if (acc.daily_gain_date !== today) {
-          acc.daily_gain = 0;
-          acc.daily_gain_date = today;
-        }
-        if (prev != null) {
-          const gain = Math.max(0, next - prev); // 签到前后余额差值（无上次基线 / 余额回落 → 不累计）
-          if (gain > 0) acc.daily_gain = Number(((Number(acc.daily_gain) || 0) + gain).toFixed(6));
-        }
-      }
       this._restoreInjectedProxy(); // 注入字段不落盘：余额快照 save 前同样先还原
       this._store.save();
       console.log(`${adapter.key} ${label}快照成功：${label}=${next}`);
@@ -594,10 +575,10 @@ class Server {
   }
 
   /**
-   * 非 NewAPI 系（flzt/right_forum/ypojie）当天签到奖励累计：仿 daily_gain 的撞日归零机制。
+   * 当天签到奖励累计（flzt/right_forum/ypojie）：仿 daily_gain 的撞日归零机制。
    * 仅在本次为「签到成功」（首次成功）时累计——「今日已签到」重试不重复计（避免调度重试串账）。
    * 累计源：adapter runCheckin 返回的 reward_value（数值）+ reward_unit（单位，如 flzt=MB）；
-   *   无法解析（reward_value 非正数）→ 跳过。NewAPI 系走 daily_gain（余额），此处不涉及。
+   *   无法解析（reward_value 非正数）→ 跳过。
    * 写入账号级 daily_reward（数值）+ daily_reward_unit（单位）+ daily_reward_date（撞日判定）；
    * 与后续 save() 一同落盘（调用方在 snapshotBalance 后、save 前调用）。异常吞掉，绝不影响签到结果。
    */
@@ -623,7 +604,7 @@ class Server {
    * 当前持有量快照（hero 大数字源）：非 queryBalance 系（flzt/ypojie 等声明 holdLabel 的 adapter）。
    * 数据源为 runCheckin 结果里已带的 hold_value（复用签到/已签到响应已抓取字段，绝不新增触网）；
    * 有限数值 → 写入 acc.hold + acc.hold_ts；无值（null/NaN，如恩山无稳定持有量字段）→ 不写，
-   * 前端 hero 大数字显示「—」。queryBalance 系（newapi/anyrouter）走 balance 快照，此处不涉及。
+   * 前端 hero 大数字显示「—」。queryBalance 系走 balance 快照，此处不涉及。
    * 与后续 save() 一同落盘。异常吞掉，绝不影响签到结果。
    */
   _snapshotHold(adapter, acc, r) {
@@ -911,28 +892,23 @@ class Server {
             balance_display: (supportsBalance && rawBal != null) ? fmt(rawBal) : "",
             balance_delta_display: (supportsBalance && rawDelta != null && rawDelta !== 0)
               ? ((rawDelta > 0 ? "+" : "") + fmt(rawDelta)) : "",
-            // 当日累计新增余额：数值为今日生效值（日期非今天 → 0）+ NewAPI 系展示串（+N；0 → 空）
-            auth_mode: (key === "newapi" && a)
-              ? (a.access_token ? "token" : ((a.cookie || a.cookies) ? "cookie" : ((a.username || a.email) ? "password" : "none")))
-              : "",
-            // auth：2.0.4 存储的显式认证方式（编辑页据此预选认证 tab；空则前端按凭据推断，与自动判定一致）。非敏感。
-            auth: (key === "newapi") ? (a.auth || "") : "",
+            auth_mode: "",
+            auth: "",
             daily_gain: dailyGain,
             daily_gain_date: a.daily_gain_date || null,
-            daily_gain_display: (supportsBalance && ["newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+            daily_gain_display: "",
             // 当天签到奖励累计展示（flzt/right_forum/ypojie）：+X 单位（如 "+50 MB"）；今日无 / 目标外站点 → 空
             daily_reward: dailyReward,
             daily_reward_unit: dailyRewardUnit,
             daily_reward_display: (["flzt", "right_forum", "ypojie"].includes(key) && dailyReward > 0) ? ("+" + fmtDailyReward(dailyReward, dailyRewardUnit)) : "",
             // 统一英雄大数字（所有站点）：hero_display=当前持有量（空 → 前端「—」）；hero_delta_display=当天签到收益（>0 才有值）。
-            //   余额系（newapi/anyrouter）：hero=balance + 当天 daily_gain；
             //   持有量系（flzt/ypojie/right_forum）：hero=hold + 当天 daily_reward。
             ...(function () {
               if (supportsBalance) {
                 return {
                   hero_label: adapter.balanceLabel || "余额",
                   hero_display: (rawBal != null) ? fmt(rawBal) : "",
-                  hero_delta_display: (["newapi"].includes(key) && dailyGain > 0) ? ("+" + fmt(dailyGain)) : "",
+                  hero_delta_display: "",
                 };
               }
               if (hasHold) {
